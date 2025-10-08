@@ -154,8 +154,8 @@ def run_attention_torch(batch_size,
         num_tokens = batch_size
     
     sinks = torch.randn(num_heads, dtype=torch.float32) if head_dim == 64 else None
-    q = torch.randn([num_tokens, num_heads*128]).bfloat16().to(torch.device(device))
-    kv = torch.randn([num_tokens, 2*num_key_value_heads*128]).bfloat16().to(torch.device(device))
+    q = torch.randn([num_tokens, num_heads*head_dim]).bfloat16().to(torch.device(device))
+    kv = torch.randn([num_tokens, 2*num_key_value_heads*head_dim]).bfloat16().to(torch.device(device))
     input_qkv = torch.concat([q, kv], dim=-1)
     attn.forward(
         input_qkv,
@@ -260,8 +260,11 @@ def get_context_attention_test_cases():
                         if b*s*num_kv_heads*128*2 >= 2147483647:
                             continue
                         if getSMVersion() >= 100:
+                            # though it's a precheck of gen kernels during the attention op init, this cannot be skipped for now
                             # TLLM_CHECK_WITH_INFO((params.mNumHeadsQPerKv < maxNumHeadsQPerKvInCta || params.mNumHeadsQPerKv % maxNumHeadsQPerKvInCta == 0),
-                            if n >= 32 and n % 32 != 0:
+                            mNumHeadsQPerKv = 1 if n_kv == 0 else n//n_kv
+                            maxNumHeadsQPerKvInCta = 32
+                            if mNumHeadsQPerKv >= maxNumHeadsQPerKvInCta and mNumHeadsQPerKv % maxNumHeadsQPerKvInCta != 0:
                                 continue
 
                         #print(f'collecting heads: {n} kv_heads: {num_kv_heads} seq: {s} batchsize: {b}')
@@ -325,11 +328,6 @@ def get_generation_attention_test_cases():
                 #print(f'collecting MHA heads: {n} batchsize: {b}  steps: {s_list_limited}')
                 # fp8 kv cache, fp8 context fmha, is_context_phase
                 for s in target_s_list:
-                    if getSMVersion() >= 100: 
-                        # TLLM_CHECK_WITH_INFO((params.mNumHeadsQPerKv < maxNumHeadsQPerKvInCta || params.mNumHeadsQPerKv % maxNumHeadsQPerKvInCta == 0),
-                        if n >= 32 and n % 32 != 0:
-                            continue
-
                     test_cases.append([b, s, n, n, h, 0, False, False, False, 'generation_attention_perf.txt'])
 
                     if has_fp8:
@@ -371,7 +369,9 @@ def get_generation_attention_test_cases():
                     for s in target_s_list:
                         if getSMVersion() >= 100: 
                             # TLLM_CHECK_WITH_INFO((params.mNumHeadsQPerKv < maxNumHeadsQPerKvInCta || params.mNumHeadsQPerKv % maxNumHeadsQPerKvInCta == 0),
-                            if n >= 32 and n % 32 != 0:
+                            mNumHeadsQPerKv = 1 if n_kv == 0 else n//n_kv
+                            maxNumHeadsQPerKvInCta = 32
+                            if mNumHeadsQPerKv >= maxNumHeadsQPerKvInCta and mNumHeadsQPerKv % maxNumHeadsQPerKvInCta != 0:
                                 continue
                         if head_dim == 64:
                             test_cases.append([b, s, n, n_kv, h, 128, False, False, False, 'generation_attention_perf.txt'])
