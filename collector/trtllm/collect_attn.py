@@ -272,11 +272,14 @@ def get_context_attention_test_cases():
                         #print(f'collecting heads: {n} kv_heads: {num_kv_heads} seq: {s} batchsize: {b}')
                         # use fp8 kv cache, fp8 context fmha, is_context_phase. in torch flow, int8 kvcache is not supported yet.
                         # fp16 kv cache, fp16 context fmha, is_context_phase
-                        if head_dim == 64:
+                        if h == 64:
                             test_cases.append([b, s, n, num_kv_heads, h, 128, False, False, True, 'context_attention_perf.txt'])
+                            test_cases.append([b, s, n, num_kv_heads, h, 0, False, False, True, 'context_attention_perf.txt'])
                             if has_fp8:
                                 test_cases.append([b, s, n, num_kv_heads, h, 128, True, False, True, 'context_attention_perf.txt'])
                                 test_cases.append([b, s, n, num_kv_heads, h, 128, True, True, True, 'context_attention_perf.txt'])
+                                test_cases.append([b, s, n, num_kv_heads, h, 0, True, False, True, 'context_attention_perf.txt'])
+                                test_cases.append([b, s, n, num_kv_heads, h, 0, True, True, True, 'context_attention_perf.txt'])
                         else:
                             test_cases.append([b, s, n, num_kv_heads, h, 0, False, False, True, 'context_attention_perf.txt'])
                             if has_fp8:
@@ -375,10 +378,12 @@ def get_generation_attention_test_cases():
                             maxNumHeadsQPerKvInCta = 32
                             if mNumHeadsQPerKv >= maxNumHeadsQPerKvInCta and mNumHeadsQPerKv % maxNumHeadsQPerKvInCta != 0:
                                 continue
-                        if head_dim == 64:
+                        if h == 64:
                             test_cases.append([b, s, n, n_kv, h, 128, False, False, False, 'generation_attention_perf.txt'])
+                            test_cases.append([b, s, n, n_kv, h, 0, False, False, False, 'generation_attention_perf.txt'])
                             if has_fp8:
                                 test_cases.append([b, s, n, n_kv, h, 128, True, False, False, 'generation_attention_perf.txt'])
+                                test_cases.append([b, s, n, n_kv, h, 0, True, False, False, 'generation_attention_perf.txt'])
                                 # currently, fp8 is not for generation compute
                                 #test_cases.append([b, s, n, n_kv, 128, True, True, False, 'generation_attention_perf.txt'])
                         else:
