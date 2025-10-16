@@ -16,20 +16,20 @@ Usage:
   python3 e2e_runner.py --mode full --parallel 4
 """
 
+import argparse
 import sys
 import time
-import argparse
 from pathlib import Path
 
 # Add the current directory to path to import common_utils
 sys.path.insert(0, str(Path(__file__).parent))
 from common_utils import (
     check_test_infrastructure,
-    run_pytest_command,
     generate_test_filter,
-    print_cicd_summary,
+    get_cicd_exit_code,
     print_cicd_recommendations,
-    get_cicd_exit_code
+    print_cicd_summary,
+    run_pytest_command,
 )
 
 
@@ -82,7 +82,7 @@ class E2ETestRunner:
             },
             "system": {
                 "models": ["QWEN3_32B"],
-                "systems": ["h100_sxm", "h200_sxm", "b200_sxm", "gb200_sxm"],
+                "systems": ["h100_sxm", "h200_sxm", "b200_sxm", "gb200_sxm", "a100_sxm"],
                 "gpu_configs": [8],
                 "isl_osl_combinations": [(4000, 1000)],
                 "tpot_values": [10],
@@ -227,7 +227,7 @@ Examples:
     
     # Selective test filters
     parser.add_argument("--models", nargs="+", help="Models to test")
-    parser.add_argument("--systems", nargs="+", choices=["h100_sxm", "h200_sxm", "b200_sxm", "gb200_sxm"], help="Systems to test")
+    parser.add_argument("--systems", nargs="+", choices=["h100_sxm", "h200_sxm", "b200_sxm", "gb200_sxm", "a100_sxm"], help="Systems to test")
     parser.add_argument("--gpu-configs", nargs="+", type=int, choices=[8, 512], help="GPU configurations")
     parser.add_argument("--isl-osl", nargs="+", help="ISL,OSL combinations (format: 4000,1000)")
     parser.add_argument("--tpot", nargs="+", type=int, choices=[10, 100], help="TPOT values")
