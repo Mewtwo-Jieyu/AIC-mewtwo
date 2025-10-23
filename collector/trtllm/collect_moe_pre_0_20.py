@@ -76,6 +76,7 @@ def get_moe_test_cases():
         [4096, 14336, 2, 8],  # mixtral_8x7b
         [6144, 16384, 2, 8],  # mixtral_8x22b
         [7168, 2048, 8, 256],  # deepseekv3, will have 1 shared expert
+        [2048, 768, 8, 128],  # qwen3-moe, 30b-a3b
         [4096, 1536, 8, 128],  # qwen3-moe, 235b-a22b
         [6144, 2560, 8, 160],  # qwen3-moe, 480b-a35b
         [7168, 2048, 8, 384],  # kimi k2
@@ -96,8 +97,11 @@ def get_moe_test_cases():
         for moe_type in moe_list:
             for num_token in num_tokens:
                 for model_config in model_config_list:
-                    hs, inter_s, topk, num_experts = model_config
+                    hs, inter_s, topk, num_experts, model_name = model_config
                     for tp in tp_list:
+                        # QWEN3_30B_A3B: exclude tp >= 8 as they are not used for actual deployments
+                        if model_name == "QWEN3_30B_A3B" and tp >= 8:
+                            continue
                         for ep in ep_list:
                             if tp * ep != num_gpu:
                                 continue
