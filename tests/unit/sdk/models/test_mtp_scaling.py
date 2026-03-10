@@ -14,6 +14,7 @@ import pytest
 
 from aiconfigurator.sdk import common, models
 from aiconfigurator.sdk import config as sdk_config
+from aiconfigurator.sdk.utils import HuggingFaceDownloadError
 
 pytestmark = pytest.mark.unit
 
@@ -91,13 +92,13 @@ class TestMTPScaling:
                 attention_dp_size=1,
             )
             # Use a known MOE model or skip if not available
-            model = models.get_model("mistralai/Mixtral-8x7B-v0.1", model_config, "trtllm")
+            model = models.get_model("Qwen/Qwen3-30B-A3B", model_config, "trtllm")
 
             # Verify model was created successfully with nextn > 0
             assert model is not None
             assert model.config.nextn == 2
             assert hasattr(model, "_mtp_scale_factor")
-        except (FileNotFoundError, KeyError, ValueError, TypeError) as e:
+        except (FileNotFoundError, KeyError, ValueError, TypeError, HuggingFaceDownloadError) as e:
             # Model config file not found or missing required keys
             pytest.skip(f"MOE model test skipped due to missing config: {e}")
 
