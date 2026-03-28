@@ -1,0 +1,25 @@
+ServiceConfig:
+  model_name: moonshotai/Kimi-K2.5
+  served_model_name: moonshotai/Kimi-K2.5
+  model_path: moonshotai/Kimi-K2.5
+  include_frontend: true
+K8sConfig:
+  system_name: h200_sxm
+  name_prefix: moonshotai-kimi-k2.5
+params:
+  agg:
+    tensor_parallel_size: 8
+    pipeline_parallel_size: 1
+    max_batch_size: 128
+    gpus_per_worker: 8
+DynConfig:
+  mode: agg
+SlaConfig:
+  isl: 4000
+  osl: 1000
+NodeConfig:
+  num_gpus_per_node: 8
+WorkerConfig:
+  agg_workers: 1
+  agg_gpus_per_worker: 8
+backend: vllm

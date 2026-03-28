@@ -1,0 +1,2 @@
+model,isl,osl,prefix,concurrency,request_rate,bs,global_bs,ttft,tpot,request_latency,seq/s,seq/s/gpu,tokens/s,tokens/s/gpu,tokens/s/user,num_total_gpus,tp,pp,dp,moe_tp,moe_ep,parallel,gemm,kvcache,fmha,moe,comm,memory,balance_score,num_ctx_reqs,num_gen_reqs,num_tokens,ctx_tokens,gen_tokens,backend,version,system,power_w,tokens/s/gpu_cluster
+Qwen/Qwen3-32B,4000,1000,0,8,0.129,8,8,2183.566,59.38,61504.081,0.129,0.064,128.668,64.334,16.841,2,2,1,1,1,1,tp2pp1dp1etp1ep1,float16,float16,float16,float16,half,40.35,0.008,1.0,7.0,4007.0,4000,7.0,trtllm,1.0.0,l40s,0.0,64.334

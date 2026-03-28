@@ -1,0 +1,202 @@
+
+
+apiVersion: nvidia.com/v1alpha1
+kind: DynamoGraphDeployment
+metadata:
+  name: dynamo-disagg
+  namespace: None
+spec:
+  services:
+    Frontend:
+      envFromSecret: hf-token-secret
+      componentType: frontend
+      replicas: 1
+      extraPodSpec:
+        mainContainer:
+          image: nvcr.io/nvidia/ai-dynamo/tensorrtllm-runtime:0.8.1.post1
+          imagePullPolicy: IfNotPresent
+
+    TRTLLMPrefillWorker:
+      envFromSecret: hf-token-secret
+      componentType: worker
+      subComponentType: prefill
+      replicas: 1
+      resources:
+        limits:
+          gpu: "2"
+      extraPodSpec:
+        volumes:
+          - name: engine-configs
+            emptyDir: {}
+          - name: tmp
+            emptyDir:
+              medium: Memory
+              sizeLimit: 10Gi
+        mainContainer:
+          image: nvcr.io/nvidia/ai-dynamo/tensorrtllm-runtime:0.8.1.post1
+          workingDir: /workspace/components/backends/trtllm
+          imagePullPolicy: IfNotPresent
+          volumeMounts:
+            - name: engine-configs
+              mountPath: /workspace/engine_configs
+            - name: tmp
+              mountPath: /tmp
+          command: ["/bin/bash","-c"]
+          args:
+            - |
+              set -euo pipefail
+              mkdir -p /workspace/engine_configs
+              cat > /workspace/engine_configs/prefill_config.yaml <<'YAML'
+              backend: pytorch
+
+
+              tensor_parallel_size: 2
+              pipeline_parallel_size: 1
+              enable_attention_dp: False
+              enable_chunked_prefill: False
+
+
+              build_config:
+                max_batch_size: 1
+                max_num_tokens: 3552
+
+              kv_cache_config:
+                free_gpu_memory_fraction: 0.8
+                dtype: float16
+                tokens_per_block: 32
+                enable_block_reuse: False
+
+              cache_transceiver_config:
+                backend: DEFAULT
+
+              cuda_graph_config:
+                enable_padding: False
+                batch_sizes: [1,2,4,8,16,32,64,128,256]
+
+              disable_overlap_scheduler: True
+              print_iter_log: False  # print_iter_log Print iteration logs
+              YAML
+              args=(
+                --model-path "Qwen/Qwen3-32B"
+                --served-model-name "Qwen/Qwen3-32B"
+                --extra-engine-args "/workspace/engine_configs/prefill_config.yaml"
+              )
+              args+=(--disaggregation-mode prefill)
+              exec python3 -m dynamo.trtllm "${args[@]}"
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 9090
+            initialDelaySeconds: 120
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 40
+          livenessProbe:
+            httpGet:
+              path: /live
+              port: 9090
+            initialDelaySeconds: 300
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 10
+          readinessProbe:
+            httpGet:
+              path: /live
+              port: 9090
+            initialDelaySeconds: 300
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 10
+    TRTLLMDecodeWorker:
+      envFromSecret: hf-token-secret
+      componentType: worker
+      subComponentType: decode
+      replicas: 6
+      resources:
+        limits:
+          gpu: "1"
+      extraPodSpec:
+        volumes:
+          - name: engine-configs
+            emptyDir: {}
+          - name: tmp
+            emptyDir:
+              medium: Memory
+              sizeLimit: 10Gi
+        mainContainer:
+          image: nvcr.io/nvidia/ai-dynamo/tensorrtllm-runtime:0.8.1.post1
+          workingDir: /workspace/components/backends/trtllm
+          imagePullPolicy: IfNotPresent
+          volumeMounts:
+            - name: engine-configs
+              mountPath: /workspace/engine_configs
+            - name: tmp
+              mountPath: /tmp
+          command: ["/bin/bash","-c"]
+          args:
+            - |
+              set -euo pipefail
+              mkdir -p /workspace/engine_configs
+              cat > /workspace/engine_configs/decode_config.yaml <<'YAML'
+              backend: pytorch
+
+
+              tensor_parallel_size: 1
+              pipeline_parallel_size: 1
+              enable_attention_dp: False
+              enable_chunked_prefill: False
+
+
+              build_config:
+                max_batch_size: 512
+                max_num_tokens: 512
+
+              kv_cache_config:
+                free_gpu_memory_fraction: 0.8
+                dtype: float16
+                tokens_per_block: 32
+                enable_block_reuse: False
+
+              cache_transceiver_config:
+                backend: DEFAULT
+
+              cuda_graph_config:
+                enable_padding: True
+                batch_sizes: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,16,20,24,28,32,32,40,48,56,64,64,80,96,112,128,128,160,192,224,256,256,320,384,448,512,1,2,3,4,5,6,7,8,9,10,11,12,13,14]
+
+              disable_overlap_scheduler: False
+              print_iter_log: False  # print_iter_log Print iteration logs
+              YAML
+              args=(
+                --model-path "Qwen/Qwen3-32B"
+                --served-model-name "Qwen/Qwen3-32B"
+                --extra-engine-args "/workspace/engine_configs/decode_config.yaml"
+              )
+              args+=(--disaggregation-mode decode)
+              exec python3 -m dynamo.trtllm "${args[@]}"
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 9090
+            initialDelaySeconds: 120
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 40
+          livenessProbe:
+            httpGet:
+              path: /live
+              port: 9090
+            initialDelaySeconds: 300
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 10
+          readinessProbe:
+            httpGet:
+              path: /live
+              port: 9090
+            initialDelaySeconds: 300
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 10
+
+

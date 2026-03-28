@@ -3,4 +3,8 @@
 
 import importlib.metadata
 
-__version__ = importlib.metadata.version("aiconfigurator")
+try:
+    __version__ = importlib.metadata.version("aiconfigurator")
+except importlib.metadata.PackageNotFoundError:  # pragma: no cover
+    # Allow running from source tree without installing the package.
+    __version__ = "0.0.0"

@@ -1,3 +1,47 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:7965aea3d371d51b77eaafc3f16cbed9cabf0d55665c3dc831b88e5f02a77778
-size 8901
+framework,version,device,op_name,kernel_source,allreduce_dtype,num_gpus,message_size,latency,backend
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,2,128,0.05316636,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,2,256,0.04804488,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,2,512,0.04846191999999999,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,2,1024,0.04782491999999999,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,2,2048,0.047609639999999995,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,2,4096,0.047776040000000006,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,2,8192,0.04706364,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,2,16384,0.04761223999999999,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,2,32768,0.04788472,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,2,65536,0.047367320000000004,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,2,131072,0.04766736,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,2,262144,0.048065159999999996,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,2,524288,0.059213959999999996,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,2,1048576,0.10889267999999999,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,2,2097152,0.21125676,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,2,4194304,0.4210216399999999,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,2,8388608,0.85591168,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,2,16777216,1.7271732399999997,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,2,33554432,3.4695752,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,2,67108864,6.81016492,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,2,134217728,13.575160039999997,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,2,268435456,27.13677044,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,2,536870912,54.10195648,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,4,128,0.06335784,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,4,256,0.04700851999999999,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,4,512,0.04577248,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,4,1024,0.04682132,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,4,2048,0.046028839999999994,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,4,4096,0.04633876,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,4,8192,0.0461526,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,4,16384,0.10831236,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,4,32768,0.10778767999999998,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,4,65536,0.1075126,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,4,131072,0.04620096,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,4,262144,0.0469534,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,4,524288,0.08409596,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,4,1048576,0.16007524,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,4,2097152,0.31303739999999997,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,4,4194304,0.6239147199999999,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,4,8388608,1.26145292,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,4,16777216,2.5408193199999998,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,4,33554432,5.01967492,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,4,67108864,10.04605888,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,4,134217728,20.02014456,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,4,268435456,39.98843524,vllm_eager
+vLLM,0.1.dev11424+ge33cf8ef1,Intel(R) Graphics [0xe211],all_reduce,vLLM_custom_eager,float16,4,536870912,79.76694856,vllm_eager

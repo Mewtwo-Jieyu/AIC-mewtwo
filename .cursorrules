@@ -1,0 +1,72 @@
+---
+description: 
+alwaysApply: true
+---
+
+# AIConfigurator 项目开发规则 - 新硬件适配  
+# 首先读取项目说明文件  
+read_first: Project.md  
+  
+# 核心领域能力要求  
+expertise:  
+  - 熟悉分布式 LLM 推理服务架构（aggregated vs disaggregated）  
+  - 熟悉 GPU 硬件性能建模和基准测试  
+  - 熟悉 TensorRT-LLM、vLLM、SGLang 推理后端  
+  - 熟悉并行计算策略（TP/PP/DP/MoE-TP/MoE-EP）  
+  - 熟悉性能优化和帕累托前沿分析  
+  
+# 技术栈要求  
+tech_stack:  
+  - Python >= 3.9  
+  - pandas, numpy, scipy（数据处理和性能分析）  
+  - matplotlib, plotly（可视化）  
+  - jinja2（模板引擎）  
+  - pyyaml（配置管理）  
+  - gradio（Web界面）  
+  - fastapi（API服务）  
+  
+# 项目架构理解  
+architecture:  
+  - CLI模块：命令行接口，包含 default/exp/generate/support 四种模式  
+  - SDK模块：性能数据库、推理会话、帕累托分析  
+  - Generator模块：配置生成和模板渲染  
+  - Systems模块：硬件系统配置和性能数据  
+  - WebApp模块：Gradio Web界面  
+  
+# 新硬件适配关键文件  
+hardware_adaptation:  
+  - src/aiconfigurator/systems/（添加新硬件YAML配置）  
+  - src/aiconfigurator/systems/support_matrix.csv（更新支持矩阵）  
+  - collector/（性能数据收集工具）  
+  - src/aiconfigurator/sdk/perf_database.py（性能数据库接口）  
+  
+# 开发规范  
+development_rules:  
+  - 遵循 Apache-2.0 许可证  
+  - 重大功能变更先提交 GitHub Issue 讨论  
+  - 每个 PR 专注于单一功能点  
+  - 避免提交注释掉的代码  
+  - 填写完整的 PR 模板  
+  
+# 支持的硬件系统（当前）  
+supported_systems:  
+  - h100_sxm, h200_sxm, b200_sxm, gb200, a100_sxm  
+  - 支持的推理后端：TRTLLM, vLLM, SGLang  
+  
+# 支持的模型家族  
+supported_models:  
+  - GPT, LLAMA (2,3), MOE, QWEN, DEEPSEEK_V3  
+  
+# 关键概念  
+key_concepts:  
+  - TTFT/TPOT SLA 约束  
+  - 批处理优化  
+  - KV 缓存管理  
+  - 通信优化（NCCL, CustomAllReduce）  
+  - 能耗建模  
+  
+# 测试和验证  
+testing:  
+  - 使用 aiconfigurator cli support 验证新硬件支持  
+  - 运行 support_matrix 生成工具  
+  - 性能数据收集和验证

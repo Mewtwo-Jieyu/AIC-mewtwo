@@ -1,0 +1,6 @@
+experiment,tokens_per_sec,tokens_per_sec_per_gpu,seq_per_sec,seq_per_sec_per_gpu,num_total_gpus,ttft_ms,tpot_ms,request_latency_ms,isl,osl,gpu_type,tokens_per_10k_rmb,tp,pp,batch_size,exp_key,prefill_tp,prefill_pp,prefill_workers,prefill_batch_size,decode_tp,decode_pp,decode_workers,decode_batch_size
+a100_medium_agg,1846.234,230.779,3.613,0.452,8,785.035,19.936,10972.523,2048,512,a100,527.4948571428571,8.0,1.0,40.0,a100_agg_medium,,,,,,,,
+a100_p_l40_d_medium_disagg,1119.191,69.949,2.186,0.137,16,1078.319,39.548,21287.347,2048,512,a100,159.88342857142857,,,,a100_disagg_medium,1.0,1.0,4.0,1.0,4.0,1.0,3.0,16.0
+l40_medium_disagg,1119.191,69.949,2.186,0.137,16,925.61,39.548,21134.638,2048,512,a100,159.88342857142857,,,,a100_disagg_medium,2.0,1.0,2.0,1.0,4.0,1.0,3.0,16.0
+l40_p_a100_d_medium_disagg,4481.28,280.08,8.752,0.547,16,925.61,38.792,20748.322,2048,512,a100,640.1828571428571,,,,a100_disagg_medium,2.0,1.0,5.0,1.0,2.0,1.0,3.0,68.0
+a100_medium_disagg,3104.625,194.039,6.064,0.379,16,579.748,19.001,10289.259,2048,512,a100,443.51771428571425,,,,a100_disagg_medium,2.0,1.0,4.0,1.0,8.0,1.0,1.0,64.0

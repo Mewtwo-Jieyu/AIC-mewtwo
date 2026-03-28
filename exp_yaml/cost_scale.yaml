@@ -1,0 +1,27 @@
+exps:
+  - exp_sla_1000_50
+
+exp_sla_1000_50:
+  mode: "patch"
+  serving_mode: "disagg"
+  model_path: "Qwen/Qwen3-32B"
+  total_gpus: 32
+  system_name: "l40s"            # prefill 在 L40
+  decode_system_name: "a100_sxm" # decode 在 A100
+  backend_name: "trtllm"
+  profiles: []
+  config:
+    prefill_worker_config:
+      gemm_quant_mode: "float16"
+      moe_quant_mode: "float16"
+      fmha_quant_mode: "float16"
+      kvcache_quant_mode: "float16"
+    decode_worker_config:
+      gemm_quant_mode: "float16"
+      moe_quant_mode: "float16"
+      fmha_quant_mode: "float16"
+      kvcache_quant_mode: "float16"
+  isl: 2048
+  osl: 512
+  ttft: 1000.0
+  tpot: 50.0

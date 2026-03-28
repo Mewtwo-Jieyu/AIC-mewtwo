@@ -37,8 +37,6 @@ class SGLANGBackend(BaseBackend):
         osl = runtime_config.osl
         prefix = runtime_config.prefix
         b = runtime_config.batch_size
-        ctx_seq_imbalance_correction_scale = runtime_config.seq_imbalance_correction_scale
-        gen_seq_imbalance_correction_scale = runtime_config.gen_seq_imbalance_correction_scale
         ctx_tokens = kwargs.get("ctx_tokens")
         assert ctx_tokens is not None, "ctx_tokens is required"
         balance_score = isl * b / ctx_tokens / osl
@@ -106,12 +104,7 @@ class SGLANGBackend(BaseBackend):
                     database,
                     # num tokens for gemm needs to be adjusted for prefix, depends on the avg prefix len per request
                     RuntimeConfig(
-                        batch_size=1,
-                        beam_width=1,
-                        isl=num_tokens,
-                        osl=1,
-                        prefix=prefix * np.floor(ctx_tokens / isl),
-                        seq_imbalance_correction_scale=ctx_seq_imbalance_correction_scale,
+                        batch_size=1, beam_width=1, isl=num_tokens, osl=1, prefix=prefix * np.floor(ctx_tokens / isl)
                     ),
                     mode="static_ctx",
                 )
@@ -134,14 +127,7 @@ class SGLANGBackend(BaseBackend):
                 summary = self.run_static(
                     model,
                     database,
-                    RuntimeConfig(
-                        batch_size=batch_size,
-                        beam_width=1,
-                        isl=num_tokens,
-                        osl=1,
-                        prefix=prefix,
-                        seq_imbalance_correction_scale=ctx_seq_imbalance_correction_scale,
-                    ),
+                    RuntimeConfig(batch_size=batch_size, beam_width=1, isl=num_tokens, osl=1, prefix=prefix),
                     mode="static_ctx",
                 )
                 latency_dict = summary.get_context_latency_dict()
@@ -156,13 +142,7 @@ class SGLANGBackend(BaseBackend):
                     summary = self.run_static(
                         model,
                         database,
-                        RuntimeConfig(
-                            batch_size=num_tokens,
-                            beam_width=1,
-                            isl=isl + osl // 2,
-                            osl=2,
-                            gen_seq_imbalance_correction_scale=gen_seq_imbalance_correction_scale,
-                        ),
+                        RuntimeConfig(batch_size=num_tokens, beam_width=1, isl=isl + osl // 2, osl=2),
                         mode="static_gen",
                     )
                     latency_dict = summary.get_generation_latency_dict()
@@ -201,13 +181,7 @@ class SGLANGBackend(BaseBackend):
                 summary = self.run_static(
                     model,
                     database,
-                    RuntimeConfig(
-                        batch_size=num_tokens,
-                        beam_width=1,
-                        isl=isl + osl // 2,
-                        osl=2,
-                        gen_seq_imbalance_correction_scale=gen_seq_imbalance_correction_scale,
-                    ),
+                    RuntimeConfig(batch_size=num_tokens, beam_width=1, isl=isl + osl // 2, osl=2),
                     mode="static_gen",
                 )
                 latency_dict = summary.get_generation_latency_dict()
@@ -304,7 +278,7 @@ class SGLANGBackend(BaseBackend):
                 num_tokens = num_gen_requests + ctx_tokens
             else:
                 num_tokens = ctx_tokens
-            memory = self._get_memory_usage(model, database, b, 1, isl, osl, num_tokens, prefix=prefix)
+            memory = self._get_memory_usage(model, database, b, 1, isl, osl, num_tokens)
             tp = model.config.tp_size
             pp = model.config.pp_size
             dp = model.config.attention_dp_size
@@ -464,13 +438,7 @@ class SGLANGBackend(BaseBackend):
                 summary = self.run_agg(
                     model=model,
                     database=database,
-                    runtime_config=RuntimeConfig(
-                        batch_size=b,
-                        isl=isl,
-                        osl=osl,
-                        prefix=prefix,
-                        seq_imbalance_correction_scale=runtime_config.seq_imbalance_correction_scale,
-                    ),
+                    runtime_config=RuntimeConfig(batch_size=b, isl=isl, osl=osl, prefix=prefix),
                     ctx_tokens=ctx_tokens,
                 )
 
@@ -502,7 +470,6 @@ class SGLANGBackend(BaseBackend):
         isl: int,
         osl: int,
         num_tokens: int = 0,
-        prefix: int = 0,
     ) -> dict[str, float]:
         """
         Get the memory usage of the SGLANG backend.
@@ -523,7 +490,7 @@ class SGLANGBackend(BaseBackend):
 
         h = model._num_heads * model._head_size
         if num_tokens == 0:
-            num_tokens = (isl - prefix) * batch_size
+            num_tokens = isl * batch_size
 
         # ==== SGLANG backend specific memory calculations ====
         # SGLANG typically has higher activation memory due to Python overhead

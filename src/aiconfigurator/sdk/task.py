@@ -14,6 +14,7 @@ import yaml
 from munch import DefaultMunch, Munch
 
 from aiconfigurator.sdk import common, config
+from aiconfigurator.sdk import perf_database
 from aiconfigurator.sdk.models import _apply_model_quant_defaults, check_is_moe, get_model_family
 from aiconfigurator.sdk.pareto_analysis import get_pareto_front
 from aiconfigurator.sdk.perf_database import get_database, get_latest_database_version
@@ -61,7 +62,6 @@ class TaskContext:
     tpot: float | None
     request_latency: float | None
     enable_wideep: bool
-    enable_chunked_prefill: bool
     total_gpus: int | None
     profiles: list[str] = field(default_factory=list)
     yaml_patch: dict = field(default_factory=dict)
@@ -225,7 +225,9 @@ def build_disagg_parallel_lists(
                 decode_worker_config["moe_tp_list"] = parallel_config_list
                 decode_worker_config["moe_ep_list"] = [1]
         elif backend_name == "vllm":
-            parallel_config_list = [1, 2, 4, 8]
+            # vLLM can be deployed on larger GPU counts; keep a broader search space here and
+            # rely on `ctx.total_gpus` (see `_finalize_disagg`) to cap by user-provided --total-gpus.
+            parallel_config_list = [1, 2, 4, 8, 16, 32, 64, 128]
 
             prefill_worker_config["num_gpu_per_worker"] = parallel_config_list
             prefill_worker_config["tp_list"] = parallel_config_list
@@ -267,29 +269,6 @@ class TaskConfigFactory:
             if layer.applies_to(ctx):
                 _deep_merge(config_dict, layer.resolve(ctx))
                 applied_layers.append(layer.name)
-
-        # On Blackwell, GPT-OSS defaults to w4a8_mxfp4_mxfp8 (MXFP8 activations)
-        # for higher tensor core throughput. Profiles applied after this can override.
-        # In disagg mode, prefill and decode may run on different hardware, so only
-        # promote the workers that are actually on Blackwell.
-        _blackwell_systems = ("gb200", "gb300", "b200_sxm")
-        if ctx.backend_name == "trtllm" and ctx.model_path in ("openai/gpt-oss-120b", "openai/gpt-oss-20b"):
-            quant_override = {"moe_quant_mode": "w4a8_mxfp4_mxfp8"}
-            if ctx.serving_mode == "agg":
-                if ctx.system_name in _blackwell_systems:
-                    _deep_merge(config_dict, {"worker_config": quant_override})
-                    applied_layers.append("gptoss-blackwell-mxfp8")
-            else:
-                prefill_system = ctx.system_name
-                decode_system = ctx.decode_system_name or ctx.system_name
-                promoted = {}
-                if prefill_system in _blackwell_systems:
-                    promoted["prefill_worker_config"] = quant_override
-                if decode_system in _blackwell_systems:
-                    promoted["decode_worker_config"] = quant_override
-                if promoted:
-                    _deep_merge(config_dict, promoted)
-                    applied_layers.append("gptoss-blackwell-mxfp8")
 
         for profile in ctx.profiles:
             layers = cls.PROFILE_REGISTRY.get(profile)
@@ -355,7 +334,6 @@ class TaskConfigFactory:
                 "request_latency": ctx.request_latency,
             },
             "enable_wideep": ctx.enable_wideep,
-            "enable_chunked_prefill": ctx.enable_chunked_prefill,
             "enable_eplb": False,
             "moe_backend": None,  # sglang wideep only
             "attention_backend": "flashinfer",  # sglang wideep only
@@ -415,12 +393,13 @@ class TaskConfigFactory:
                     worker_config["moe_tp_list"] = [1, 2, 4, 8]
                     worker_config["moe_ep_list"] = [1]
             elif ctx.backend_name == "vllm":
-                worker_config["num_gpu_per_worker"] = [1, 2, 4, 8]
-                worker_config["tp_list"] = [1, 2, 4, 8]
-                worker_config["pp_list"] = [1, 2, 4, 8] if should_enable_pp else [1]
-                worker_config["dp_list"] = [1, 2, 4, 8]
-                worker_config["moe_tp_list"] = [1, 2, 4, 8]
-                worker_config["moe_ep_list"] = [1, 2, 4, 8]
+                parallel_config_list = [1, 2, 4, 8, 16, 32, 64, 128]
+                worker_config["num_gpu_per_worker"] = parallel_config_list
+                worker_config["tp_list"] = parallel_config_list
+                worker_config["pp_list"] = parallel_config_list if should_enable_pp else [1]
+                worker_config["dp_list"] = parallel_config_list
+                worker_config["moe_tp_list"] = parallel_config_list
+                worker_config["moe_ep_list"] = parallel_config_list
             else:
                 raise ValueError(f"Invalid backend: {ctx.backend_name}")
 
@@ -627,7 +606,6 @@ class TaskConfig:
         tpot: float = 50,
         request_latency: float | None = None,
         enable_wideep: bool = False,
-        enable_chunked_prefill: bool = False,
         enable_eplb: bool = False,
         total_gpus: int | None = None,
         profiles: list[str] | None = None,
@@ -658,7 +636,6 @@ class TaskConfig:
             tpot: The target TPOT.
             request_latency: The target end-to-end request latency.
             enable_wideep: Whether to enable wideep.
-            enable_chunked_prefill: Whether the inference framework will have chunked prefill enabled.
             total_gpus: The total number of GPUs.
             profiles: The profiles to use.
             yaml_config: The YAML configuration.
@@ -703,7 +680,6 @@ class TaskConfig:
             tpot=tpot,
             request_latency=request_latency,
             enable_wideep=enable_wideep,
-            enable_chunked_prefill=enable_chunked_prefill,
             total_gpus=total_gpus,
             profiles=effective_profiles,
             yaml_patch=yaml_patch,
@@ -861,12 +837,16 @@ class TaskConfig:
             for k, v in quant_modes.items():
                 worker_cfg[k] = v
 
+        model_arch = str(model_info.get("architecture", ""))
         is_deepseek = get_model_family(self.model_path) == "DEEPSEEK"
+        # Kimi-K2.5 tech report specifies MLA attention; use MLA perf tables for it as well.
+        # (DeepSeek remains the primary MLA model family.)
+        is_mla_model = is_deepseek or model_arch == "KimiK25ForConditionalGeneration"
         enable_wideep = bool(getattr(self.config, "enable_wideep", self.enable_wideep))
         moe_backend = getattr(self.config, "moe_backend", None)
 
-        # DeepSeek uses MLA perf tables; others use attention perf tables.
-        if is_deepseek:
+        # MLA models use MLA perf tables; others use attention perf tables.
+        if is_mla_model:
             if self.backend_name == "sglang" and enable_wideep:
                 context_attn_key = "wideep_context_mla"
                 generation_attn_key = "wideep_generation_mla"
@@ -1074,6 +1054,16 @@ class TaskRunner:
         instance is returned directly.
         """
         db = get_database(system=system, backend=backend, version=version)
+        if db is None:
+            supported = perf_database.get_supported_databases()
+            versions = supported.get(system, {}).get(backend, [])
+            versions_display = ", ".join(versions) if versions else "<none>"
+            raise perf_database.PerfDataNotAvailableError(
+                "No perf database could be loaded for "
+                f"system='{system}', backend='{backend}', version='{version}'. "
+                f"Available versions for this system/backend: {versions_display}. "
+                f"systems_paths={perf_database.get_systems_paths()}"
+            )
         if database_mode is not None:
             db = copy.deepcopy(db)
             db.set_default_database_mode(common.DatabaseMode[database_mode])
@@ -1150,7 +1140,6 @@ class TaskRunner:
             logger.info(f"{i + 1}) tp={tp}, pp={pp}, dp={dp}, moe_tp={moe_tp}, moe_ep={moe_ep}")
 
         logger.info("Task %s: Running agg pareto", task_config.task_name)
-        enable_chunked_prefill = getattr(task_config, "enable_chunked_prefill", False)
         result_df = pa.agg_pareto(
             model_path=task_config.model_path,
             runtime_config=runtime_config,
@@ -1158,7 +1147,6 @@ class TaskRunner:
             backend_name=task_config.worker_config.backend_name,
             model_config=model_config,
             parallel_config_list=parallel_config_list,
-            enable_chunked_prefill=enable_chunked_prefill,
         )
         return {
             "pareto_df": result_df,

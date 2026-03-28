@@ -1,0 +1,433 @@
+# A100 / L40, Qwen3-32B, 完整对比实验：不同对话场景 × agg/disagg
+# 用于分析：A100 vs L40 收益区间、disagg vs agg baseline 收益
+
+exps:
+  # 短对话场景
+  # - a100_short_agg
+  # - a100_short_disagg
+  # - a100_p_l40_d_short_disagg
+  # - l40_p_a100_d_short_disagg
+  # - l40_short_agg
+  # - l40_short_disagg
+  
+  # # 中对话场景
+  # - a100_medium_agg
+  # - a100_medium_disagg
+  # - a100_p_l40_d_medium_disagg
+  # - l40_p_a100_d_medium_disagg
+  # - l40_medium_agg
+  # - l40_medium_disagg
+  
+  # # # 长对话场景
+  - a100_long_agg
+  - a100_long_disagg
+  # - a100_p_l40_d_long_disagg
+  # - l40_p_a100_d_long_disagg
+  # - l40_long_agg
+  # - l40_long_disagg
+
+# ===== A100: 短对话 =====
+a100_short_agg:
+  mode: "patch"
+  serving_mode: "agg"
+  model_path: "Qwen/Qwen3-32B"
+  total_gpus: 16
+  system_name: "a100_sxm"
+  backend_name: "trtllm"
+  profiles: []
+  config:
+    worker_config:
+      gemm_quant_mode: "float16"
+      moe_quant_mode: "float16"
+      fmha_quant_mode: "float16"
+      kvcache_quant_mode: "float16"
+  isl: 512
+  osl: 128
+  ttft: 600.0
+  tpot: 20.0
+
+a100_short_disagg:
+  mode: "patch"
+  serving_mode: "disagg"
+  model_path: "Qwen/Qwen3-32B"
+  total_gpus: 16
+  system_name: "a100_sxm"
+  decode_system_name: "a100_sxm"
+  backend_name: "trtllm"
+  profiles: []
+  config:
+    prefill_worker_config:
+      gemm_quant_mode: "float16"
+      moe_quant_mode: "float16"
+      fmha_quant_mode: "float16"
+      kvcache_quant_mode: "float16"
+    decode_worker_config:
+      gemm_quant_mode: "float16"
+      moe_quant_mode: "float16"
+      fmha_quant_mode: "float16"
+      kvcache_quant_mode: "float16"
+  isl: 512
+  osl: 128
+  ttft: 600.0
+  tpot: 20.0
+
+# ===== 混合：A100 预填 + L40 解码（短对话）=====
+a100_p_l40_d_short_disagg:
+  mode: "patch"
+  serving_mode: "disagg"
+  model_path: "Qwen/Qwen3-32B"
+  total_gpus: 16
+  system_name: "a100_sxm"        # prefill 在 A100
+  decode_system_name: "l40s"     # decode 在 L40
+  backend_name: "trtllm"
+  profiles: []
+  config:
+    prefill_worker_config:
+      gemm_quant_mode: "float16"
+      moe_quant_mode: "float16"
+      fmha_quant_mode: "float16"
+      kvcache_quant_mode: "float16"
+    decode_worker_config:
+      gemm_quant_mode: "float16"
+      moe_quant_mode: "float16"
+      fmha_quant_mode: "float16"
+      kvcache_quant_mode: "float16"
+  isl: 512
+  osl: 128
+  ttft: 600.0
+  tpot: 20.0
+
+# ===== 混合：L40 预填 + A100 解码（短对话）=====
+l40_p_a100_d_short_disagg:
+  mode: "patch"
+  serving_mode: "disagg"
+  model_path: "Qwen/Qwen3-32B"
+  total_gpus: 16
+  system_name: "l40s"            # prefill 在 L40
+  decode_system_name: "a100_sxm" # decode 在 A100
+  backend_name: "trtllm"
+  profiles: []
+  config:
+    prefill_worker_config:
+      gemm_quant_mode: "float16"
+      moe_quant_mode: "float16"
+      fmha_quant_mode: "float16"
+      kvcache_quant_mode: "float16"
+    decode_worker_config:
+      gemm_quant_mode: "float16"
+      moe_quant_mode: "float16"
+      fmha_quant_mode: "float16"
+      kvcache_quant_mode: "float16"
+  isl: 512
+  osl: 128
+  ttft: 600.0
+  tpot: 20.0
+
+# ===== A100: 中对话 =====
+a100_medium_agg:
+  mode: "patch"
+  serving_mode: "agg"
+  model_path: "Qwen/Qwen3-32B"
+  total_gpus: 16
+  system_name: "a100_sxm"
+  backend_name: "trtllm"
+  profiles: []
+  config:
+    worker_config:
+      gemm_quant_mode: "float16"
+      moe_quant_mode: "float16"
+      fmha_quant_mode: "float16"
+      kvcache_quant_mode: "float16"
+  isl: 2048
+  osl: 512
+  ttft: 800.0
+  tpot: 20.0
+
+a100_medium_disagg:
+  mode: "patch"
+  serving_mode: "disagg"
+  model_path: "Qwen/Qwen3-32B"
+  total_gpus: 16
+  system_name: "a100_sxm"
+  decode_system_name: "a100_sxm"
+  backend_name: "trtllm"
+  profiles: []
+  config:
+    prefill_worker_config:
+      gemm_quant_mode: "float16"
+      moe_quant_mode: "float16"
+      fmha_quant_mode: "float16"
+      kvcache_quant_mode: "float16"
+    decode_worker_config:
+      gemm_quant_mode: "float16"
+      moe_quant_mode: "float16"
+      fmha_quant_mode: "float16"
+      kvcache_quant_mode: "float16"
+  isl: 2048
+  osl: 512
+  ttft: 800.0
+  tpot: 20.0
+
+# ===== 混合：A100 预填 + L40 解码（中对话）=====
+a100_p_l40_d_medium_disagg:
+  mode: "patch"
+  serving_mode: "disagg"
+  model_path: "Qwen/Qwen3-32B"
+  total_gpus: 16
+  system_name: "a100_sxm"        # prefill 在 A100
+  decode_system_name: "l40s"     # decode 在 L40
+  backend_name: "trtllm"
+  profiles: []
+  config:
+    prefill_worker_config:
+      gemm_quant_mode: "float16"
+      moe_quant_mode: "float16"
+      fmha_quant_mode: "float16"
+      kvcache_quant_mode: "float16"
+    decode_worker_config:
+      gemm_quant_mode: "float16"
+      moe_quant_mode: "float16"
+      fmha_quant_mode: "float16"
+      kvcache_quant_mode: "float16"
+  isl: 2048
+  osl: 512
+  ttft: 1500.0   # 与 L40 medium 一致的较宽松 SLA
+  tpot: 40.0
+
+# ===== 混合：L40 预填 + A100 解码（中对话）=====
+l40_p_a100_d_medium_disagg:
+  mode: "patch"
+  serving_mode: "disagg"
+  model_path: "Qwen/Qwen3-32B"
+  total_gpus: 16
+  system_name: "l40s"            # prefill 在 L40
+  decode_system_name: "a100_sxm" # decode 在 A100
+  backend_name: "trtllm"
+  profiles: []
+  config:
+    prefill_worker_config:
+      gemm_quant_mode: "float16"
+      moe_quant_mode: "float16"
+    decode_worker_config:
+      gemm_quant_mode: "float16"
+      moe_quant_mode: "float16"
+      fmha_quant_mode: "float16"
+      kvcache_quant_mode: "float16"
+  isl: 2048
+  osl: 512
+  ttft: 1500.0
+  tpot: 40.0
+
+# ===== A100: 长对话 =====
+a100_long_agg:
+  mode: "patch"
+  serving_mode: "agg"
+  model_path: "Qwen/Qwen3-32B"
+  total_gpus: 16
+  system_name: "a100_sxm"
+  backend_name: "trtllm"
+  profiles: []
+  config:
+    worker_config:
+      gemm_quant_mode: "float16"
+      moe_quant_mode: "float16"
+      fmha_quant_mode: "float16"
+      kvcache_quant_mode: "float16"
+  isl: 4000
+  osl: 1000
+  ttft: 800.0
+  tpot: 20.0
+
+a100_long_disagg:
+  mode: "patch"
+  serving_mode: "disagg"
+  model_path: "Qwen/Qwen3-32B"
+  total_gpus: 16
+  system_name: "a100_sxm"
+  decode_system_name: "a100_sxm"
+  backend_name: "trtllm"
+  profiles: []
+  config:
+    prefill_worker_config:
+      gemm_quant_mode: "float16"
+      moe_quant_mode: "float16"
+      fmha_quant_mode: "float16"
+      kvcache_quant_mode: "float16"
+    decode_worker_config:
+      gemm_quant_mode: "float16"
+      moe_quant_mode: "float16"
+      fmha_quant_mode: "float16"
+      kvcache_quant_mode: "float16"
+  isl: 4000
+  osl: 1000
+  ttft: 800.0
+  tpot: 20.0
+
+# ===== 混合：A100 预填 + L40 解码（长对话）=====
+a100_p_l40_d_long_disagg:
+  mode: "patch"
+  serving_mode: "disagg"
+  model_path: "Qwen/Qwen3-32B"
+  total_gpus: 16
+  system_name: "a100_sxm"        # prefill 在 A100
+  decode_system_name: "l40s"     # decode 在 L40
+  backend_name: "trtllm"
+  profiles: []
+  config:
+    prefill_worker_config:
+      gemm_quant_mode: "float16"
+      moe_quant_mode: "float16"
+      fmha_quant_mode: "float16"
+      kvcache_quant_mode: "float16"
+    decode_worker_config:
+      gemm_quant_mode: "float16"
+      moe_quant_mode: "float16"
+      fmha_quant_mode: "float16"
+      kvcache_quant_mode: "float16"
+  isl: 4000
+  osl: 1000
+  ttft: 2500.0   # 与 L40 long 一致的宽松 SLA
+  tpot: 60.0
+
+# ===== 混合：L40 预填 + A100 解码（长对话）=====
+l40_p_a100_d_long_disagg:
+  mode: "patch"
+  serving_mode: "disagg"
+  model_path: "Qwen/Qwen3-32B"
+  total_gpus: 16
+  system_name: "l40s"            # prefill 在 L40
+  decode_system_name: "a100_sxm" # decode 在 A100
+  backend_name: "trtllm"
+  profiles: []
+  config:
+    prefill_worker_config:
+      gemm_quant_mode: "float16"
+      moe_quant_mode: "float16"
+      fmha_quant_mode: "float16"
+      kvcache_quant_mode: "float16"
+    decode_worker_config:
+      gemm_quant_mode: "float16"
+      moe_quant_mode: "float16"
+      fmha_quant_mode: "float16"
+      kvcache_quant_mode: "float16"
+  isl: 4000
+  osl: 1000
+  ttft: 2500.0
+  tpot: 60.0
+
+# ===== L40: 短对话 =====
+l40_short_agg:
+  mode: "patch"
+  serving_mode: "agg"
+  model_path: "Qwen/Qwen3-32B"
+  total_gpus: 16
+  system_name: "l40s"
+  backend_name: "trtllm"
+  profiles: []
+  config:
+    worker_config:
+      gemm_quant_mode: "float16"
+      moe_quant_mode: "float16"
+  isl: 512
+  osl: 128
+  ttft: 600.0
+  tpot: 20.0
+
+l40_short_disagg:
+  mode: "patch"
+  serving_mode: "disagg"
+  model_path: "Qwen/Qwen3-32B"
+  total_gpus: 16
+  system_name: "l40s"
+  decode_system_name: "l40s"
+  backend_name: "trtllm"
+  profiles: []
+  config:
+    prefill_worker_config:
+      gemm_quant_mode: "float16"
+      moe_quant_mode: "float16"
+    decode_worker_config:
+      gemm_quant_mode: "float16"
+      moe_quant_mode: "float16"
+  isl: 512
+  osl: 128
+  ttft: 600.0
+  tpot: 20.0
+
+# ===== L40: 中对话 =====
+l40_medium_agg:
+  mode: "patch"
+  serving_mode: "agg"
+  model_path: "Qwen/Qwen3-32B"
+  total_gpus: 16
+  system_name: "l40s"
+  backend_name: "trtllm"
+  profiles: []
+  config:
+    worker_config:
+      gemm_quant_mode: "float16"
+      moe_quant_mode: "float16"
+  isl: 2048
+  osl: 512
+  ttft: 1500.0
+  tpot: 40.0
+
+l40_medium_disagg:
+  mode: "patch"
+  serving_mode: "disagg"
+  model_path: "Qwen/Qwen3-32B"
+  total_gpus: 16
+  system_name: "l40s"
+  decode_system_name: "l40s"
+  backend_name: "trtllm"
+  profiles: []
+  config:
+    prefill_worker_config:
+      gemm_quant_mode: "float16"
+      moe_quant_mode: "float16"
+    decode_worker_config:
+      gemm_quant_mode: "float16"
+      moe_quant_mode: "float16"
+  isl: 2048
+  osl: 512
+  ttft: 1500.0
+  tpot: 40.0
+
+# ===== L40: 长对话 =====
+l40_long_agg:
+  mode: "patch"
+  serving_mode: "agg"
+  model_path: "Qwen/Qwen3-32B"
+  total_gpus: 16
+  system_name: "l40s"
+  backend_name: "trtllm"
+  profiles: []
+  config:
+    worker_config:
+      gemm_quant_mode: "float16"
+      moe_quant_mode: "float16"
+  isl: 4000
+  osl: 1000
+  ttft: 2500.0
+  tpot: 60.0
+
+l40_long_disagg:
+  mode: "patch"
+  serving_mode: "disagg"
+  model_path: "Qwen/Qwen3-32B"
+  total_gpus: 16
+  system_name: "l40s"
+  decode_system_name: "l40s"
+  backend_name: "trtllm"
+  profiles: []
+  config:
+    prefill_worker_config:
+      gemm_quant_mode: "float16"
+      moe_quant_mode: "float16"
+    decode_worker_config:
+      gemm_quant_mode: "float16"
+      moe_quant_mode: "float16"
+  isl: 4000
+  osl: 1000
+  ttft: 2500.0
+  tpot: 60.0

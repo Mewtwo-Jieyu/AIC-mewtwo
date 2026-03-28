@@ -1,0 +1,45 @@
+apiVersion: nvidia.com/v1alpha1
+kind: DynamoGraphDeployment
+metadata:
+  name: moonshotai-kimi-k2.5-agg
+  namespace: 
+spec:
+  services:
+    Frontend:
+      envFromSecret: hf-token-secret
+      componentType: frontend
+      replicas: 1
+      extraPodSpec:
+        mainContainer:
+          image: 
+          imagePullPolicy: IfNotPresent
+    VllmWorker:
+      envFromSecret: hf-token-secret
+      componentType: worker
+      replicas: 1
+      resources:
+        limits:
+          gpu: "8"
+      extraPodSpec:
+      
+        mainContainer:
+          image: 
+          workingDir: /workspace/examples/backends/vllm
+          imagePullPolicy: IfNotPresent
+          command:
+            - python3
+            - -m
+            - dynamo.vllm
+          args:
+            - --model
+            - "moonshotai/Kimi-K2.5"
+            - "--tensor-parallel-size"
+            - "8"
+            - "--pipeline-parallel-size"
+            - "1"
+            - "--max-model-len"
+            - "6500"
+            - "--max-num-seqs"
+            - "512"
+            - "--max-num-batched-tokens"
+            - "6012"

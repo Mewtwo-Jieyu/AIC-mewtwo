@@ -129,9 +129,7 @@ def get_supported_databases(
                     versions = [
                         v
                         for v in os.listdir(backend_path)
-                        if not v.startswith(".")
-                        and os.path.isdir(os.path.join(backend_path, v))
-                        and not os.path.isfile(os.path.join(backend_path, v, "INCOMPLETE.txt"))
+                        if not v.startswith(".") and os.path.isdir(os.path.join(backend_path, v))
                     ]
                     if versions:
                         supported_sets[system][backend.value].update(versions)
@@ -334,11 +332,8 @@ def get_all_databases(
                 for backend in common.BackendName:
                     if not os.path.exists(os.path.join(data_dir, backend.value)):
                         continue
-                    backend_path = os.path.join(data_dir, backend.value)
-                    for version in os.listdir(backend_path):
+                    for version in os.listdir(os.path.join(data_dir, backend.value)):
                         if version.startswith("."):
-                            continue
-                        if os.path.isfile(os.path.join(backend_path, version, "INCOMPLETE.txt")):
                             continue
                         database = get_database(system, backend.value, version, systems_root)
                         if database is None:
@@ -1787,10 +1782,10 @@ def load_wideep_moe_compute_data(wideep_moe_compute_file):
     return wideep_moe_compute_data
 
 
-def load_trtllm_alltoall_data(trtllm_alltoall_file):
+def load_wideep_alltoall_data(wideep_alltoall_file):
     """
-    Load TensorRT-LLM AlltoAll communication perf data from trtllm_alltoall_perf.txt.
-    Covers both WideEP (NVLinkTwoSided) and CutlassFusedMoE (NVLinkOneSided) paths.
+    Load the TensorRT-LLM wideep All2All data from wideep_alltoall_perf.txt.
+    This data represents All2All communication time (prepare, dispatch, combine).
 
     Returns:
         dict: Nested dict structure where leaf values are dicts with 'latency' and 'power' keys.
@@ -1800,21 +1795,20 @@ def load_trtllm_alltoall_data(trtllm_alltoall_file):
 
     Note:
         kernel_source identifies the All2All communication method:
-        - "NVLinkTwoSided": NVLink Two-Sided via MNNVL (GB200, SM >= 100)
-        - "NVLinkOneSided": NVLink One-Sided (CutlassFusedMoE on GB200)
+        - "MnnvlMoe": NVLink Two-Sided via MNNVL (GB200, SM >= 100)
         - "DeepEP": DeepEP normal mode (H100/H200, cross-node)
         - "DeepEPLowLatency": DeepEP low-latency mode (H100/H200, intra-node)
         - "NCCL": Standard NCCL communication (fallback)
-        If data file does not have 'kernel_source' column, it defaults to "NVLinkTwoSided".
+        If data file does not have 'kernel_source' column, it defaults to "MnnvlMoe".
 
         If data file does not have 'num_nodes' column, it will be computed as moe_ep_size // 4.
         This assumes 4 GPUs per node (e.g., GB200 NVL4).
     """
-    if not os.path.exists(trtllm_alltoall_file):
-        logger.debug(f"TensorRT-LLM AlltoAll data file {trtllm_alltoall_file} not found.")
+    if not os.path.exists(wideep_alltoall_file):
+        logger.debug(f"TensorRT-LLM wideep All2All data file {wideep_alltoall_file} not found.")
         return None
 
-    trtllm_alltoall_data = defaultdict(
+    wideep_alltoall_data = defaultdict(
         lambda: defaultdict(
             lambda: defaultdict(
                 lambda: defaultdict(
@@ -1826,25 +1820,25 @@ def load_trtllm_alltoall_data(trtllm_alltoall_file):
         )
     )
 
-    logger.debug(f"Loading TensorRT-LLM AlltoAll data from: {trtllm_alltoall_file}")
-    with open(trtllm_alltoall_file, encoding="utf-8") as f:
+    logger.debug(f"Loading TensorRT-LLM wideep All2All data from: {wideep_alltoall_file}")
+    with open(wideep_alltoall_file, encoding="utf-8") as f:
         reader = csv.DictReader(f)
         rows = list(reader)
 
         # Check if power columns exist (backward compatibility)
         has_power = len(rows) > 0 and "power" in rows[0]
         if not has_power:
-            logger.debug(f"Legacy database format detected in {trtllm_alltoall_file} - power will default to 0.0")
+            logger.debug(f"Legacy database format detected in {wideep_alltoall_file} - power will default to 0.0")
 
         # Check if num_nodes column exists
         has_num_nodes = len(rows) > 0 and "num_nodes" in rows[0]
         if not has_num_nodes:
-            logger.debug(f"num_nodes column not found in {trtllm_alltoall_file} - will be computed as moe_ep_size // 4")
+            logger.debug(f"num_nodes column not found in {wideep_alltoall_file} - will be computed as moe_ep_size // 4")
 
         # Check if kernel_source column exists
         has_kernel_source = len(rows) > 0 and "kernel_source" in rows[0]
         if not has_kernel_source:
-            logger.debug(f"kernel_source column not found in {trtllm_alltoall_file} - will default to 'NVLinkTwoSided'")
+            logger.debug(f"kernel_source column not found in {wideep_alltoall_file} - will default to 'MnnvlMoe'")
 
         for row in rows:
             op_name = row["op_name"]  # alltoall_prepare, alltoall_dispatch, alltoall_combine, etc.
@@ -1858,14 +1852,14 @@ def load_trtllm_alltoall_data(trtllm_alltoall_file):
             quant_mode = common.MoEQuantMode[quant_mode]
 
             # Get kernel_source from data or use default
-            kernel_source = row.get("kernel_source", "NVLinkTwoSided")
+            kernel_source = row.get("kernel_source", "MnnvlMoe")
 
             # Get num_nodes from data or compute from moe_ep_size
             if has_num_nodes:
                 num_nodes = int(row["num_nodes"])
             else:
                 # Default: assume 4 GPUs per node
-                if moe_ep_size % 4 != 0:  # FIXME this is only for GB200 needs to be generalized for other systems
+                if moe_ep_size % 4 != 0:
                     logger.warning(
                         f"moe_ep_size={moe_ep_size} is not divisible by 4, using moe_ep_size // 4 = {moe_ep_size // 4}"
                     )
@@ -1876,7 +1870,7 @@ def load_trtllm_alltoall_data(trtllm_alltoall_file):
             energy = power * latency  # watt-milliseconds
 
             # Store all three values with kernel_source and num_nodes dimensions
-            trtllm_alltoall_data[kernel_source][op_name][quant_mode][num_nodes][hidden_size][topk][num_experts][
+            wideep_alltoall_data[kernel_source][op_name][quant_mode][num_nodes][hidden_size][topk][num_experts][
                 moe_ep_size
             ][num_tokens] = {
                 "latency": latency,
@@ -1889,7 +1883,7 @@ def load_trtllm_alltoall_data(trtllm_alltoall_file):
             #     f"{num_tokens} -> {latency}"
             # )
 
-    return trtllm_alltoall_data
+    return wideep_alltoall_data
 
 
 class LoadedOpData(UserDict):
@@ -1965,7 +1959,7 @@ class PerfDatabase:
         _wideep_deepep_ll_data (dict): the wideep deepep ll data
         TensorRT-LLM wideep:
         _wideep_moe_compute_data (dict): the wideep moe compute data (pure computation, no all2all)
-        _trtllm_alltoall_data (dict): the wideep all2all data (prepare, dispatch, combine)
+        _wideep_alltoall_data (dict): the wideep all2all data (prepare, dispatch, combine)
 
     Methods:
         query_gemm: query the gemm data
@@ -2025,7 +2019,7 @@ class PerfDatabase:
                 PerfDataFilename.wideep_deepep_normal: load_wideep_deepep_normal_data,
                 PerfDataFilename.wideep_deepep_ll: load_wideep_deepep_ll_data,
                 PerfDataFilename.wideep_moe_compute: load_wideep_moe_compute_data,
-                PerfDataFilename.trtllm_alltoall: load_trtllm_alltoall_data,
+                PerfDataFilename.wideep_alltoall: load_wideep_alltoall_data,
                 PerfDataFilename.dsa_context_module: load_context_dsa_module_data,
                 PerfDataFilename.dsa_generation_module: load_generation_dsa_module_data,
             }
@@ -2078,7 +2072,7 @@ class PerfDatabase:
         # TensorRT-LLM wideep path
         if backend == "trtllm":
             self._wideep_moe_compute_data = _load_op_data(PerfDataFilename.wideep_moe_compute)
-            self._trtllm_alltoall_data = _load_op_data(PerfDataFilename.trtllm_alltoall)
+            self._wideep_alltoall_data = _load_op_data(PerfDataFilename.wideep_alltoall)
 
         # pre-correction
         self._correct_data()
@@ -2638,77 +2632,59 @@ class PerfDatabase:
         quant_mode: common.MoEQuantMode,
         moe_ep_size: int,
         topk: int,
-        moe_backend: Optional[str] = None,
     ) -> str:
         """
-        Automatically select All2All communication method based on GPU architecture,
-        MoE backend type, and configuration.
+        Automatically select All2All communication method based on GPU architecture and configuration.
 
-        Aligned with TensorRT-LLM's per-backend select_alltoall_method_type:
-
-        CutlassFusedMoE / TRTLLMGenFusedMoE (fused_moe_cutlass.py / fused_moe_trtllm_gen.py):
-          - Requires supports_mnnvl() (approximated as SM >= 100)
-          - Returns NVLinkOneSided
-          - Does NOT support DeepEP / DeepEPLowLatency
-
-        WideEPMoE (fused_moe_wide_ep.py):
-          - If supports_mnnvl() -> NVLinkTwoSided
-          - Else if DeepEP feasible -> DeepEP (inter-node) or DeepEPLowLatency (intra-node)
-          - Does NOT support NVLinkOneSided
-
-        DeepGemmFusedMoE / CuteDslFusedMoE:
-          - Always NotEnabled
+        Selection logic (based on TensorRT-LLM's select_alltoall_method_type):
+        1. SM >= 100 (GB200 with MNNVL support) -> MnnvlMoe (NVLink Two-Sided)
+        2. SM >= 90 (H100/H200) with cross-node -> DeepEP
+        3. SM >= 90 (H100/H200) within single node -> DeepEPLowLatency
+        4. SM < 90 -> NCCL (fallback)
 
         Args:
             quant_mode: MoE quantization mode
             moe_ep_size: MoE expert parallelism size
             topk: Number of experts activated per token
-            moe_backend: MoE backend identifier. "wideep" for WideEP path,
-                        "CUTLASS"/"TRTLLM"/None for CutlassFusedMoE/TRTLLMGen,
-                        "DEEPGEMM"/"CUTE_DSL" for backends without AlltoAll.
 
         Returns:
-            str: The selected kernel_source name, or "NotEnabled" if AlltoAll is not used.
+            str: The selected kernel_source name
         """
-        if moe_backend is not None and moe_backend.upper() in {"DEEPGEMM", "CUTE_DSL"}:
-            return "NotEnabled"
-
         sm_version = self.system_spec["gpu"]["sm_version"]
         num_gpus_per_node = self.system_spec["node"]["num_gpus_per_node"]
         is_inter_node = moe_ep_size > num_gpus_per_node
-        is_wideep = moe_backend is not None and moe_backend.upper() == "WIDEEP"
 
-        supports_mnnvl = sm_version >= 100
+        # Preferred kernel based on hardware
+        if sm_version >= 100:
+            # GB200 supports MNNVL (Multi-Node NVLink)
+            preferred = "MnnvlMoe"
+        elif sm_version >= 90:
+            # H100/H200: Check DeepEP feasibility
+            # DeepEP requires: tp_size == 1, ep_size > 1, top_k in supported range
+            deepep_feasible = moe_ep_size > 1 and topk <= 8
 
-        if is_wideep:
-            if supports_mnnvl:
-                preferred = "NVLinkTwoSided"
+            if deepep_feasible and is_inter_node:
+                # Cross-node: use DeepEP normal mode
+                preferred = "DeepEP"
+            elif deepep_feasible:
+                # Intra-node: use DeepEP low-latency mode
+                preferred = "DeepEPLowLatency"
             else:
-                deepep_feasible = moe_ep_size > 1 and topk <= 8
-                if deepep_feasible and is_inter_node:
-                    preferred = "DeepEP"
-                elif deepep_feasible:
-                    preferred = "DeepEPLowLatency"
-                else:
-                    preferred = "NotEnabled"
+                preferred = "MnnvlMoe"
         else:
-            if supports_mnnvl:
-                preferred = "NVLinkOneSided"
-            else:
-                preferred = "NotEnabled"
+            # SM89 and below: use NCCL standard communication
+            preferred = "NCCL"
 
-        if preferred == "NotEnabled":
-            return preferred
-
-        if self._trtllm_alltoall_data:
-            available_kernels = list(self._trtllm_alltoall_data.keys())
+        # Check if preferred kernel is available in data, otherwise fallback
+        if self._wideep_alltoall_data:
+            available_kernels = list(self._wideep_alltoall_data.keys())
             if preferred in available_kernels:
                 return preferred
-            else:
-                logger.warning(
-                    f"Preferred All2All kernel '{preferred}' not in available kernels {available_kernels}. "
-                    f"Returning preferred anyway; downstream will fall back to HYBRID estimation."
-                )
+            elif available_kernels:
+                # Fallback to any available kernel
+                fallback = available_kernels[0]
+                logger.debug(f"Preferred All2All kernel '{preferred}' not available, falling back to '{fallback}'")
+                return fallback
 
         return preferred
 
@@ -2977,7 +2953,10 @@ class PerfDatabase:
                         x_left_value = data_dict[x_left][y][z]
                         x_right_value = data_dict[x_right][y][z]
                         assert x_right_value is not None, "x_right_value cannot be None"
-                        value = self._interp_1d([x_left, x_right], [x_left_value, x_right_value], x)
+                        if x_left == x_right:
+                            value = x_left_value
+                        else:
+                            value = self._interp_1d([x_left, x_right], [x_left_value, x_right_value], x)
                         if x not in data_dict:
                             data_dict[x] = {y: {z: value}}
                         elif y not in data_dict[x]:
@@ -2989,19 +2968,26 @@ class PerfDatabase:
         """
         Find the nearest 1d point
         """
-        assert values is not None and len(values) >= 2, "values is None or len(values) < 2"
+        if values is None or len(values) == 0:
+            raise ValueError("values is None or empty")
+        # Some perf tables may only provide a single support point for a dimension
+        # (e.g., only one head count). In that case, fall back to nearest behavior
+        # without interpolation.
+        if len(values) == 1:
+            v = values[0]
+            return v, v
         sorted_values = sorted(values)
 
         if x < sorted_values[0]:
             if inner_only:
                 raise ValueError(f"x is less than the smallest value in the list. {x=}, {sorted_values=}")
             else:
-                return sorted_values[0], sorted_values[1]
+                return sorted_values[0], sorted_values[0]
         elif x > sorted_values[-1]:
             if inner_only:
                 raise ValueError(f"x is greater than the largest value in the list. {x=}, {sorted_values=}")
             else:
-                return sorted_values[-2], sorted_values[-1]
+                return sorted_values[-1], sorted_values[-1]
 
         for i, value in enumerate(sorted_values):
             if x >= value and i != len(sorted_values) - 1:
@@ -3271,6 +3257,7 @@ class PerfDatabase:
         # Check if values are dicts (new format) or floats (legacy)
         if isinstance(y0, dict) and isinstance(y1, dict):
             # New format: interpolate latency and power separately
+            # FIXME: will this lose energy?
             lat0, lat1 = y0["latency"], y1["latency"]
             pow0, pow1 = y0["power"], y1["power"]
 
@@ -3757,12 +3744,84 @@ class PerfDatabase:
                 prefix_correction = (full_s * full_s - prefix * prefix) / (full_s * full_s)
                 # In self._context_attention_data, we use n_kv = 0 to mean n_kv == n.
                 n_kv_lookup = 0 if n == n_kv else n_kv
-                attention_dict = self._context_attention_data[fmha_quant_mode][kvcache_quant_mode][n_kv_lookup][
-                    head_size
-                ][window_size]
+                # NOTE: perf tables are loaded as nested defaultdicts, which can silently create
+                # empty sub-dicts on missing keys when using `[...]`. Prefer `.get()` to avoid
+                # masking missing perf coverage, and apply nearest fallback for some dimensions
+                # (e.g. head_size) to keep the search runnable for uncommon models.
+                root = self._context_attention_data
+                q_dict = root.get(fmha_quant_mode)
+                if not q_dict:
+                    supported = sorted([k.name for k in root.keys()])
+                    raise PerfDataNotAvailableError(
+                        "Context attention perf data not available for requested attention dtype. "
+                        f"system='{self.system}', backend='{self.backend}', version='{self.version}', "
+                        f"fmha_quant_mode='{fmha_quant_mode.name}'. Supported: {supported}"
+                    )
+                kv_dict = q_dict.get(kvcache_quant_mode)
+                if not kv_dict:
+                    supported = sorted([k.name for k in q_dict.keys()])
+                    raise PerfDataNotAvailableError(
+                        "Context attention perf data not available for requested kv cache dtype. "
+                        f"system='{self.system}', backend='{self.backend}', version='{self.version}', "
+                        f"kvcache_quant_mode='{kvcache_quant_mode.name}'. Supported: {supported}"
+                    )
+
+                # kv head count: try exact, else nearest (tables commonly only have a few points)
+                kvn_dict = kv_dict.get(n_kv_lookup)
+                if not kvn_dict:
+                    kvn_keys = sorted([int(x) for x in kv_dict.keys()]) if kv_dict else []
+                    if not kvn_keys:
+                        raise PerfDataNotAvailableError(
+                            "Context attention perf data is empty after kv cache dtype selection. "
+                            f"system='{self.system}', backend='{self.backend}', version='{self.version}', "
+                            f"fmha_quant_mode='{fmha_quant_mode.name}', kvcache_quant_mode='{kvcache_quant_mode.name}'"
+                        )
+                    kvn_left, kvn_right = self._nearest_1d_point_helper(int(n_kv_lookup), kvn_keys, inner_only=False)
+                    kvn_pick = kvn_left if abs(n_kv_lookup - kvn_left) <= abs(n_kv_lookup - kvn_right) else kvn_right
+                    kvn_dict = kv_dict.get(kvn_pick)
+
+                # head_size: try exact, else nearest then scale linearly with head_size
+                head_dict = kvn_dict.get(head_size) if kvn_dict else None
+                head_scale = 1.0
+                if not head_dict:
+                    head_keys = sorted([int(x) for x in kvn_dict.keys()]) if kvn_dict else []
+                    if not head_keys:
+                        raise PerfDataNotAvailableError(
+                            "Context attention perf data is empty after kv head selection. "
+                            f"system='{self.system}', backend='{self.backend}', version='{self.version}', "
+                            f"n_kv_lookup='{n_kv_lookup}'"
+                        )
+                    h_left, h_right = self._nearest_1d_point_helper(int(head_size), head_keys, inner_only=False)
+                    h_pick = h_left if abs(head_size - h_left) <= abs(head_size - h_right) else h_right
+                    head_dict = kvn_dict.get(h_pick)
+                    if h_pick > 0 and head_size > 0:
+                        head_scale = float(head_size) / float(h_pick)
+
+                # window_size: try exact, else nearest (typically only 0 is present)
+                win_dict = head_dict.get(window_size) if head_dict else None
+                if not win_dict:
+                    win_keys = sorted([int(x) for x in head_dict.keys()]) if head_dict else []
+                    if not win_keys:
+                        raise PerfDataNotAvailableError(
+                            "Context attention perf data is empty after head_size selection. "
+                            f"system='{self.system}', backend='{self.backend}', version='{self.version}'"
+                        )
+                    w_left, w_right = self._nearest_1d_point_helper(int(window_size), win_keys, inner_only=False)
+                    w_pick = w_left if abs(window_size - w_left) <= abs(window_size - w_right) else w_right
+                    win_dict = head_dict.get(w_pick)
+
+                attention_dict = win_dict
+                if not attention_dict:
+                    raise PerfDataNotAvailableError(
+                        "Context attention perf data lookup produced an empty table. "
+                        f"system='{self.system}', backend='{self.backend}', version='{self.version}', "
+                        f"b='{b}', s='{s}', prefix='{prefix}', n='{n}', n_kv='{n_kv}', "
+                        f"head_size='{head_size}', window_size='{window_size}', "
+                        f"kvcache_quant_mode='{kvcache_quant_mode.name}', fmha_quant_mode='{fmha_quant_mode.name}'"
+                    )
                 result = self._interp_3d(n, full_s, b, attention_dict, "cubic")
-                latency = result["latency"] * prefix_correction
-                energy = result.get("energy", 0.0) * prefix_correction
+                latency = result["latency"] * prefix_correction * head_scale
+                energy = result.get("energy", 0.0) * prefix_correction * head_scale
                 return PerformanceResult(latency, energy=energy)
 
             return self._query_silicon_or_hybrid(
@@ -3886,25 +3945,66 @@ class PerfDatabase:
                 # In self._generation_attention_data, we use n_kv = 0 to mean n_kv == n.
                 n_kv_lookup = n_kv if n_kv != n else 0
 
-                attention_dict = self._generation_attention_data[kvcache_quant_mode][n_kv_lookup][head_size][
-                    window_size
-                ]
-                # Decode batches often contain a mix of sequence lengths around the nominal KV length `s`.
-                # Using a single point (n,b,s) can be noisy/inaccurate, so average a small neighborhood.
-                s_min = max(1, int(s * 0.9))
-                s_max = max(s_min, int(s * 1.1))
-                sample_cnt = 5
-                s_samples = [s_min + (s_max - s_min) * i // (sample_cnt - 1) for i in range(sample_cnt)]
+                root = self._generation_attention_data
+                kv_dict = root.get(kvcache_quant_mode)
+                if not kv_dict:
+                    supported = sorted([k.name for k in root.keys()])
+                    raise PerfDataNotAvailableError(
+                        "Generation attention perf data not available for requested kv cache dtype. "
+                        f"system='{self.system}', backend='{self.backend}', version='{self.version}', "
+                        f"kvcache_quant_mode='{kvcache_quant_mode.name}'. Supported: {supported}"
+                    )
 
-                latency_sum = 0.0
-                energy_sum = 0.0
-                for s_i in s_samples:
-                    r = self._interp_3d(n, b, s_i, attention_dict, "bilinear")
-                    latency_sum += float(r["latency"])
-                    energy_sum += float(r.get("energy", 0.0))
+                kvn_dict = kv_dict.get(n_kv_lookup)
+                if not kvn_dict:
+                    kvn_keys = sorted([int(x) for x in kv_dict.keys()]) if kv_dict else []
+                    if not kvn_keys:
+                        raise PerfDataNotAvailableError(
+                            "Generation attention perf data is empty after kv cache dtype selection. "
+                            f"system='{self.system}', backend='{self.backend}', version='{self.version}'"
+                        )
+                    kvn_left, kvn_right = self._nearest_1d_point_helper(int(n_kv_lookup), kvn_keys, inner_only=False)
+                    kvn_pick = kvn_left if abs(n_kv_lookup - kvn_left) <= abs(n_kv_lookup - kvn_right) else kvn_right
+                    kvn_dict = kv_dict.get(kvn_pick)
 
-                latency = latency_sum / sample_cnt
-                energy = energy_sum / sample_cnt
+                head_dict = kvn_dict.get(head_size) if kvn_dict else None
+                head_scale = 1.0
+                if not head_dict:
+                    head_keys = sorted([int(x) for x in kvn_dict.keys()]) if kvn_dict else []
+                    if not head_keys:
+                        raise PerfDataNotAvailableError(
+                            "Generation attention perf data is empty after kv head selection. "
+                            f"system='{self.system}', backend='{self.backend}', version='{self.version}'"
+                        )
+                    h_left, h_right = self._nearest_1d_point_helper(int(head_size), head_keys, inner_only=False)
+                    h_pick = h_left if abs(head_size - h_left) <= abs(head_size - h_right) else h_right
+                    head_dict = kvn_dict.get(h_pick)
+                    if h_pick > 0 and head_size > 0:
+                        head_scale = float(head_size) / float(h_pick)
+
+                win_dict = head_dict.get(window_size) if head_dict else None
+                if not win_dict:
+                    win_keys = sorted([int(x) for x in head_dict.keys()]) if head_dict else []
+                    if not win_keys:
+                        raise PerfDataNotAvailableError(
+                            "Generation attention perf data is empty after head_size selection. "
+                            f"system='{self.system}', backend='{self.backend}', version='{self.version}'"
+                        )
+                    w_left, w_right = self._nearest_1d_point_helper(int(window_size), win_keys, inner_only=False)
+                    w_pick = w_left if abs(window_size - w_left) <= abs(window_size - w_right) else w_right
+                    win_dict = head_dict.get(w_pick)
+
+                attention_dict = win_dict
+                if not attention_dict:
+                    raise PerfDataNotAvailableError(
+                        "Generation attention perf data lookup produced an empty table. "
+                        f"system='{self.system}', backend='{self.backend}', version='{self.version}', "
+                        f"b='{b}', s='{s}', n='{n}', n_kv='{n_kv}', head_size='{head_size}', window_size='{window_size}', "
+                        f"kvcache_quant_mode='{kvcache_quant_mode.name}'"
+                    )
+                result = self._interp_3d(n, b, s, attention_dict, "bilinear")
+                latency = result["latency"] * head_scale
+                energy = result.get("energy", 0.0) * head_scale
                 return PerformanceResult(latency, energy=energy)
 
             return self._query_silicon_or_hybrid(
@@ -5506,7 +5606,7 @@ class PerfDatabase:
             sol_time = max(sol_math, sol_mem)
             return sol_time, sol_math, sol_mem
 
-        def get_empirical_from_sol(
+        def get_empirical(
             num_tokens: int,
             hidden_size: int,
             inter_size: int,
@@ -5518,7 +5618,9 @@ class PerfDatabase:
             quant_mode: common.MoEQuantMode,
             workload_distribution: str,
         ) -> float:
-            """Get the empirical estimation: SOL / scale_factor."""
+            """
+            Get the empirical estimation: SOL / scale_factor.
+            """
             latency = get_sol(
                 num_tokens,
                 hidden_size,
@@ -5565,7 +5667,7 @@ class PerfDatabase:
                 workload_distribution,
             )
         elif database_mode == common.DatabaseMode.EMPIRICAL:
-            emp_latency = get_empirical_from_sol(
+            emp_latency = get_empirical(
                 num_tokens,
                 hidden_size,
                 inter_size,
@@ -5578,7 +5680,6 @@ class PerfDatabase:
                 workload_distribution,
             )
             return PerformanceResult(emp_latency, energy=0.0)
-
         # Automatically select MoE kernel based on GPU architecture and quant mode
         kernel_source = self._select_moe_kernel(quant_mode)
         logger.debug(f"query_wideep_moe_compute: auto-selected kernel_source='{kernel_source}'")
@@ -5592,7 +5693,6 @@ class PerfDatabase:
             if workload_distribution in available_distributions:
                 used_distribution = workload_distribution
             else:
-                # Fallback: try to find a similar distribution or use the first available
                 used_distribution = available_distributions[0] if available_distributions else None
                 if used_distribution is None:
                     raise KeyError(f"No distribution available for kernel={kernel_source}, quant_mode={quant_mode}")
@@ -5640,21 +5740,8 @@ class PerfDatabase:
             ),
         )
 
-    @staticmethod
-    def _normalize_alltoall_moe_quant_mode_for_table(
-        quant_mode: common.MoEQuantMode,
-    ) -> common.MoEQuantMode:
-        """
-        Normalize MoE quant modes for TRT-LLM alltoall perf table lookup.
-
-        `fp8_block` is a behavioral mode that reuses the `fp8` alltoall tables.
-        """
-        if quant_mode == common.MoEQuantMode.fp8_block:
-            return common.MoEQuantMode.fp8
-        return quant_mode
-
     @functools.lru_cache(maxsize=32768)
-    def query_trtllm_alltoall(
+    def query_wideep_alltoall(
         self,
         op_name: str,
         num_tokens: int,
@@ -5665,14 +5752,15 @@ class PerfDatabase:
         quant_mode: common.MoEQuantMode,
         node_num: int | None = None,
         database_mode: common.DatabaseMode | None = None,
-        moe_backend: str | None = None,
     ) -> PerformanceResult | tuple[float, float, float]:
         """
-        Query TRT-LLM All2All communication latency.
+        Query WideEP All2All communication latency.
 
-        Covers both WideEP (NVLinkTwoSided) and CutlassFusedMoE (NVLinkOneSided) paths.
-        The All2All communication method is automatically selected based on GPU architecture
-        and MoE backend type via _select_alltoall_kernel.
+        The All2All communication method is automatically selected based on GPU architecture:
+        - SM >= 100 (GB200 with MNNVL) -> MnnvlMoe (NVLink Two-Sided)
+        - SM >= 90 (H100/H200) cross-node -> DeepEP
+        - SM >= 90 (H100/H200) intra-node -> DeepEPLowLatency
+        - SM < 90 -> NCCL (fallback)
 
         Args:
             op_name: Operation name, one of:
@@ -5684,26 +5772,18 @@ class PerfDatabase:
             hidden_size: Hidden dimension size
             topk: Number of experts activated per token
             num_experts: Total number of experts
-            moe_ep_size: MoE expert parallelism size
+            moe_ep_size: MoE expert parallelism size (must be divisible by 4 if node_num is None)
             quant_mode: MoE quantization mode
-            moe_backend: MoE backend identifier for kernel selection.
-                "wideep" -> NVLinkTwoSided;
-                "CUTLASS"/"TRTLLM"/None -> NVLinkOneSided;
-                "DEEPGEMM"/"CUTE_DSL" -> NotEnabled.
-            node_num: Number of nodes. If None, computed as moe_ep_size // 4
-            database_mode: Database mode
+            node_num: Number of nodes. If None, computed as moe_ep_size // 4 (assuming 4 GPUs per node)
+            database_mode: Database mode (SILICON, EMPIRICAL, SOL, HYBRID)
 
         Returns:
             PerformanceResult: Latency in ms, energy accessible via .energy attribute.
+            For SOL_FULL mode: tuple of (sol_time, sol_comm, sol_overhead).
 
         Raises:
             ValueError: If op_name is not valid
-            PerfDataNotAvailableError: If backend version not in ["1.2.0rc6"]
         """
-        if self.version not in ["1.2.0rc6"]:
-            raise PerfDataNotAvailableError(
-                f"TRT-LLM alltoall query requires backend version 1.2.0rc6, got '{self.version}'"
-            )
 
         def get_sol(
             num_tokens: int,
@@ -5718,12 +5798,12 @@ class PerfDatabase:
             Get the SOL time for All2All communication.
 
             All2All transfers token data between GPUs:
-            - prepare: lightweight metadata exchange (topk * 4 bytes per token)
-            - dispatch: each token sent once per unique remote rank (deduplication).
-              remote_ranks = min(topk, num_experts, ep_size - 1), bytes use quant_mode precision.
-            - combine: standard returns results in bfloat16 (2 B/elem);
-              low-precision variant returns results in fp4 (0.5 B/elem).
-              remote_ranks = min(topk, num_experts, ep_size - 1).
+            - dispatch: each GPU sends (num_tokens * topk / ep_size) tokens to other GPUs
+            - combine: reverse direction
+            - prepare: lightweight metadata exchange
+
+            The total data transferred per GPU is proportional to
+            num_tokens * topk * hidden_size * (1 - 1/ep_size), since each GPU keeps 1/ep_size locally.
             """
             is_inter_node = node_num > 1
 
@@ -5732,22 +5812,26 @@ class PerfDatabase:
             else:
                 bw = self.system_spec["node"]["intra_node_bw"]
 
-            remote_ranks = min(topk, num_experts, moe_ep_size - 1)
-
             if op_name == "alltoall_prepare":
+                # Prepare is lightweight metadata exchange, data volume is small
                 data_bytes = num_tokens * topk * 4  # token routing indices, ~4 bytes per entry
-            elif "combine" in op_name:
-                bytes_per_element = 0.5 if "low_precision" in op_name else 2
-                data_bytes = num_tokens * remote_ranks * hidden_size * bytes_per_element
             else:
-                # dispatch: per-rank deduplication, use quant_mode precision
-                data_bytes = num_tokens * remote_ranks * hidden_size * quant_mode.value.memory
+                # dispatch/combine: transfer token activations
+                data_bytes = (
+                    num_tokens
+                    * topk
+                    * hidden_size
+                    * quant_mode.value.memory
+                    * (1.0 - 1.0 / moe_ep_size)  # fraction sent to remote GPUs
+                )
 
             sol_comm = data_bytes / bw * 1000  # ms
-            sol_time = sol_comm
-            return sol_time, sol_comm, 0.0
+            p2p_latency_ms = self.system_spec["node"]["p2p_latency"] * 1000
+            sol_overhead = p2p_latency_ms
+            sol_time = sol_comm + sol_overhead
+            return sol_time, sol_comm, sol_overhead
 
-        def get_empirical_from_sol(
+        def get_empirical(
             num_tokens: int,
             hidden_size: int,
             topk: int,
@@ -5756,7 +5840,9 @@ class PerfDatabase:
             quant_mode: common.MoEQuantMode,
             node_num: int,
         ) -> float:
-            """Get the empirical estimation: SOL / scale_factor."""
+            """
+            Get the empirical estimation: SOL / scale_factor.
+            """
             latency = get_sol(
                 num_tokens,
                 hidden_size,
@@ -5772,15 +5858,13 @@ class PerfDatabase:
         if database_mode is None:
             database_mode = self._default_database_mode
 
-        table_quant_mode = self._normalize_alltoall_moe_quant_mode_for_table(quant_mode)
-
         # Compute node_num if not provided
         if node_num is None:
             if moe_ep_size < 4:
                 node_num = 1
             else:
                 node_num = moe_ep_size // 4
-            logger.debug(f"query_trtllm_alltoall: node_num not specified, using {node_num} (moe_ep_size={moe_ep_size})")
+            logger.debug(f"query_wideep_alltoall: node_num not specified, using {node_num} (moe_ep_size={moe_ep_size})")
 
         valid_op_names = ["alltoall_prepare", "alltoall_dispatch", "alltoall_combine", "alltoall_combine_low_precision"]
         if op_name not in valid_op_names:
@@ -5808,7 +5892,7 @@ class PerfDatabase:
                 node_num,
             )
         elif database_mode == common.DatabaseMode.EMPIRICAL:
-            emp_latency = get_empirical_from_sol(
+            emp_latency = get_empirical(
                 num_tokens,
                 hidden_size,
                 topk,
@@ -5818,24 +5902,15 @@ class PerfDatabase:
                 node_num,
             )
             return PerformanceResult(emp_latency, energy=0.0)
-
-        kernel_source = self._select_alltoall_kernel(quant_mode, moe_ep_size, topk, moe_backend=moe_backend)
-        logger.debug(
-            f"query_trtllm_alltoall: auto-selected kernel_source='{kernel_source}' (moe_backend={moe_backend})"
-        )
-
-        if kernel_source == "NotEnabled":
-            if database_mode == common.DatabaseMode.SOL_FULL:
-                return (0.0, 0.0, 0.0)
-            return PerformanceResult(0.0, energy=0.0)
+        # Automatically select All2All kernel based on GPU architecture
+        kernel_source = self._select_alltoall_kernel(quant_mode, moe_ep_size, topk)
+        logger.debug(f"query_wideep_alltoall: auto-selected kernel_source='{kernel_source}'")
 
         # SILICON or HYBRID mode - use database
         def get_silicon():
-            self._trtllm_alltoall_data.raise_if_not_loaded()
-            kernel_data = self._trtllm_alltoall_data[kernel_source]
-            alltoall_dict = kernel_data[op_name][table_quant_mode][node_num][hidden_size][topk][num_experts][
-                moe_ep_size
-            ]
+            self._wideep_alltoall_data.raise_if_not_loaded()
+            kernel_data = self._wideep_alltoall_data[kernel_source]
+            alltoall_dict = kernel_data[op_name][quant_mode][node_num][hidden_size][topk][num_experts][moe_ep_size]
 
             num_left, num_right = self._nearest_1d_point_helper(
                 num_tokens,
@@ -5858,24 +5933,17 @@ class PerfDatabase:
             return PerformanceResult(lat, energy=energy)
 
         def get_empirical() -> float:
-            return get_empirical_from_sol(
-                num_tokens,
-                hidden_size,
-                topk,
-                num_experts,
-                moe_ep_size,
-                quant_mode,
-                node_num,
-            )
+            # Simple empirical fallback: ~0.1ms per operation as baseline
+            return 0.1
 
         return self._query_silicon_or_hybrid(
             get_silicon=get_silicon,
             get_empirical=get_empirical,
             database_mode=database_mode,
             error_msg=(
-                f"Failed to query trtllm alltoall data for {op_name} (kernel={kernel_source}), "
-                f"moe_backend={moe_backend}, node_num={node_num}, {num_tokens=}, {hidden_size=}, "
-                f"{topk=}, {num_experts=}, {moe_ep_size=}, {quant_mode=}"
+                f"Failed to query wideep alltoall data for {op_name} (kernel={kernel_source}), "
+                f"node_num={node_num}, {num_tokens=}, {hidden_size=}, {topk=}, {num_experts=}, "
+                f"{moe_ep_size=}, {quant_mode=}"
             ),
         )
 

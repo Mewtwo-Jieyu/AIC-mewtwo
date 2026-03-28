@@ -1,0 +1,4 @@
+experiment,tokens_per_sec,tokens_per_sec_per_gpu,tokens_per_sec_per_user,seq_per_sec,seq_per_sec_per_gpu,num_total_gpus,ttft_ms,tpot_ms,request_latency_ms,isl,osl,gpu_type,p_gpu_type,d_gpu_type,tokens_per_10k_rmb,prefill_tp,prefill_pp,prefill_workers,prefill_batch_size,decode_tp,decode_pp,decode_workers,decode_batch_size,replicas,p_gpus_worker,d_gpus_worker,exp_key
+exp_sla_2000_80,9858.816,308.088,20.294,19.256,0.602,32,925.61,49.275,26105.135,2048,512,"p:l40s,d:a100_sxm",l40s,a100_sxm,857.288347826087,2,1,11,1,2,1,5,108,1.0,2,2,l40s_disagg_a100_sxm_d_l40s_p_medium
+exp_sla_1000_50,9858.816,308.088,20.294,19.256,0.602,32,925.61,49.275,26105.135,2048,512,"p:l40s,d:a100_sxm",l40s,a100_sxm,857.288347826087,2,1,11,1,2,1,5,108,1.0,2,2,l40s_disagg_a100_sxm_d_l40s_p_medium
+exp_sla_1500_60,9858.816,308.088,20.294,19.256,0.602,32,925.61,49.275,26105.135,2048,512,"p:l40s,d:a100_sxm",l40s,a100_sxm,857.288347826087,2,1,11,1,2,1,5,108,1.0,2,2,l40s_disagg_a100_sxm_d_l40s_p_medium

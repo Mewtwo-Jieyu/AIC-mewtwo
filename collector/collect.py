@@ -36,13 +36,6 @@ def setup_warning_filters():
         category=UserWarning,
     )
 
-    # Suppress pynvml deprecation warning from torch.cuda
-    warnings.filterwarnings(
-        "ignore",
-        message="The pynvml package is deprecated",
-        category=FutureWarning,
-    )
-
 
 import random
 import resource
@@ -51,7 +44,6 @@ import torch
 from tqdm import tqdm
 
 setup_warning_filters()
-
 import argparse
 import cProfile
 import io
@@ -427,7 +419,6 @@ def parallel_run(tasks, func, num_processes, module_name="unknown", resume_optio
     error_queue = mp.Queue()
     result_queue = mp.Queue()
     processes = []
-
     manager = mp.Manager()
     progress_value = manager.Value("i", 0)
     lock = manager.Lock()
@@ -566,21 +557,8 @@ def parallel_run(tasks, func, num_processes, module_name="unknown", resume_optio
             # Stall detection unchanged...
             if progress_value.value == last_progress:
                 stall_count += 1
-                if stall_count > 240:
+                if stall_count > 30:
                     logger.warning(f"Progress stalled at {progress_value.value}/{len(task_infos)}")
-                    # If all workers are dead and tasks remain unaccounted,
-                    # those tasks were lost to fatal crashes (SIGABRT, etc.)
-                    # and will never complete.  The 120-second threshold
-                    # (240 x 0.5s) far exceeds the worst-case single-task
-                    # time so false positives are not a concern.
-                    all_dead = all(not p.is_alive() for p in processes)
-                    unaccounted = len(task_infos) - progress_value.value
-                    if all_dead and unaccounted > 0:
-                        logger.warning(
-                            f"All workers dead, {unaccounted} tasks unaccounted "
-                            f"(lost to fatal worker crashes). Stopping monitoring loop."
-                        )
-                        break
             else:
                 stall_count = 0
                 last_progress = progress_value.value
@@ -632,7 +610,7 @@ def parallel_run(tasks, func, num_processes, module_name="unknown", resume_optio
                 pbar.update(current - pbar.n)
 
             resume_tracker.flush()
-            time.sleep(0.5)
+            time.sleep(2)
         drain_done_events()
 
     # Collect remaining errors
@@ -980,16 +958,6 @@ def main():
         help="Shuffle test cases before applying --limit (uses seed 42 for reproducibility)",
     )
     parser.add_argument(
-        "--model-path",
-        type=str,
-        default=None,
-        help="Filter collection to a single model (e.g. 'MiniMaxAI/MiniMax-M2.5'). "
-        "Must match a model name in the test case config lists exactly. "
-        "Best used together with --ops to target a specific op, since a model "
-        "may only appear in one op's config list (e.g. MoE but not MLA). "
-        "Default: collect all models.",
-    )
-    parser.add_argument(
         "--profile",
         action="store_true",
         help="Profile the collector run and save output ",
@@ -997,27 +965,12 @@ def main():
     args = parser.parse_args()
     ops = args.ops
 
-    if args.model_path:
-        from collector.common_test_cases import get_all_model_names
-
-        all_models = get_all_model_names()
-        if args.model_path not in all_models:
-            parser.error(
-                f"Model '{args.model_path}' not found. Available models:\n" + "\n".join(f"  - {m}" for m in all_models)
-            )
-        os.environ["COLLECTOR_MODEL_PATH"] = args.model_path
-    else:
-        os.environ.pop("COLLECTOR_MODEL_PATH", None)
-
     # Setup logging - debug flag is handled inside setup_logging
     if logger is None:
         logger = setup_logging(scope=args.ops if ops else ["all"], debug=args.debug)
     elif args.debug:
         # Update log level if debug flag changed
         setup_logging(debug=args.debug)
-
-    if args.model_path:
-        logger.info(f"Model filter active: collecting only for '{args.model_path}'")
 
     num_processes = get_device_module().device_count()
     logger.info(f"Starting collection with {num_processes} GPU processes")

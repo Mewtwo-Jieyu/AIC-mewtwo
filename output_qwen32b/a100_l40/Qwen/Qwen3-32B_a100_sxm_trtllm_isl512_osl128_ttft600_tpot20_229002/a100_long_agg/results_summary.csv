@@ -1,0 +1,2 @@
+experiment,tokens_per_sec,tokens_per_sec_per_gpu,tokens_per_sec_per_user,seq_per_sec,seq_per_sec_per_gpu,num_total_gpus,ttft_ms,tpot_ms,request_latency_ms,isl,osl,gpu_type,tokens_per_10k_rmb,tp,pp,batch_size,exp_key
+a100_long_agg,1444.276,180.535,53.315,1.446,0.181,8,722.886,18.756,19460.604,4000,1000,a100,412.65142857142854,8,1,28,a100_agg_short
