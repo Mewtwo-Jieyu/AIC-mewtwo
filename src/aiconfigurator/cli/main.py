@@ -146,24 +146,10 @@ def _add_default_mode_arguments(parser):
     )
     parser.add_argument("--prefix", type=int, default=0, help="Prefix cache length. Default to 0.")
     parser.add_argument(
-        "--nextn",
-        type=int,
-        default=0,
-        help="Number of draft tokens for MTP (Multi-Token Prediction) speculative decoding. Default is 0 (disabled).",
-    )
-    parser.add_argument(
-        "--nextn-accept-rates",
-        type=str,
-        default="0.85,0.3,0,0,0",
-        help="Acceptance rates for MTP draft tokens. Comma-separated list of 5 floats. "
-        "Default is '0.85,0.3,0,0,0' meaning 1st token has 85%% acceptance, 2nd has 30%%, rest are 0.",
-    )
-    parser.add_argument(
-        "--enable-chunked-prefill",
+        "--enable-wideep",
         action="store_true",
         default=False,
-        help="Enable chunked prefill for finer-grained context token sweep during optimization. "
-        "When off (default), context token stride is aligned to ISL for faster sweeping.",
+        help="Enable wide expert-parallelism search space (effective for DeepSeek models with trtllm/sglang backends).",
     )
 
 
@@ -420,7 +406,7 @@ def _add_support_mode_arguments(parser):
 
 _USAGE_EXAMPLES = """
 Examples:
-# Sweep across all backends for Dynamo 1.0.0
+# Sweep across all backends for Dynamo 0.7.1
 aiconfigurator cli default --model Qwen/Qwen3-32B-FP8 \\
     --backend auto \\
     --top-n 3 \\
@@ -596,9 +582,7 @@ def build_default_task_configs(
     tpot: float = 30.0,
     request_latency: float | None = None,
     prefix: int = 0,
-    nextn: int = 0,
-    nextn_accept_rates: list[float] | None = None,
-    enable_chunked_prefill: bool = False,
+    enable_wideep: bool = False,
 ) -> dict[str, TaskConfig]:
     """Build agg and disagg task configs for default mode comparison.
 
@@ -617,62 +601,21 @@ def build_default_task_configs(
         tpot: Time per output token target in ms.
         request_latency: Optional end-to-end request latency target (ms).
         prefix: Prefix cache length.
-        nextn: Number of draft tokens for MTP speculative decoding.
-        nextn_accept_rates: Acceptance rates for MTP draft tokens.
-        enable_chunked_prefill: Whether to enable chunked prefill for finer context token sweep.
+        enable_wideep: Enable wide expert-parallelism search space.
 
     Returns:
         Dict with TaskConfig objects. When backend='auto', returns 6 configs
         (agg_trtllm, agg_vllm, agg_sglang, disagg_trtllm, disagg_vllm, disagg_sglang).
         Otherwise returns 2 configs ('agg' and 'disagg').
     """
-    nextn_accept_rates = nextn_accept_rates or [0.85, 0.3, 0.0, 0.0, 0.0]
     decode_system = decode_system or system
     # Expand "auto" backend to all available backends
     backends_to_sweep = [b.value for b in common.BackendName] if backend == "auto" else [backend]
 
-    if backend == "auto":
-        supported = perf_database.get_supported_databases()
-        available = []
-        for backend_name in backends_to_sweep:
-            sys_backends = supported.get(system, {})
-            decode_backends = supported.get(decode_system, {}) if decode_system != system else sys_backends
-            if backend_name not in sys_backends:
-                logger.warning("Skipping backend %s: not supported for system %s.", backend_name, system)
-                continue
-            if decode_system != system and backend_name not in decode_backends:
-                logger.warning("Skipping backend %s: not supported for decode system %s.", backend_name, decode_system)
-                continue
-            if backend_version is not None:
-                if backend_version not in sys_backends.get(backend_name, []):
-                    logger.warning(
-                        "Skipping backend %s: version %s not available for system %s.",
-                        backend_name,
-                        backend_version,
-                        system,
-                    )
-                    continue
-                if decode_system != system and backend_version not in decode_backends.get(backend_name, []):
-                    logger.warning(
-                        "Skipping backend %s: version %s not available for decode system %s.",
-                        backend_name,
-                        backend_version,
-                        decode_system,
-                    )
-                    continue
-            available.append(backend_name)
-        if not available:
-            logger.error(
-                "No backends available for system %s. Supported backends: %s",
-                system,
-                ", ".join(sorted(supported.get(system, {}).keys())),
-            )
-            raise SystemExit(1)
-        backends_to_sweep = available
-    else:
-        _ensure_backend_version_available(system, backend, backend_version)
+    for backend_name in backends_to_sweep:
+        _ensure_backend_version_available(system, backend_name, backend_version)
         if decode_system != system:
-            _ensure_backend_version_available(decode_system, backend, backend_version)
+            _ensure_backend_version_available(decode_system, backend_name, backend_version)
 
     common_kwargs: dict[str, Any] = {
         "model_path": model_path,
@@ -686,18 +629,8 @@ def build_default_task_configs(
         "request_latency": request_latency,
         "prefix": prefix,
         "database_mode": database_mode,
-        "enable_chunked_prefill": enable_chunked_prefill,
+        "enable_wideep": enable_wideep,
     }
-
-    # Create yaml_config to pass nextn and nextn_accept_rates if specified
-    yaml_config = None
-    if nextn > 0:
-        yaml_config = {
-            "config": {
-                "nextn": nextn,
-                "nextn_accept_rates": nextn_accept_rates,
-            }
-        }
 
     task_configs: dict[str, TaskConfig] = {}
 
@@ -705,8 +638,6 @@ def build_default_task_configs(
         # Create agg task for this backend
         agg_kwargs = dict(common_kwargs)
         agg_kwargs["backend_name"] = backend_name
-        if yaml_config:
-            agg_kwargs["yaml_config"] = yaml_config
         agg_task = TaskConfig(serving_mode="agg", **agg_kwargs)
         exp_name = f"agg_{backend_name}" if backend == "auto" else "agg"
         task_configs[exp_name] = agg_task
@@ -719,8 +650,6 @@ def build_default_task_configs(
         disagg_kwargs = dict(common_kwargs)
         disagg_kwargs["backend_name"] = backend_name
         disagg_kwargs["decode_system_name"] = decode_system
-        if yaml_config:
-            disagg_kwargs["yaml_config"] = yaml_config
         disagg_task = TaskConfig(serving_mode="disagg", **disagg_kwargs)
         exp_name = f"disagg_{backend_name}" if backend == "auto" else "disagg"
         task_configs[exp_name] = disagg_task
@@ -743,7 +672,6 @@ _EXPERIMENT_RESERVED_KEYS = {
     "tpot",
     "request_latency",
     "enable_wideep",
-    "enable_eplb",
     "total_gpus",
     "database_mode",
 }
@@ -877,10 +805,6 @@ def build_experiment_task_configs(
 
         if "enable_wideep" in exp_config:
             task_kwargs["enable_wideep"] = exp_config["enable_wideep"]
-        if "enable_eplb" in exp_config:
-            task_kwargs["enable_eplb"] = exp_config["enable_eplb"]
-        if "enable_chunked_prefill" in exp_config:
-            task_kwargs["enable_chunked_prefill"] = exp_config["enable_chunked_prefill"]
         if "database_mode" in exp_config:
             task_kwargs["database_mode"] = exp_config["database_mode"]
 
@@ -937,10 +861,8 @@ def _execute_task_configs(
     for exp_name, task_config in task_configs.items():
         try:
             logger.info("Starting experiment: %s", exp_name)
-            logger.debug("Task config: \n%s", task_config.to_yaml())
+            logger.debug("Task config: \n%s", task_config.pretty())
             task_result = runner.run(task_config)
-            if task_result is None:
-                raise RuntimeError(f"Task runner returned no result for {exp_name}")
             pareto_df = task_result["pareto_df"]
             if pareto_df is not None and not pareto_df.empty:
                 results[exp_name] = task_result
@@ -1369,20 +1291,7 @@ def _run_estimate_mode(args):
     print("-" * 60)
     print(f"  TTFT:             {result.ttft:.3f} ms")
     print(f"  TPOT:             {result.tpot:.3f} ms")
-    print(f"  Request Latency:  {result.request_latency:.3f} ms")
     print(f"  Power (per GPU):  {result.power_w:.1f} W")
-    print("-" * 60)
-    print(f"  tokens/s:         {result.tokens_per_second:,.2f}")
-    print(f"  tokens/s/gpu:     {result.tokens_per_second_per_gpu:,.2f}")
-    print(f"  tokens/s/user:    {result.tokens_per_second_per_user:,.2f}")
-    print(f"  seq/s:            {result.seq_per_second:,.3f}")
-    print(f"  Concurrency:      {result.concurrency:.0f}")
-    if result.mode == "agg":
-        print(f"  Memory (GPU):     {result.memory:.2f} GB")
-    else:
-        raw = result.raw
-        print(f"  (p) Memory:       {raw.get('(p)memory', 'N/A')} GB")
-        print(f"  (d) Memory:       {raw.get('(d)memory', 'N/A')} GB")
     print("=" * 60)
 
     if args.print_per_ops_latency and result.per_ops_data:
@@ -1432,9 +1341,7 @@ def main(args):
             tpot=args.tpot,
             request_latency=args.request_latency,
             prefix=args.prefix,
-            nextn=args.nextn,
-            nextn_accept_rates=[float(x) for x in args.nextn_accept_rates.split(",")],
-            enable_chunked_prefill=args.enable_chunked_prefill,
+            enable_wideep=args.enable_wideep,
         )
     elif args.mode == "exp":
         try:

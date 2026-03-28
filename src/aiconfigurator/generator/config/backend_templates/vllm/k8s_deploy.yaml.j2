@@ -13,16 +13,10 @@
     {%- set parsed_args = cli_args_list | default([]) -%}
 {{ "    " ~ component_name ~ ":" }}
       envFromSecret: hf-token-secret
-      {% if K8sConfig.k8s_hf_home or K8sConfig.k8s_etcd_endpoints %}
+      {% if K8sConfig.k8s_hf_home %}
       envs:
-        {% if K8sConfig.k8s_etcd_endpoints %}
-        - name: ETCD_ENDPOINTS
-          value: {{ K8sConfig.k8s_etcd_endpoints }}
-        {% endif %}
-        {% if K8sConfig.k8s_hf_home %}
         - name: HF_HOME
           value: {{ K8sConfig.k8s_hf_home }}
-        {% endif %}
       {% endif %}
       componentType: worker
       {% if role %}
@@ -64,12 +58,8 @@
             {% endfor %}
             {% if role == 'prefill' %}
             - --is-prefill-worker
-            - --kv-transfer-config
-            - '{"kv_connector":"NixlConnector","kv_role":"kv_both"}'
             {% elif role == 'decode' %}
             - --is-decode-worker
-            - --kv-transfer-config
-            - '{"kv_connector":"NixlConnector","kv_role":"kv_both"}'
             {% endif %}
 {%- endmacro %}
 
@@ -82,16 +72,10 @@ spec:
   services:
     Frontend:
       envFromSecret: hf-token-secret
-      {% if K8sConfig.k8s_hf_home or K8sConfig.k8s_etcd_endpoints %}
+      {% if K8sConfig.k8s_hf_home %}
       envs:
-        {% if K8sConfig.k8s_etcd_endpoints %}
-        - name: ETCD_ENDPOINTS
-          value: {{ K8sConfig.k8s_etcd_endpoints }}
-        {% endif %}
-        {% if K8sConfig.k8s_hf_home %}
         - name: HF_HOME
           value: {{ K8sConfig.k8s_hf_home }}
-        {% endif %}
       {% endif %}
       componentType: frontend
       replicas: {{ frontend_replicas | default(1) }}
@@ -106,8 +90,8 @@ spec:
 
     {% if DynConfig.mode | default('disagg') == 'agg' %}
 {{ render_worker(
-    "VllmWorker",
-    None,
+    "VllmDecodeWorker",
+    "decode",
     agg_workers,
     agg_gpu,
     agg_cli_args_list | default([])

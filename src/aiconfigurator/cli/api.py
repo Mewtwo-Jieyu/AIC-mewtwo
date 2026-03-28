@@ -23,12 +23,7 @@ from aiconfigurator.cli.main import (
     build_experiment_task_configs,
 )
 from aiconfigurator.cli.report_and_save import save_results
-from aiconfigurator.sdk.models import check_is_moe
-from aiconfigurator.sdk.task import (
-    DEFAULT_DECODE_LATENCY_CORRECTION_SCALE,
-    DEFAULT_PREFILL_LATENCY_CORRECTION_SCALE,
-    TaskConfig,
-)
+from aiconfigurator.sdk.task import TaskConfig
 
 
 def cli_support(
@@ -142,9 +137,6 @@ def cli_default(
     prefix: int = 0,
     top_n: int = 5,
     save_dir: str | None = None,
-    generator_set: list[str] | None = None,
-    generator_config: str | None = None,
-    generator_dynamo_version: str | None = None,
 ) -> CLIResult:
     """
     Run the default CLI mode: compare aggregated vs disaggregated serving.
@@ -171,11 +163,6 @@ def cli_default(
         prefix: Prefix cache length. Default is 0.
         top_n: Number of top configurations to return for each mode (agg/disagg). Default is 5.
         save_dir: Directory to save results. If None, results are not saved to disk.
-        generator_set: List of inline generator overrides in KEY=VALUE format (e.g.,
-            ``["rule=benchmark", "ServiceConfig.model_path=Qwen/Qwen3-32B-FP8"]``).
-            Equivalent to repeating ``--generator-set`` on the CLI.
-        generator_config: Path to a unified generator YAML config file.
-        generator_dynamo_version: Override Dynamo version used by the generator.
 
     Returns:
         CLIResult with chosen experiment, best configs, pareto fronts, and throughputs.
@@ -190,15 +177,6 @@ def cli_default(
         ... )
         >>> print(result.chosen_exp)  # 'agg' or 'disagg'
         >>> print(result.best_throughputs)
-
-        >>> # Use benchmark rule plugin for generator
-        >>> result = cli_default(
-        ...     model_path="Qwen/Qwen3-32B-FP8",
-        ...     total_gpus=8,
-        ...     system="h200_sxm",
-        ...     save_dir="./results",
-        ...     generator_set=["rule=benchmark"],
-        ... )
 
         >>> # Compare all backends
         >>> result = cli_default(
@@ -250,9 +228,6 @@ def cli_default(
         mock_args.request_latency = request_latency
         mock_args.top_n = top_n
         mock_args.generated_config_version = None
-        mock_args.generator_set = generator_set
-        mock_args.generator_config = generator_config
-        mock_args.generator_dynamo_version = generator_dynamo_version
 
         save_results(
             args=mock_args,
@@ -429,68 +404,6 @@ class EstimateResult:
     per_ops_data: dict | None = None
     """Per-operation latency breakdown (populated when available)."""
 
-    @property
-    def request_latency(self) -> float:
-        """End-to-end request latency (ms)."""
-        return self.raw.get("request_latency", 0.0)
-
-    @property
-    def tokens_per_second(self) -> float:
-        """Total output throughput (tokens/s)."""
-        return self.raw.get("tokens/s", 0.0)
-
-    @property
-    def tokens_per_second_per_gpu(self) -> float:
-        """Per-GPU output throughput (tokens/s/gpu)."""
-        return self.raw.get("tokens/s/gpu", 0.0)
-
-    @property
-    def tokens_per_second_per_user(self) -> float:
-        """Per-user output throughput (tokens/s/user)."""
-        return self.raw.get("tokens/s/user", 0.0)
-
-    @property
-    def concurrency(self) -> float:
-        """Effective concurrency (requests in flight)."""
-        return self.raw.get("concurrency", 0.0)
-
-    @property
-    def seq_per_second(self) -> float:
-        """Sequence throughput (seq/s)."""
-        return self.raw.get("seq/s", 0.0)
-
-    @property
-    def num_total_gpus(self) -> int:
-        """Total GPUs used by the parallelism config."""
-        return int(self.raw.get("num_total_gpus", 0))
-
-    @property
-    def memory(self) -> float:
-        """Estimated GPU memory usage (GB).
-
-        For disagg mode there is no single memory value; use
-        ``raw["(p)memory"]`` and ``raw["(d)memory"]`` instead.
-        """
-        if self.mode == "disagg":
-            return 0.0
-        return self.raw.get("memory", 0.0)
-
-    def get(self) -> dict:
-        """
-        Return all metrics as a dict matching the CSV column schema.
-
-        Includes ``tokens/s/gpu_cluster`` (equals ``tokens/s/gpu`` for
-        single-point estimates where only one replica group is evaluated).
-
-        Verified by ``tests/e2e/cli/test_cli_estimate_vs_default.py`` which
-        asserts that the returned keys and values match the
-        ``best_config_topn.csv`` output from ``cli_default``.
-        """
-        result = dict(self.raw)
-        if "tokens/s/gpu_cluster" not in result:
-            result["tokens/s/gpu_cluster"] = result.get("tokens/s/gpu", 0.0)
-        return result
-
     def __repr__(self) -> str:
         return (
             f"EstimateResult(mode={self.mode!r}, ttft={self.ttft:.3f}ms, tpot={self.tpot:.3f}ms, "
@@ -504,13 +417,8 @@ def _resolve_moe_parallelism(
     attention_dp_size: int,
     moe_tp_size: int | None,
     moe_ep_size: int | None,
-    model_path: str | None = None,
 ) -> tuple[int, int]:
-    """Resolve and validate MoE parallelism widths, returning (moe_tp_size, moe_ep_size).
-
-    For dense (non-MoE) models the width constraint is not enforced because
-    MoE parallelism has no effect on the computation.
-    """
+    """Resolve and validate MoE parallelism widths, returning (moe_tp_size, moe_ep_size)."""
     if moe_tp_size is None and moe_ep_size is None:
         moe_tp_size = tp_size
         moe_ep_size = attention_dp_size
@@ -521,7 +429,7 @@ def _resolve_moe_parallelism(
 
     attn_width = tp_size * attention_dp_size
     moe_width = moe_tp_size * moe_ep_size
-    if attn_width != moe_width and (model_path is None or check_is_moe(model_path)):
+    if attn_width != moe_width:
         raise ValueError(
             f"Parallelism width mismatch: tp_size({tp_size}) * attention_dp_size({attention_dp_size}) = {attn_width}, "
             f"but moe_tp_size({moe_tp_size}) * moe_ep_size({moe_ep_size}) = {moe_width}. "
@@ -808,9 +716,7 @@ def _run_agg_estimate(
     from aiconfigurator.sdk.config import RuntimeConfig
     from aiconfigurator.sdk.inference_session import InferenceSession
 
-    moe_tp_size, moe_ep_size = _resolve_moe_parallelism(
-        tp_size, attention_dp_size, moe_tp_size, moe_ep_size, model_path=model_path
-    )
+    moe_tp_size, moe_ep_size = _resolve_moe_parallelism(tp_size, attention_dp_size, moe_tp_size, moe_ep_size)
 
     model_config = _build_model_config(
         tp_size,
@@ -832,17 +738,9 @@ def _run_agg_estimate(
     session = InferenceSession(model, database, backend)
     summary = session.run_agg(runtime_config, ctx_tokens=ctx_tokens)
 
-    if summary.check_oom():
-        raise RuntimeError(
-            f"OOM: the model '{model_path}' does not fit in GPU memory on system '{system_name}' "
-            f"with the given parallelism (tp={tp_size}, pp={pp_size}, dp={attention_dp_size}). "
-            "Try increasing tp_size/pp_size, using a quantized model, or "
-            "using a system with more VRAM per GPU."
-        )
-
     result_dict = summary.get_result_dict()
     if result_dict is None:
-        raise RuntimeError("Estimation produced no results. The configuration may be invalid.")
+        raise RuntimeError("Estimation produced no results. The configuration may be invalid or OOM.")
 
     return EstimateResult(
         ttft=result_dict["ttft"],
@@ -906,14 +804,12 @@ def _run_disagg_estimate(
         prefill_attention_dp_size,
         prefill_moe_tp_size,
         prefill_moe_ep_size,
-        model_path=model_path,
     )
     d_moe_tp, d_moe_ep = _resolve_moe_parallelism(
         decode_tp_size,
         decode_attention_dp_size,
         decode_moe_tp_size,
         decode_moe_ep_size,
-        model_path=model_path,
     )
 
     prefill_model_config = _build_model_config(
@@ -954,10 +850,6 @@ def _run_disagg_estimate(
         decode_database=decode_database,
         decode_backend=decode_backend,
     )
-    session.set_latency_correction_scales(
-        DEFAULT_PREFILL_LATENCY_CORRECTION_SCALE,
-        DEFAULT_DECODE_LATENCY_CORRECTION_SCALE,
-    )
 
     summary = session.run_disagg(
         model_path=model_path,
@@ -970,22 +862,9 @@ def _run_disagg_estimate(
         decode_num_worker=decode_num_workers,
     )
 
-    if summary.check_oom():
-        oom_details = []
-        if decode_system_name != system_name:
-            oom_details.append(f"prefill system '{system_name}' or decode system '{decode_system_name}'")
-        else:
-            oom_details.append(f"system '{system_name}'")
-        raise RuntimeError(
-            f"OOM: the model '{model_path}' does not fit in GPU memory on {oom_details[0]} "
-            f"with the given parallelism. "
-            "Try increasing tp_size/pp_size, using a quantized model, or "
-            "using a system with more VRAM per GPU."
-        )
-
     result_dict = summary.get_result_dict()
     if result_dict is None:
-        raise RuntimeError("Disagg estimation produced no results. The configuration may be invalid.")
+        raise RuntimeError("Disagg estimation produced no results. The configuration may be invalid or OOM.")
 
     return EstimateResult(
         ttft=result_dict["ttft"],
