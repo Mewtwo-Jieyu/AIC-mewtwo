@@ -34,6 +34,7 @@ class TestSupportedModels:
             "Qwen/Qwen3-32B",
             "meta-llama/Meta-Llama-3.1-8B",
             "deepseek-ai/DeepSeek-V3",
+            "mistralai/Mixtral-8x7B-v0.1",
         ],
     )
     def test_specific_models_are_in_default_list(self, hf_id):
@@ -62,7 +63,7 @@ class TestSupportedModels:
             ("Qwen/Qwen3-32B", False),
             ("meta-llama/Meta-Llama-3.1-8B", False),
             ("deepseek-ai/DeepSeek-V3", True),
-            ("Qwen/Qwen3-30B-A3B", True),
+            ("mistralai/Mixtral-8x7B-v0.1", True),
             # NemotronH: check hybrid_override_pattern for 'E' (MoE layers)
             ("nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16", True),  # Has 'E' in pattern
             ("nvidia/Nemotron-H-56B-Base-8K", False),  # No 'E' in pattern (only M, *, -)
@@ -93,10 +94,10 @@ class TestHFModelSupport:
     @pytest.mark.parametrize(
         "hf_id,expected_family",
         [
-            ("Qwen/Qwen3-32B", "LLAMA"),
+            ("Qwen/Qwen2.5-7B", "LLAMA"),
             ("meta-llama/Meta-Llama-3.1-8B", "LLAMA"),
             ("deepseek-ai/DeepSeek-V3", "DEEPSEEK"),
-            ("Qwen/Qwen3-30B-A3B", "MOE"),
+            ("mistralai/Mixtral-8x7B-v0.1", "MOE"),
             ("nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16", "NEMOTRONH"),
             ("nvidia/Nemotron-H-56B-Base-8K", "NEMOTRONH"),
         ],
@@ -109,10 +110,10 @@ class TestHFModelSupport:
     @pytest.mark.parametrize(
         "hf_id,is_moe_expected",
         [
-            ("Qwen/Qwen3-32B", False),
+            ("Qwen/Qwen2.5-7B", False),
             ("meta-llama/Meta-Llama-3.1-8B", False),
             ("deepseek-ai/DeepSeek-V3", True),
-            ("Qwen/Qwen3-30B-A3B", True),
+            ("mistralai/Mixtral-8x7B-v0.1", True),
             # NemotronH: is_moe depends on 'E' in hybrid_override_pattern
             ("nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16", True),  # Has 'E' (MoE layers)
             ("nvidia/Nemotron-H-56B-Base-8K", False),  # No 'E' (Mamba + Attention + MLP only)

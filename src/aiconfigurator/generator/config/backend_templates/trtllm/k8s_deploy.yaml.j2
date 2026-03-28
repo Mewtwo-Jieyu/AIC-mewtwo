@@ -70,19 +70,13 @@ readinessProbe:
   failureThreshold: 10
 {%- endmacro %}
 
-{%- macro render_worker(component_name, sub_component_type, replicas, gpu, engine_path, inline_payload, cli_args_list=None, disagg_mode=None, publish_metrics=False) -%}
+{%- macro render_worker(component_name, sub_component_type, replicas, gpu, engine_path, inline_payload, disagg_mode=None, publish_metrics=False) -%}
 {{ "    " ~ component_name ~ ":" }}
       envFromSecret: hf-token-secret
-      {% if K8sConfig.k8s_hf_home or K8sConfig.k8s_etcd_endpoints %}
+      {% if K8sConfig.k8s_hf_home %}
       envs:
-        {% if K8sConfig.k8s_etcd_endpoints %}
-        - name: ETCD_ENDPOINTS
-          value: {{ K8sConfig.k8s_etcd_endpoints }}
-        {% endif %}
-        {% if K8sConfig.k8s_hf_home %}
         - name: HF_HOME
           value: {{ K8sConfig.k8s_hf_home }}
-        {% endif %}
       {% endif %}
       componentType: worker
       {% if sub_component_type %}
@@ -113,20 +107,11 @@ readinessProbe:
 {{ (inline_payload | default('', true) | trim | indent(14, true)) }}
               YAML
               {% endif %}
-              {% if cli_args_list %}
-              args=(
-                {%- for arg in cli_args_list %}
-                {{ arg | tojson }}
-                {%- endfor %}
-                --extra-engine-args "{{ engine_path }}"
-              )
-              {% else %}
               args=(
                 --model-path "{{ ServiceConfig.model_path }}"
                 --served-model-name "{{ ServiceConfig.served_model_name }}"
                 --extra-engine-args "{{ engine_path }}"
               )
-              {% endif %}
               {% if disagg_mode %}
               args+=(--disaggregation-mode {{ disagg_mode }})
               {% endif %}
@@ -188,12 +173,8 @@ spec:
             - name: model-cache
               mountPath: {{ k8s_model_cache_mount }}
           {% endif %}
-      {% if enable_router or K8sConfig.k8s_hf_home or K8sConfig.k8s_etcd_endpoints %}
+      {% if enable_router or K8sConfig.k8s_hf_home %}
       envs:
-        {% if K8sConfig.k8s_etcd_endpoints %}
-        - name: ETCD_ENDPOINTS
-          value: {{ K8sConfig.k8s_etcd_endpoints }}
-        {% endif %}
         {% if enable_router %}
         - name: DYN_ROUTER_MODE
           value: kv
@@ -212,7 +193,6 @@ spec:
     agg_gpu,
     agg_engine_args,
     agg_engine_args_inline,
-    agg_cli_args_list,
     None,
     enable_router
 ) }}
@@ -224,7 +204,6 @@ spec:
     prefill_gpu,
     prefill_engine_args,
     prefill_engine_args_inline,
-    prefill_cli_args_list,
     "prefill",
     enable_router
 ) }}
@@ -235,7 +214,6 @@ spec:
     decode_gpu,
     decode_engine_args,
     decode_engine_args_inline,
-    decode_cli_args_list,
     "decode",
     enable_router
 ) }}

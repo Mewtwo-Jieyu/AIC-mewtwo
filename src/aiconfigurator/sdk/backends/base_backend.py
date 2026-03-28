@@ -77,16 +77,21 @@ class BaseBackend(ABC):
 
             for op in model.context_ops:
                 # query latency and store the latency
-                x = batch_size * isl if "logits_gemm" not in op._name else batch_size
+                if "logits_gemm" in op._name:
+                    x = batch_size
+                elif hasattr(op, "_vision_num_tokens"):
+                    x = batch_size * op._vision_num_tokens
+                else:
+                    x = batch_size * isl
+                s_val = op._vision_num_tokens if hasattr(op, "_vision_num_tokens") else isl
                 result = op.query(
                     database,
                     x=x,
                     batch_size=batch_size,
                     beam_width=1,
-                    s=isl,
+                    s=s_val,
                     prefix=prefix,
                     model_name=getattr(model, "model_name", ""),
-                    seq_imbalance_correction_scale=runtime_config.seq_imbalance_correction_scale,
                 )
 
                 # ✅ IMMEDIATELY extract values - do NOT use PerformanceResult arithmetic!
@@ -127,9 +132,9 @@ class BaseBackend(ABC):
                         beam_width=beam_width,
                         s=isl + i + 1,
                         model_name=getattr(model, "model_name", ""),
-                        gen_seq_imbalance_correction_scale=runtime_config.gen_seq_imbalance_correction_scale,
                     )
 
+                    # ✅ IMMEDIATELY extract values - do NOT accumulate PerformanceResult objects!
                     latency_ms = float(result)
                     energy_wms = getattr(result, "energy", 0.0)
 
@@ -161,7 +166,7 @@ class BaseBackend(ABC):
 
         if mode == "static_ctx":
             context_latency_dict, context_energy_wms_dict = _run_context(batch_size, isl, prefix)
-            memory = self._get_memory_usage(model, database, batch_size, beam_width, isl, 1, prefix=prefix)
+            memory = self._get_memory_usage(model, database, batch_size, beam_width, isl, 1)
         elif mode == "static_gen":
             generation_latency_dict, generation_energy_wms_dict = _run_generation(
                 batch_size, beam_width, isl, osl, stride
@@ -174,14 +179,13 @@ class BaseBackend(ABC):
                 isl,
                 osl,
                 num_tokens=batch_size * beam_width,
-                prefix=prefix,
             )  # for gen only, all kvcache is needed.
         else:
             context_latency_dict, context_energy_wms_dict = _run_context(batch_size, isl, prefix)
             generation_latency_dict, generation_energy_wms_dict = _run_generation(
                 batch_size, beam_width, isl, osl, stride
             )
-            memory = self._get_memory_usage(model, database, batch_size, beam_width, isl, osl, prefix=prefix)
+            memory = self._get_memory_usage(model, database, batch_size, beam_width, isl, osl)
 
         if latency_correction_scale != 1.0:
             logger.debug(f"latency_correction_scale: {latency_correction_scale} is applied")
@@ -397,13 +401,8 @@ class BaseBackend(ABC):
         isl: int,
         osl: int,
         num_tokens: int = 0,
-        prefix: int = 0,
     ) -> dict[str, float]:
         """
         Get the memory usage of the backend.
-
-        Args:
-            prefix: number of prefix tokens (part of isl) whose KV is already cached
-                (per-request) and does not need activation computation.
         """
         pass
