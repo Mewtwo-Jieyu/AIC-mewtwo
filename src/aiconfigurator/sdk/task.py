@@ -376,7 +376,7 @@ class TaskConfigFactory:
                     worker_config["moe_ep_list"] = [1]
             elif ctx.backend_name == "vllm":
                 worker_config["num_gpu_per_worker"] = [1, 2, 4, 8, 16, 32, 64]
-                worker_config["tp_list"] = [1, 2, 4, 8]
+                worker_config["tp_list"] = [1, 2, 4, 8, 16, 32, 64]
                 worker_config["pp_list"] = [1, 2, 4, 8, 16, 32, 64] if should_enable_pp else [1]
                 worker_config["dp_list"] = [1, 2, 4, 8, 16, 32, 64]
                 worker_config["moe_tp_list"] = [1]

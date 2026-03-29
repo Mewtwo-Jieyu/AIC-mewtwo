@@ -172,6 +172,9 @@ def get_model(
     # Convert architecture (e.g., 'LlamaForCausalLM') to model family (e.g., 'LLAMA')
     model_family = _architecture_to_model_family(architecture)
 
+    # Store backend name in model_config for use in model constructors
+    model_config.backend = backend_name
+
     _apply_model_quant_defaults(model_config, raw_config, architecture, backend_name)
 
     if model_config.overwrite_num_layers > 0:
@@ -1279,6 +1282,7 @@ class DeepSeekModel(BaseModel):
             ]
         )
         #####generation part, only generation part is scaled by mtp_scale_factor
+        # Base generation ops (common to all backends)
         self.generation_ops.extend(
             [
                 ops.Embedding("generation_embedding", 1 * self._mtp_scale_factor, self._vocab_size, h, 0.3),
@@ -1303,26 +1307,52 @@ class DeepSeekModel(BaseModel):
                     1536,
                     gemm_quant_mode,
                 ),
-                ops.MLABmm(
-                    "generation_bmm_pre",
-                    self._num_layers * self._mtp_scale_factor,
-                    self._num_heads // tp_size,
-                    mla_bmm_quant_mode,
-                    if_pre=True,
-                ),  # agg gen attn part
-                ops.GenerationMLA(
-                    "generation_attention",
-                    self._num_layers * self._mtp_scale_factor,
-                    self._num_heads // tp_size,
-                    kvcache_quant_mode,
-                ),  # agg gen attn part
-                ops.MLABmm(
-                    "generation_bmm_post",
-                    self._num_layers * self._mtp_scale_factor,
-                    self._num_heads // tp_size,
-                    mla_bmm_quant_mode,
-                    if_pre=False,
-                ),  # agg gen attn part
+            ]
+        )
+
+        # MLA attention ops: vLLM uses fused kernel, TRT-LLM/SGLang use separate MLABmm + GenerationMLA
+        if self.config.backend == "vllm":
+            # vLLM: GenerationMLA is a fused kernel that already includes BMM operations
+            self.generation_ops.extend(
+                [
+                    ops.GenerationMLA(
+                        "generation_attention",
+                        self._num_layers * self._mtp_scale_factor,
+                        self._num_heads // tp_size,
+                        kvcache_quant_mode,
+                    ),  # agg gen attn part - fused kernel includes BMM
+                ]
+            )
+        else:
+            # TRT-LLM/SGLang: MLABmm ops are separate from GenerationMLA
+            self.generation_ops.extend(
+                [
+                    ops.MLABmm(
+                        "generation_bmm_pre",
+                        self._num_layers * self._mtp_scale_factor,
+                        self._num_heads // tp_size,
+                        mla_bmm_quant_mode,
+                        if_pre=True,
+                    ),  # agg gen attn part
+                    ops.GenerationMLA(
+                        "generation_attention",
+                        self._num_layers * self._mtp_scale_factor,
+                        self._num_heads // tp_size,
+                        kvcache_quant_mode,
+                    ),  # agg gen attn part
+                    ops.MLABmm(
+                        "generation_bmm_post",
+                        self._num_layers * self._mtp_scale_factor,
+                        self._num_heads // tp_size,
+                        mla_bmm_quant_mode,
+                        if_pre=False,
+                    ),  # agg gen attn part
+                ]
+            )
+
+        # Continue with remaining generation ops
+        self.generation_ops.extend(
+            [
                 ops.GEMM(
                     "generation_proj_gemm",
                     self._num_layers * self._mtp_scale_factor,
@@ -1791,6 +1821,7 @@ class TrtllmWideEPDeepSeekModel(BaseModel):
         )
 
         # ===================== Generation Phase =====================
+        # Base generation ops (common to all backends)
         self.generation_ops.extend(
             [
                 ops.Embedding("generation_embedding", 1 * self._mtp_scale_factor, self._vocab_size, h, 0.3),
@@ -1815,26 +1846,52 @@ class TrtllmWideEPDeepSeekModel(BaseModel):
                     1536,
                     gemm_quant_mode,
                 ),
-                ops.MLABmm(
-                    "generation_bmm_pre",
-                    self._num_layers * self._mtp_scale_factor,
-                    self._num_heads // tp_size,
-                    mla_bmm_quant_mode,
-                    if_pre=True,
-                ),
-                ops.GenerationMLA(
-                    "generation_attention",
-                    self._num_layers * self._mtp_scale_factor,
-                    self._num_heads // tp_size,
-                    kvcache_quant_mode,
-                ),
-                ops.MLABmm(
-                    "generation_bmm_post",
-                    self._num_layers * self._mtp_scale_factor,
-                    self._num_heads // tp_size,
-                    mla_bmm_quant_mode,
-                    if_pre=False,
-                ),
+            ]
+        )
+
+        # MLA attention ops: vLLM uses fused kernel, TRT-LLM/SGLang use separate MLABmm + GenerationMLA
+        if self.config.backend == "vllm":
+            # vLLM: GenerationMLA is a fused kernel that already includes BMM operations
+            self.generation_ops.extend(
+                [
+                    ops.GenerationMLA(
+                        "generation_attention",
+                        self._num_layers * self._mtp_scale_factor,
+                        self._num_heads // tp_size,
+                        kvcache_quant_mode,
+                    ),  # fused kernel includes BMM
+                ]
+            )
+        else:
+            # TRT-LLM/SGLang: MLABmm ops are separate from GenerationMLA
+            self.generation_ops.extend(
+                [
+                    ops.MLABmm(
+                        "generation_bmm_pre",
+                        self._num_layers * self._mtp_scale_factor,
+                        self._num_heads // tp_size,
+                        mla_bmm_quant_mode,
+                        if_pre=True,
+                    ),
+                    ops.GenerationMLA(
+                        "generation_attention",
+                        self._num_layers * self._mtp_scale_factor,
+                        self._num_heads // tp_size,
+                        kvcache_quant_mode,
+                    ),
+                    ops.MLABmm(
+                        "generation_bmm_post",
+                        self._num_layers * self._mtp_scale_factor,
+                        self._num_heads // tp_size,
+                        mla_bmm_quant_mode,
+                        if_pre=False,
+                    ),
+                ]
+            )
+
+        # Continue with remaining generation ops
+        self.generation_ops.extend(
+            [
                 ops.GEMM(
                     "generation_proj_gemm",
                     self._num_layers * self._mtp_scale_factor,

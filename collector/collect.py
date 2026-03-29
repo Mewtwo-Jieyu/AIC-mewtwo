@@ -571,6 +571,8 @@ def collect_vllm(num_processes: int, ops: list[str] | None = None):
             "get_func": "get_generation_mla_test_cases",
             "run_func": "run_attention_torch",
         },
+        # Note: MLA BMM collections removed for vLLM - vLLM uses fused MLA kernels
+        # that already include BMM operations, so separate MLABmm ops are not needed
     ]
 
     all_errors = collect_ops(num_processes, collections, ops, version)
