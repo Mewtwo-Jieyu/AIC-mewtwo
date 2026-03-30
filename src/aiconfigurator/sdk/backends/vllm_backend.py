@@ -29,6 +29,27 @@ class VLLMBackend(BaseBackend):
         self._agg_cache = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict())))
         self.name = common.BackendName.vllm
 
+    @staticmethod
+    def _get_cb_efficiency_factor(b: int, isl: int, osl: int) -> float:
+        """Continuous batching efficiency correction factor.
+
+        AIC's batch model assumes synchronous execution of all requests in a batch,
+        while vLLM's continuous batching allows pipeline overlap. This factor corrects
+        the throughput prediction to account for the scheduling efficiency gain.
+
+        Fitted from 7 Kimi-K2.5 + H200 benchmark scenarios using model:
+            factor = a * (ISL/OSL)^b_exp * bs^c + d
+
+        LOOCV max error: 1.87x (vs uncorrected 9.3x-292x).
+        """
+        if b <= 1:
+            return 1.0
+        # Fitted parameters (see scripts/fit_cb_factor.py)
+        a, b_exp, c, d = 6.878583, 1.152958, -0.403566, 9.319537
+        isl_osl_ratio = isl / max(osl, 1)
+        factor = a * (isl_osl_ratio ** b_exp) * (b ** c) + d
+        return max(factor, 1.0)
+
     def run_agg(
         self, model: BaseModel, database: PerfDatabase, runtime_config: RuntimeConfig, **kwargs
     ) -> InferenceSummary:
@@ -229,6 +250,16 @@ class VLLMBackend(BaseBackend):
                 * b
                 * (osl - 1)
             )
+
+            # Continuous batching efficiency correction.
+            # AIC's batch model underestimates throughput because it assumes synchronous
+            # batch execution, while vLLM's continuous batching allows pipeline overlap.
+            # Factor fitted from 7 Kimi-K2.5 + H200 benchmark scenarios (LOOCV max 1.87x).
+            # Model: factor = a * (ISL/OSL)^b * bs^c + d
+            cb_factor = self._get_cb_efficiency_factor(b, isl, osl)
+            output_throughput *= cb_factor
+            tpot /= cb_factor
+            logger.debug(f"CB efficiency factor: {cb_factor:.2f} (b={b}, isl={isl}, osl={osl})")
             logger.debug(
                 f"ctx_tokens: {ctx_tokens}, b: {b}, osl: {osl}, isl: {isl}, "
                 f"num_mix_steps: {num_mix_steps}, num_genonly_steps: {num_genonly_steps}, "
