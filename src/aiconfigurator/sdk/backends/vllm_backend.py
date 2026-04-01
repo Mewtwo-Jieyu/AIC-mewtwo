@@ -354,7 +354,12 @@ class VLLMBackend(BaseBackend):
             else:
                 num_tokens = ctx_tokens
             memory = self._get_memory_usage(model, database, b, 1, isl, osl, num_tokens)
+            logger.debug(
+                f"Memory (b={b}, isl={isl}, osl={osl}): total={memory['total']:.2f} GiB "
+                f"weights={memory['weights']:.2f} act={memory['activations']:.2f} kv={memory['kvcache']:.2f}"
+            )
             tp = model.config.tp_size
+
             pp = model.config.pp_size
             dp = model.config.attention_dp_size
             moe_tp = model.config.moe_tp_size
@@ -536,6 +541,11 @@ class VLLMBackend(BaseBackend):
         summary.set_oom(all_oom)
         return summary
 
+    # vLLM default chunked-prefill window. When ISL > this, vLLM processes the
+    # context in chunks rather than a single forward pass, so peak activation
+    # memory is bounded by this value instead of isl * batch_size.
+    _VLLM_MAX_CHUNK_TOKENS: int = 8192
+
     def _get_memory_usage(
         self,
         model: BaseModel,
@@ -546,7 +556,16 @@ class VLLMBackend(BaseBackend):
         osl: int,
         num_tokens: int = 0,
     ) -> dict[str, float]:
-        # TODO
         from aiconfigurator.sdk.backends.trtllm_backend import TRTLLMBackend
 
-        return TRTLLMBackend()._get_memory_usage(model, database, batch_size, beam_width, isl, osl, num_tokens)
+        # vLLM uses chunked prefill: activation memory is bounded by the chunk
+        # size, not by isl * batch_size. Cap num_tokens accordingly so the
+        # activation term in TRTLLMBackend._get_memory_usage does not
+        # overestimate for long-context requests.
+        if num_tokens == 0:
+            num_tokens = isl * batch_size
+        num_tokens_for_act = min(num_tokens, self._VLLM_MAX_CHUNK_TOKENS)
+
+        return TRTLLMBackend()._get_memory_usage(
+            model, database, batch_size, beam_width, isl, osl, num_tokens_for_act
+        )
