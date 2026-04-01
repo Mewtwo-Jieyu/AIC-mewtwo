@@ -50,6 +50,41 @@ class VLLMBackend(BaseBackend):
         factor = a * (isl_osl_ratio ** b_exp) * (b ** c) + d
         return max(factor, 1.0)
 
+    @staticmethod
+    def _get_ttft_cb_correction(b: int, isl: int, osl: int) -> float:
+        """TTFT correction factor for vLLM Continuous Batching mode (B1b).
+
+        AIC's batch model computes TTFT ∝ batch_prefill_time (all b requests
+        prefill simultaneously). In vLLM CB, each request starts prefilling
+        immediately on arrival, so TTFT ≈ single_request_prefill + queue_wait,
+        which is much lower at small-to-moderate concurrency.
+
+        This factor corrects AIC's overestimate:
+            corrected_ttft = aic_ttft / ttft_cb_correction
+
+        Formula (log-linear, Model G):
+            correction = 2.186 * ln(ISL/OSL) + 2.109 * ln(b) - 1.940
+
+        Fitted from 7 Kimi-K2.5 + H200 SXM benchmark scenarios (tp=16, dp=1).
+        LOOCV max error: 1.73x (vs uncorrected 32x resource calculation error).
+        See scripts/fit_ttft_cb_factor.py for full derivation.
+
+        Calibrated range: ISL=16k-30k, b=4-32.
+        At low concurrency (b ≤ 4) or ISL/OSL ≈ 1: correction approaches 1.0.
+        At very high concurrency (b > 64): queue-wait dominates; correction
+          may over-predict — B2 queue-aware modeling is the proper long-term fix.
+        """
+        if b <= 1:
+            return 1.0
+        import math
+        # Fitted parameters (see scripts/fit_ttft_cb_factor.py, Model G)
+        a = 2.186094       # ISL/OSL log coefficient
+        b_coeff = 2.108914  # concurrency log coefficient
+        c = -1.939795      # constant offset
+        isl_osl_ratio = isl / max(osl, 1)
+        factor = a * math.log(max(isl_osl_ratio, 0.01)) + b_coeff * math.log(max(b, 1)) + c
+        return max(factor, 1.0)
+
     def run_agg(
         self, model: BaseModel, database: PerfDatabase, runtime_config: RuntimeConfig, **kwargs
     ) -> InferenceSummary:
@@ -240,6 +275,14 @@ class VLLMBackend(BaseBackend):
                 f"ttft correction factor: {2 + (steps_to_finish_ctx - 3) / 2 / 10} capped to "
                 f"{correction_factor} when b: {b}, ctx_tokens: {ctx_tokens} isl {isl}"
             )
+
+            # B1b: Continuous batching TTFT correction.
+            # AIC's batch model overestimates TTFT at moderate concurrency because it
+            # assumes all b requests prefill simultaneously. In vLLM CB, each request
+            # starts prefilling on arrival — TTFT ≈ single_request_prefill + queue_wait.
+            ttft_cb_correction = self._get_ttft_cb_correction(b, isl, osl)
+            ttft /= ttft_cb_correction
+            logger.debug(f"TTFT CB correction (B1b): {ttft_cb_correction:.2f} (b={b}, isl={isl}, osl={osl})")
 
             tpot = (mix_step_latency_ms * num_mix_steps_for_tpot_calc + genonly_step_latency_ms * num_genonly_steps) / (
                 num_mix_steps_for_tpot_calc + num_genonly_steps
