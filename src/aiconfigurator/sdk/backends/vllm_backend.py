@@ -27,25 +27,32 @@ class VLLMBackend(BaseBackend):
     ):
         super().__init__()
         self._agg_cache = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict())))
+        self._agg_cache_v2: dict[tuple, InferenceSummary] = {}
         self.name = common.BackendName.vllm
 
     @staticmethod
     def _get_cb_efficiency_factor(b: int, isl: int, osl: int) -> float:
-        """Continuous batching efficiency correction factor.
+        """Continuous batching efficiency correction factor (v2).
 
         AIC's batch model assumes synchronous execution of all requests in a batch,
         while vLLM's continuous batching allows pipeline overlap. This factor corrects
         the throughput prediction to account for the scheduling efficiency gain.
 
+        v2: Fitted at tp=16 dp=1, same config as benchmark, to isolate CB
+        efficiency from parallelism config differences.
+
         Fitted from 7 Kimi-K2.5 + H200 benchmark scenarios using model:
             factor = a * (ISL/OSL)^b_exp * bs^c + d
 
-        LOOCV max error: 1.87x (vs uncorrected 9.3x-292x).
+        LOOCV max error: 1.29x (vs uncorrected 5x-84x at tp16dp1).
+        See scripts/fit_cb_factor.py for full derivation.
+
+        Calibrated range: ISL=3k-32k, OSL=1k-3k, b=8-256.
         """
         if b <= 1:
             return 1.0
-        # Fitted parameters (see scripts/fit_cb_factor.py)
-        a, b_exp, c, d = 6.878583, 1.152958, -0.403566, 9.319537
+        # Fitted parameters (see scripts/fit_cb_factor.py, v2 same-config)
+        a, b_exp, c, d = 0.881800, 1.171579, 0.165407, 2.904901
         isl_osl_ratio = isl / max(osl, 1)
         factor = a * (isl_osl_ratio ** b_exp) * (b ** c) + d
         return max(factor, 1.0)
@@ -91,6 +98,21 @@ class VLLMBackend(BaseBackend):
         """
         Run the agg inference. TODO: add vLLM's own implementation
         """
+        method = kwargs.get("method", "batch_sync")
+
+        # Dispatch to CB simulator if requested
+        if method == "cb_sim":
+            isl = runtime_config.isl
+            osl = runtime_config.osl
+            b = runtime_config.batch_size
+            ctx_tokens = kwargs.get("ctx_tokens", self._VLLM_MAX_CHUNK_TOKENS)
+            cache_key = (isl, osl, b, ctx_tokens, "cb_sim")
+            if cache_key in self._agg_cache_v2:
+                return self._agg_cache_v2[cache_key]
+            summary = self._run_agg_cb_sim(model, database, runtime_config, **kwargs)
+            self._agg_cache_v2[cache_key] = summary
+            return summary
+
         isl = runtime_config.isl
         osl = runtime_config.osl
         prefix = runtime_config.prefix
@@ -440,6 +462,117 @@ class VLLMBackend(BaseBackend):
 
         return summary
 
+    def _run_agg_cb_sim(
+        self, model: BaseModel, database: PerfDatabase,
+        runtime_config: RuntimeConfig, **kwargs,
+    ) -> InferenceSummary:
+        """CB simulation-based agg prediction (B2).
+
+        Produces a standard ColumnsAgg result, compatible with existing
+        CLI/webapp/pareto/InferenceSession consumers.
+        """
+        from aiconfigurator.sdk.backends.cb_simulator import CBSimConfig, CBSimulator
+
+        isl, osl, prefix, b = (
+            runtime_config.isl, runtime_config.osl,
+            runtime_config.prefix, runtime_config.batch_size,
+        )
+        ctx_tokens = kwargs.get("ctx_tokens", self._VLLM_MAX_CHUNK_TOKENS)
+        cb_config = kwargs.get("cb_config", CBSimConfig(
+            max_num_batched_tokens=ctx_tokens,
+        ))
+
+        tp = model.config.tp_size
+        pp = model.config.pp_size
+        dp = model.config.attention_dp_size
+        num_gpus = tp * pp * dp
+
+        # Simulator runs with per-GPU view (no dp/pp scaling inside)
+        sim = CBSimulator(self, model, database, cb_config)
+        result = sim.run(
+            isl=isl, osl=osl, concurrency=b,
+            prefix=prefix, num_gpus=1,
+        )
+
+        # Scale throughput for dp/pp (same pattern as batch_sync line 351-353)
+        scale_factor = pp * dp
+        output_throughput = result.throughput_tok_s * scale_factor
+        concurrency_scaled = b * scale_factor
+
+        ttft = result.mean_ttft_ms
+        tpot = result.mean_tpot_ms
+        request_latency = ttft + tpot * max(osl - 1, 0)
+        request_rate = output_throughput / max(osl - 1, 1)
+        tokens_s_gpu = result.throughput_tok_s / tp
+        tokens_s_user = 1000 / tpot if tpot > 0 else 0.0
+        seq_s = request_rate
+        seq_s_gpu = seq_s / num_gpus
+        balance_score = isl * b / ctx_tokens / osl
+
+        # Memory check (same as batch_sync path)
+        num_tokens = int(result.avg_tokens_per_iter) if result.avg_tokens_per_iter > 0 else ctx_tokens
+        memory = self._get_memory_usage(model, database, b, 1, isl, osl, num_tokens)
+
+        moe_tp = model.config.moe_tp_size
+        moe_ep = model.config.moe_ep_size
+
+        avg_ctx_reqs = result.avg_prefill_reqs_per_iter
+        avg_gen_reqs = result.avg_decode_reqs_per_iter
+        avg_tokens = result.avg_tokens_per_iter
+
+        result_dict = {
+            "model": model.model_path,
+            "isl": isl, "osl": osl, "prefix": prefix,
+            "concurrency": concurrency_scaled,
+            "request_rate": request_rate,
+            "bs": b,
+            "global_bs": b * dp,
+            "ttft": ttft, "tpot": tpot,
+            "seq/s": seq_s, "seq/s/gpu": seq_s_gpu,
+            "tokens/s": output_throughput,
+            "tokens/s/gpu": tokens_s_gpu,
+            "tokens/s/user": tokens_s_user,
+            "request_latency": request_latency,
+            "num_total_gpus": num_gpus,
+            "tp": tp, "pp": pp, "dp": dp,
+            "moe_tp": moe_tp, "moe_ep": moe_ep,
+            "parallel": f"tp{tp}pp{pp}dp{dp}etp{moe_tp}ep{moe_ep}",
+            "gemm": model.config.gemm_quant_mode.name,
+            "kvcache": model.config.kvcache_quant_mode.name,
+            "fmha": model.config.fmha_quant_mode.name,
+            "moe": model.config.moe_quant_mode.name,
+            "comm": model.config.comm_quant_mode.name,
+            "memory": memory["total"],
+            "balance_score": balance_score,
+            "num_ctx_reqs": avg_ctx_reqs,
+            "num_gen_reqs": avg_gen_reqs,
+            "num_tokens": avg_tokens,
+            "ctx_tokens": ctx_tokens,
+            "gen_tokens": avg_gen_reqs,
+            "backend": database.backend,
+            "version": database.version,
+            "system": database.system,
+            "power_w": 0.0,  # TODO: energy tracking in simulator
+        }
+
+        summary_df = pd.DataFrame([result_dict], columns=common.ColumnsAgg).round(3)
+        summary = InferenceSummary(RuntimeConfig(isl=isl, osl=osl))
+        summary.set_memory_and_check_oom(memory, database.system_spec["gpu"]["mem_capacity"])
+        summary.set_summary_df(summary_df)
+        summary.set_result_dict(result_dict)
+
+        per_ops_data = {
+            "cb_sim_scheduling": {
+                "avg_prefill_reqs_per_iter": float(avg_ctx_reqs),
+                "avg_decode_reqs_per_iter": float(avg_gen_reqs),
+                "avg_tokens_per_iter": float(avg_tokens),
+                "total_iterations": result.total_iterations,
+            },
+        }
+        summary.set_per_ops_data(per_ops_data)
+
+        return summary
+
     def find_best_agg_result_under_constraints(
         self, model: BaseModel, database: PerfDatabase, runtime_config: RuntimeConfig, **kwargs
     ) -> InferenceSummary:
@@ -515,11 +648,15 @@ class VLLMBackend(BaseBackend):
                     else:
                         capped_b.append(gen_tokens)
 
+                # Forward non-sweep kwargs (e.g. method="cb_sim") to run_agg
+                _sweep_keys = {"top_k", "max_batch_size", "ctx_stride", "enable_chunked_prefill"}
+                fwd_kwargs = {k: v for k, v in kwargs.items() if k not in _sweep_keys}
                 summary = self.run_agg(
                     model=model,
                     database=database,
                     runtime_config=RuntimeConfig(batch_size=b, isl=isl, osl=osl, prefix=prefix),
                     ctx_tokens=ctx_tokens,
+                    **fwd_kwargs,
                 )
 
                 if summary.check_oom():
