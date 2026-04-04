@@ -1,9 +1,12 @@
 """Tests for CB simulator scheduler and simulator."""
+from unittest.mock import MagicMock
+
 import pytest
 from aiconfigurator.sdk.backends.cb_simulator.datatypes import (
     CBSimConfig, Request, RequestState,
 )
 from aiconfigurator.sdk.backends.cb_simulator.scheduler import CBScheduler
+from aiconfigurator.sdk.backends.cb_simulator.simulator import CBSimulator
 
 
 def _make_req(rid: int, isl: int = 1000, osl: int = 100) -> Request:
@@ -117,3 +120,88 @@ class TestCBScheduler:
         result = sched.schedule(waiting=[], running=running)
         assert len(result.decode_reqs) == 20
         assert len(result.prefill_reqs) == 0
+
+
+# --- Simulator tests with mocked latency calculator ---
+
+
+class _FakeLatencyCalc:
+    """Deterministic fake for iteration latency.
+
+    Models sub-linear scaling: fixed overhead + sqrt(batch) for decode,
+    so higher concurrency yields better throughput (batching benefit).
+    """
+
+    def compute(
+        self, prefill_tokens: int, prefill_batch_size: int,
+        prefill_seq_len: int, decode_batch_size: int,
+        decode_avg_kv_len: int,
+    ) -> float:
+        import math
+        # Fixed 1ms base + 0.001ms per prefill token + sqrt scaling for decode
+        base = 1.0
+        prefill_cost = prefill_tokens * 0.001
+        decode_cost = math.sqrt(max(decode_batch_size, 0)) * 0.5
+        return base + prefill_cost + decode_cost
+
+
+def _make_testable_sim(config: CBSimConfig | None = None) -> CBSimulator:
+    """Create CBSimulator with injected fake latency calc."""
+    cfg = config or CBSimConfig(num_requests=20, warmup_requests=5)
+    sim = CBSimulator(
+        backend=MagicMock(), model=MagicMock(),
+        database=MagicMock(), config=cfg,
+    )
+    # Override the factory hook (R2-4)
+    sim._create_latency_calc = lambda prefix: _FakeLatencyCalc()
+    return sim
+
+
+class TestCBSimulatorUnit:
+    """Unit tests with mocked latency calculator."""
+
+    def test_produces_positive_metrics(self) -> None:
+        """Smoke test: simulator produces positive TTFT/TPOT/throughput."""
+        sim = _make_testable_sim()
+        result = sim.run(isl=1000, osl=50, concurrency=4, num_gpus=1)
+        assert result.mean_ttft_ms > 0
+        assert result.mean_tpot_ms > 0
+        assert result.throughput_tok_s > 0
+        assert result.steady_state_requests > 0
+
+    def test_throughput_increases_with_concurrency(self) -> None:
+        sim = _make_testable_sim()
+        r1 = sim.run(isl=1000, osl=50, concurrency=1, num_gpus=1)
+        r4 = sim.run(isl=1000, osl=50, concurrency=4, num_gpus=1)
+        assert r4.throughput_tok_s > r1.throughput_tok_s
+
+    def test_ttft_increases_with_concurrency(self) -> None:
+        sim = _make_testable_sim()
+        r1 = sim.run(isl=1000, osl=50, concurrency=1, num_gpus=1)
+        r8 = sim.run(isl=1000, osl=50, concurrency=8, num_gpus=1)
+        assert r8.mean_ttft_ms > r1.mean_ttft_ms
+
+    def test_iteration_stats_populated(self) -> None:
+        sim = _make_testable_sim()
+        result = sim.run(isl=1000, osl=50, concurrency=4, num_gpus=1)
+        assert result.avg_decode_reqs_per_iter > 0
+        assert result.avg_tokens_per_iter > 0
+
+    def test_request_state_transitions(self) -> None:
+        r = Request(request_id=0, isl=100, osl=10, arrival_time_ms=0.0)
+        assert r.state == RequestState.WAITING
+        r.state = RequestState.PREFILLING
+        r.prefill_tokens_remaining = 0
+        r.state = RequestState.DECODING
+        r.generated_tokens = 9
+        r.state = RequestState.DONE
+        assert r.state == RequestState.DONE
+
+    def test_kv_cache_len_tracks_progress(self) -> None:
+        r = Request(request_id=0, isl=1000, osl=100, arrival_time_ms=0.0)
+        assert r.kv_cache_len == 0
+        r.prefill_tokens_remaining = 500
+        assert r.kv_cache_len == 500
+        r.prefill_tokens_remaining = 0
+        r.generated_tokens = 50
+        assert r.kv_cache_len == 1050
