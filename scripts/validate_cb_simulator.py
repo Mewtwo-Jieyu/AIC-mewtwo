@@ -91,9 +91,20 @@ def _load_model_and_db() -> tuple:
     return model, db, backend
 
 
+def _make_cb_config(concurrency: int) -> CBSimConfig:
+    """Create CBSimConfig with num_requests scaled to concurrency."""
+    # Need enough requests for meaningful steady-state measurement.
+    # At minimum 3x concurrency to avoid requests running out.
+    num_requests = max(200, concurrency * 3)
+    warmup_requests = max(50, concurrency)
+    return CBSimConfig(
+        num_requests=num_requests,
+        warmup_requests=warmup_requests,
+    )
+
+
 def main() -> None:
     model, db, backend = _load_model_and_db()
-    cb_config = CBSimConfig(num_requests=100, warmup_requests=30)
 
     # --- Throughput ---
     print("=" * 90)
@@ -105,9 +116,10 @@ def main() -> None:
     b1_errs: list[float] = []
 
     for pt in THROUGHPUT_DATA:
-        # CB sim
+        # CB sim — num_gpus=1 because simulator models single-GPU behavior
+        cb_config = _make_cb_config(pt.batch_size)
         sim = CBSimulator(backend, model, db, cb_config)
-        r = sim.run(isl=pt.isl, osl=pt.osl, concurrency=pt.batch_size, num_gpus=NUM_GPUS)
+        r = sim.run(isl=pt.isl, osl=pt.osl, concurrency=pt.batch_size, num_gpus=1)
         sim_gpu = r.throughput_tok_s_gpu
 
         # B1 baseline (with correction factors enabled)
@@ -145,8 +157,9 @@ def main() -> None:
 
     ttft_errs: list[float] = []
     for pt in TTFT_DATA:
+        cb_config = _make_cb_config(pt.batch_size)
         sim = CBSimulator(backend, model, db, cb_config)
-        r = sim.run(isl=pt.isl, osl=pt.osl, concurrency=pt.batch_size, num_gpus=NUM_GPUS)
+        r = sim.run(isl=pt.isl, osl=pt.osl, concurrency=pt.batch_size, num_gpus=1)
         ratio = r.mean_ttft_ms / pt.real_ttft_ms if pt.real_ttft_ms else 0
         ttft_errs.append(_abs_error(r.mean_ttft_ms, pt.real_ttft_ms))
         print(f"{pt.name:<22} {pt.real_ttft_ms:>8.1f} {r.mean_ttft_ms:>8.1f} {ratio:>9.2f}x")
