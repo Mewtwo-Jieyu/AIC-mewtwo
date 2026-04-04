@@ -1,0 +1,89 @@
+"""Data types for the vLLM continuous batching simulator."""
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass, field
+from enum import Enum, auto
+
+logger = logging.getLogger(__name__)
+
+
+class RequestState(Enum):
+    """Explicit request lifecycle state."""
+    WAITING = auto()     # in queue, not yet admitted
+    PREFILLING = auto()  # admitted, prefill in progress
+    DECODING = auto()    # prefill done, generating tokens
+    DONE = auto()        # generation complete
+
+
+@dataclass(frozen=True)
+class CBSimConfig:
+    """Configuration for the CB simulator."""
+    max_num_batched_tokens: int = 8192
+    max_num_seqs: int = 256
+    num_requests: int = 200
+    warmup_requests: int = 50
+
+
+@dataclass
+class Request:
+    """A single inference request tracked through the simulation."""
+    request_id: int
+    isl: int
+    osl: int
+    arrival_time_ms: float
+
+    # Mutable state
+    state: RequestState = RequestState.WAITING
+    prefill_tokens_remaining: int = -1
+    generated_tokens: int = 0
+    prefill_start_ms: float = -1.0
+    first_token_ms: float = -1.0
+    finish_ms: float = -1.0
+
+    def __post_init__(self) -> None:
+        if self.prefill_tokens_remaining < 0:
+            self.prefill_tokens_remaining = self.isl
+
+    @property
+    def kv_cache_len(self) -> int:
+        """Current KV cache length = prefilled tokens + generated tokens."""
+        return (self.isl - self.prefill_tokens_remaining) + self.generated_tokens
+
+
+@dataclass
+class ScheduleResult:
+    """Output of one scheduler iteration."""
+    prefill_reqs: list[Request] = field(default_factory=list)
+    prefill_tokens: dict[int, int] = field(default_factory=dict)
+    decode_reqs: list[Request] = field(default_factory=list)
+
+    @property
+    def total_prefill_tokens(self) -> int:
+        return sum(self.prefill_tokens.values())
+
+    @property
+    def total_tokens(self) -> int:
+        return self.total_prefill_tokens + len(self.decode_reqs)
+
+    @property
+    def is_empty(self) -> bool:
+        return not self.prefill_reqs and not self.decode_reqs
+
+
+@dataclass
+class CBSimResult:
+    """Simulation output metrics."""
+    mean_ttft_ms: float
+    p50_ttft_ms: float
+    p99_ttft_ms: float
+    mean_tpot_ms: float
+    throughput_tok_s: float
+    throughput_tok_s_gpu: float
+    num_gpus: int
+    total_iterations: int
+    steady_state_requests: int
+    # Iteration-averaged scheduling counters (for ColumnsAgg fields)
+    avg_prefill_reqs_per_iter: float = 0.0
+    avg_decode_reqs_per_iter: float = 0.0
+    avg_tokens_per_iter: float = 0.0
