@@ -1,7 +1,8 @@
 """Discrete-event CB simulation engine.
 
 Closed-loop: maintains target concurrency by replacing completed
-requests immediately. Request lifecycle: WAITING -> PREFILLING -> DECODING -> DONE.
+requests immediately. Request lifecycle:
+WAITING/PREEMPTED -> PREFILLING -> DECODING -> DONE.
 """
 from __future__ import annotations
 
@@ -41,8 +42,41 @@ class CBSimulator:
     def _create_latency_calc(self, prefix: int) -> IterationLatencyCalculator:
         """Factory hook for latency calculator. Override in tests."""
         return IterationLatencyCalculator(
-            self._backend, self._model, self._database, prefix=prefix,
+            self._backend,
+            self._model,
+            self._database,
+            prefix=prefix,
+            overlap_factor=self._config.overlap_factor,
+            per_iteration_overhead_ms=self._config.per_iteration_overhead_ms,
         )
+
+    def _estimate_decode_skip_latency(
+        self,
+        latency_calc: IterationLatencyCalculator,
+        decode_batch_size: int,
+        start_avg_kv_len: int,
+        first_iter_latency_ms: float,
+        skip_iters: int,
+    ) -> float:
+        """Approximate skipped pure-decode time with a rising-latency ramp.
+
+        Decode-only iteration latency grows with KV length. Using a constant
+        `iter_lat * skip` systematically overestimates throughput for long
+        decode segments, especially at high batch size. A trapezoid estimate
+        keeps the skip optimization but lets the end-of-segment KV growth
+        increase the skipped wall time.
+        """
+        if skip_iters <= 0:
+            return 0.0
+
+        end_iter_latency_ms = latency_calc.compute(
+            prefill_tokens=0,
+            prefill_batch_size=0,
+            prefill_seq_len=1,
+            decode_batch_size=decode_batch_size,
+            decode_avg_kv_len=start_avg_kv_len + skip_iters,
+        )
+        return (first_iter_latency_ms + end_iter_latency_ms) * skip_iters / 2.0
 
     def run(
         self,
@@ -76,6 +110,12 @@ class CBSimulator:
         sum_prefill_reqs = 0
         sum_decode_reqs = 0
         sum_tokens = 0
+        steady_iters = 0
+        steady_time_ms = 0.0
+        steady_output_tokens = 0
+        peak_prefill_reqs = 0
+        peak_decode_reqs = 0
+        peak_tokens = 0
 
         # Seed initial requests
         for _ in range(min(concurrency, self._config.num_requests)):
@@ -89,6 +129,7 @@ class CBSimulator:
         )
 
         while len(completed) < self._config.num_requests and total_iters < max_iters:
+            has_external_supply = bool(waiting) or next_id < self._config.num_requests
             # Schedule
             schedule = self._scheduler.schedule(waiting, running)
             if schedule.is_empty:
@@ -106,19 +147,29 @@ class CBSimulator:
                 decode_avg_kv_len=avg_kv,
             )
 
+            in_steady_state = (
+                len(completed) >= self._config.warmup_requests and has_external_supply
+            )
             clock_ms += iter_lat
             total_iters += 1
             sum_prefill_reqs += len(schedule.prefill_reqs)
             sum_decode_reqs += len(schedule.decode_reqs)
             sum_tokens += schedule.total_tokens
+            peak_prefill_reqs = max(peak_prefill_reqs, len(schedule.prefill_reqs))
+            peak_decode_reqs = max(peak_decode_reqs, len(schedule.decode_reqs))
+            peak_tokens = max(peak_tokens, schedule.total_tokens)
+            if in_steady_state:
+                steady_iters += 1
+                steady_time_ms += iter_lat
 
             # --- Update prefill progress ---
             for req in schedule.prefill_reqs:
                 tokens = schedule.prefill_tokens[req.request_id]
-                # WAITING -> PREFILLING: move from waiting to running
-                if req.state == RequestState.WAITING:
+                # WAITING/PREEMPTED -> PREFILLING: move from waiting to running
+                if req.state in {RequestState.WAITING, RequestState.PREEMPTED}:
                     req.state = RequestState.PREFILLING
-                    req.prefill_start_ms = clock_ms - iter_lat
+                    if req.prefill_start_ms < 0:
+                        req.prefill_start_ms = clock_ms - iter_lat
                     if req in waiting:
                         waiting.remove(req)
                     running.append(req)
@@ -128,13 +179,16 @@ class CBSimulator:
                 # PREFILLING -> DECODING: prefill complete
                 if req.prefill_tokens_remaining <= 0:
                     req.prefill_tokens_remaining = 0
-                    req.first_token_ms = clock_ms
+                    if req.first_token_ms < 0:
+                        req.first_token_ms = clock_ms
                     req.state = RequestState.DECODING
 
             # --- Update decode progress ---
             newly_done: list[Request] = []
             for req in schedule.decode_reqs:
                 req.generated_tokens += 1
+                if in_steady_state:
+                    steady_output_tokens += 1
                 if req.generated_tokens >= req.osl - 1:
                     req.state = RequestState.DONE
                     req.finish_ms = clock_ms
@@ -160,17 +214,31 @@ class CBSimulator:
                 )
                 skip = max(0, min_remaining - 1)
                 if skip > 0:
-                    skip_lat = iter_lat * skip  # approx: same decode composition
+                    skip_lat = self._estimate_decode_skip_latency(
+                        latency_calc=latency_calc,
+                        decode_batch_size=len(running),
+                        start_avg_kv_len=avg_kv + 1,
+                        first_iter_latency_ms=iter_lat,
+                        skip_iters=skip,
+                    )
                     clock_ms += skip_lat
                     total_iters += skip
                     sum_decode_reqs += len(running) * skip
                     sum_tokens += len(running) * skip
+                    peak_decode_reqs = max(peak_decode_reqs, len(running))
+                    peak_tokens = max(peak_tokens, len(running))
+                    if len(completed) >= self._config.warmup_requests:
+                        steady_iters += skip
+                        steady_time_ms += skip_lat
+                        steady_output_tokens += len(running) * skip
                     for req in running:
                         req.generated_tokens += skip
 
         return self._collect_metrics(
             completed, num_gpus, total_iters,
             sum_prefill_reqs, sum_decode_reqs, sum_tokens,
+            steady_iters, steady_time_ms, steady_output_tokens,
+            peak_prefill_reqs, peak_decode_reqs, peak_tokens,
         )
 
     def _collect_metrics(
@@ -181,18 +249,29 @@ class CBSimulator:
         sum_prefill_reqs: int = 0,
         sum_decode_reqs: int = 0,
         sum_tokens: int = 0,
+        steady_iters: int = 0,
+        steady_time_ms: float = 0.0,
+        steady_output_tokens: int = 0,
+        peak_prefill_reqs: int = 0,
+        peak_decode_reqs: int = 0,
+        peak_tokens: int = 0,
     ) -> CBSimResult:
         """Collect TTFT, TPOT, throughput from completed requests."""
         warmup = self._config.warmup_requests
         steady = completed[warmup:]
-        if len(steady) < 2:
-            logger.warning("Too few steady-state requests: %d", len(steady))
+        if len(steady) < 2 or steady_iters <= 0 or steady_time_ms <= 0:
+            logger.warning(
+                "Insufficient steady-state data: requests=%d iterations=%d time_ms=%.3f",
+                len(steady), steady_iters, steady_time_ms,
+            )
             return CBSimResult(
                 mean_ttft_ms=float("inf"), p50_ttft_ms=float("inf"),
                 p99_ttft_ms=float("inf"), mean_tpot_ms=float("inf"),
                 throughput_tok_s=0.0, throughput_tok_s_gpu=0.0,
                 num_gpus=num_gpus, total_iterations=total_iters,
                 steady_state_requests=len(steady),
+                steady_state_iterations=steady_iters,
+                steady_state_time_ms=steady_time_ms,
             )
 
         ttfts = [r.first_token_ms - r.arrival_time_ms for r in steady]
@@ -201,10 +280,7 @@ class CBSimulator:
             for r in steady
         ]
 
-        window_start = steady[0].arrival_time_ms
-        window_end = steady[-1].finish_ms
-        total_out_tokens = sum(r.osl - 1 for r in steady)
-        wall_s = (window_end - window_start) / 1000.0
+        wall_s = steady_time_ms / 1000.0
 
         n = max(total_iters, 1)
         return CBSimResult(
@@ -212,14 +288,19 @@ class CBSimulator:
             p50_ttft_ms=float(np.median(ttfts)),
             p99_ttft_ms=float(np.percentile(ttfts, 99)),
             mean_tpot_ms=float(np.mean(tpots)),
-            throughput_tok_s=total_out_tokens / wall_s if wall_s > 0 else 0.0,
+            throughput_tok_s=steady_output_tokens / wall_s if wall_s > 0 else 0.0,
             throughput_tok_s_gpu=(
-                total_out_tokens / wall_s / max(num_gpus, 1) if wall_s > 0 else 0.0
+                steady_output_tokens / wall_s / max(num_gpus, 1) if wall_s > 0 else 0.0
             ),
             num_gpus=num_gpus,
             total_iterations=total_iters,
             steady_state_requests=len(steady),
+            steady_state_iterations=steady_iters,
+            steady_state_time_ms=steady_time_ms,
             avg_prefill_reqs_per_iter=sum_prefill_reqs / n,
             avg_decode_reqs_per_iter=sum_decode_reqs / n,
             avg_tokens_per_iter=sum_tokens / n,
+            peak_prefill_reqs_per_iter=peak_prefill_reqs,
+            peak_decode_reqs_per_iter=peak_decode_reqs,
+            peak_tokens_per_iter=peak_tokens,
         )

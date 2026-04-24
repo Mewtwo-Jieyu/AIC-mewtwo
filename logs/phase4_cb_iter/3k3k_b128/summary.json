@@ -1,0 +1,27 @@
+{
+  "base_url": "http://s-20260420181527-6g8xk.ailab-pj.pjh-service.org.cn",
+  "endpoint": "http://s-20260420181527-6g8xk.ailab-pj.pjh-service.org.cn/v1/chat/completions",
+  "model": "kimi-k2.5",
+  "num_requests": 128,
+  "concurrency": 128,
+  "input_words": 3000,
+  "max_tokens": 3000,
+  "stream": true,
+  "wall_s": 158.5296898750239,
+  "ok_requests": 128,
+  "failed_requests": 0,
+  "mean_latency_ms": 158351.28439749268,
+  "p50_latency_ms": 158375.9890210058,
+  "p99_latency_ms": 158488.63010366564,
+  "first_error": "",
+  "metrics_interval_s": 1.0,
+  "metrics_tail_summary": {
+    "tail_window_count": 66.0,
+    "tail_duration_s": 75.10459204099607,
+    "tail_iteration_count_delta": 5701.0,
+    "tail_iteration_tokens_delta": 182008.0,
+    "tail_avg_tokens_per_iter": 31.9256270829679,
+    "tail_avg_iter_latency_ms": 13.173933001402572,
+    "tail_generation_tok_s": 2423.3937640011463
+  }
+}

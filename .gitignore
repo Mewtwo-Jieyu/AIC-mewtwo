@@ -17,6 +17,9 @@ aiconf_save/
 venv/
 env/
 .venv/
+.claude/
+notes/
+results_kimi_vllm_fixed/
 
 *.pyc
 *.pyo

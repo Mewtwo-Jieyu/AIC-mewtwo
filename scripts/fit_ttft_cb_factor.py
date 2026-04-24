@@ -6,7 +6,7 @@ B1b：拟合 TTFT Continuous Batching 校正因子。
 AIC 的批处理假设（TTFT ∝ b × prefill_time）导致大并发场景严重高估 TTFT。
 
 本脚本：
-1. 调用 AIC SDK（tp=16, dp=1, 16卡, H200）获取各场景 AIC 预测 TTFT
+1. Monkey-patch 禁用现有 TTFT 校正，调用 AIC SDK 获取各场景 raw AIC 预测 TTFT
 2. 与实测 P95 TTFT 对比，计算 ttft_ratio = aic_ttft / real_ttft
 3. 拟合 ttft_ratio = f(b, ISL, OSL) 的最佳函数形式
 4. LOOCV 验证泛化能力
@@ -81,60 +81,69 @@ TP = 16
 
 
 def collect_aic_predictions() -> list[dict]:
-    """调用 AIC SDK 获取每个数据点的 AIC 预测 TTFT（tp=16, dp=1）。"""
-    model_config = ModelConfig(tp_size=TP, pp_size=1, moe_tp_size=TP, moe_ep_size=1)
-    model = get_model(MODEL_PATH, model_config, backend_name=BACKEND)
+    """调用 AIC SDK 获取每个数据点的 raw AIC 预测 TTFT（tp=16, dp=1）。"""
+    original_ttft = VLLMBackend._get_ttft_cb_correction
+    VLLMBackend._get_ttft_cb_correction = staticmethod(lambda b, isl, osl: 1.0)
 
-    systems_root = str(
-        Path(__file__).resolve().parent.parent / "src" / "aiconfigurator" / "systems"
-    )
-    db = PerfDatabase(
-        system=SYSTEM,
-        backend=BACKEND,
-        version="0.12.0",
-        systems_root=systems_root,
-    )
-    backend = VLLMBackend()
+    try:
+        model_config = ModelConfig(tp_size=TP, pp_size=1, moe_tp_size=TP, moe_ep_size=1)
+        model = get_model(MODEL_PATH, model_config, backend_name=BACKEND)
 
-    print("收集 AIC 预测 TTFT（tp=16, dp=1）...")
-    results = []
-    for scenario, isl, osl, b, real_ttft_ms, quality in REAL_TTFT_DATA:
-        # exclude 表示 queue-wait 主导 regime，B1b 不适用，但仍收集 AIC 预测供参考
+        systems_root = str(
+            Path(__file__).resolve().parent.parent / "src" / "aiconfigurator" / "systems"
+        )
+        db = PerfDatabase(
+            system=SYSTEM,
+            backend=BACKEND,
+            version="0.12.0",
+            systems_root=systems_root,
+        )
+        backend = VLLMBackend()
 
-        ctx_tokens = isl  # 标准假设
-        try:
-            summary = backend.run_agg(
-                model,
-                db,
-                RuntimeConfig(isl=isl, osl=osl, batch_size=b),
-                database_mode=common.DatabaseMode.HYBRID,
-                ctx_tokens=ctx_tokens,
-            )
-            df = summary.get_summary_df()
-            if df is None or df.empty:
-                print(f"  {scenario} b={b:>4}: 无结果（get_summary_df 为空）")
-                continue
-            row = df.iloc[0]
-            aic_ttft_ms = float(row.get("ttft", float("nan")))
-            if np.isnan(aic_ttft_ms) or aic_ttft_ms <= 0:
-                print(f"  {scenario} b={b:>4}: TTFT 无效 ({aic_ttft_ms})")
-                continue
-            results.append({
-                "scenario": scenario,
-                "isl": isl,
-                "osl": osl,
-                "b": b,
-                "aic_ttft_ms": aic_ttft_ms,
-                "real_ttft_ms": real_ttft_ms,
-                "ttft_ratio": aic_ttft_ms / real_ttft_ms,
-                "quality": quality,
-            })
-            print(f"  {scenario} b={b:>4}: AIC={aic_ttft_ms:>8.1f}ms  real={real_ttft_ms:>8.1f}ms  "
-                  f"ratio={aic_ttft_ms/real_ttft_ms:>5.2f}x  [{quality}]")
-        except Exception as e:
-            print(f"  {scenario} b={b:>4}: 错误 - {e}")
+        print("收集 AIC raw 预测 TTFT（tp=16, dp=1, B1b 已禁用）...")
+        results = []
+        for scenario, isl, osl, b, real_ttft_ms, quality in REAL_TTFT_DATA:
+            # exclude 表示 queue-wait 主导 regime，B1b 不适用，但仍收集 raw 预测供参考
 
-    return results
+            ctx_tokens = isl  # 标准假设
+            try:
+                summary = backend.run_agg(
+                    model,
+                    db,
+                    RuntimeConfig(isl=isl, osl=osl, batch_size=b),
+                    database_mode=common.DatabaseMode.HYBRID,
+                    ctx_tokens=ctx_tokens,
+                )
+                df = summary.get_summary_df()
+                if df is None or df.empty:
+                    print(f"  {scenario} b={b:>4}: 无结果（get_summary_df 为空）")
+                    continue
+                row = df.iloc[0]
+                aic_ttft_ms = float(row.get("ttft", float("nan")))
+                if np.isnan(aic_ttft_ms) or aic_ttft_ms <= 0:
+                    print(f"  {scenario} b={b:>4}: TTFT 无效 ({aic_ttft_ms})")
+                    continue
+                results.append({
+                    "scenario": scenario,
+                    "isl": isl,
+                    "osl": osl,
+                    "b": b,
+                    "aic_ttft_ms": aic_ttft_ms,
+                    "real_ttft_ms": real_ttft_ms,
+                    "ttft_ratio": aic_ttft_ms / real_ttft_ms,
+                    "quality": quality,
+                })
+                print(
+                    f"  {scenario} b={b:>4}: AIC_raw={aic_ttft_ms:>8.1f}ms  "
+                    f"real={real_ttft_ms:>8.1f}ms  ratio={aic_ttft_ms/real_ttft_ms:>5.2f}x  "
+                    f"[{quality}]"
+                )
+            except Exception as e:
+                print(f"  {scenario} b={b:>4}: 错误 - {e}")
+
+        return results
+    finally:
+        VLLMBackend._get_ttft_cb_correction = original_ttft
 
 
 # ── 拟合函数（ratio = aic_ttft / real_ttft，ratio > 1 表示 AIC 高估）─────────────
@@ -333,7 +342,20 @@ def print_final_result(best: dict, points: list[dict]) -> None:
     print(f"\n{'─'*80}")
     print("  ── 可粘贴到 vllm_backend.py 的代码 ──")
     print(f"{'─'*80}")
-    param_names = ["a", "b_exp", "c", "d", "e"][:len(popt)]
+    if "A:" in name:
+        param_names = ["a", "c", "d"]
+    elif "B:" in name or "C:" in name:
+        param_names = ["a", "b_exp", "c", "d"]
+    elif "D:" in name:
+        param_names = ["a", "b_exp", "c"]
+    elif "E:" in name:
+        param_names = ["a", "c", "d", "e"]
+    elif "F:" in name:
+        param_names = ["a", "b_exp", "c"]
+    elif "G:" in name:
+        param_names = ["a", "b_coeff", "c"]
+    else:
+        param_names = [f"p{i}" for i in range(len(popt))]
     param_str = ", ".join(f"{v:.6f}" for v in popt)
     print(f"""
     @staticmethod
@@ -357,7 +379,13 @@ def print_final_result(best: dict, points: list[dict]) -> None:
 
     # Print formula based on model type
     if x_dim == 1:
-        print(f"        factor = a * (b ** c) + d")
+        if "A:" in name:
+            print(f"        factor = a * (b ** c) + d")
+        elif "E:" in name:
+            print(f"        import math")
+            print(f"        factor = a * (b ** c) * (math.log(max(b, 1)) ** e) + d")
+        else:
+            print("        factor = 1.0")
     else:
         print(f"        isl_osl_ratio = isl / max(osl, 1)")
         if "B:" in name:
@@ -368,7 +396,7 @@ def print_final_result(best: dict, points: list[dict]) -> None:
             print(f"        factor = a * (b ** c) / (isl_osl_ratio ** b_exp)")
         elif "G:" in name:
             print(f"        import math")
-            print(f"        factor = a * math.log(max(isl_osl_ratio, 0.01)) + b_exp * math.log(max(b, 1)) + c")
+            print(f"        factor = a * math.log(max(isl_osl_ratio, 0.01)) + b_coeff * math.log(max(b, 1)) + c")
 
     print(f"        return max(factor, 1.0)")
 
