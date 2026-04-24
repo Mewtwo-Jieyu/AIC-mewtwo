@@ -1230,6 +1230,8 @@ class DeepSeekModel(BaseModel):
                     moe_ep_size,
                     attention_dp_size,
                     True,
+                    is_context=True,
+                    scale_num_tokens=tp_size,
                 )
             ]
         )
@@ -1249,6 +1251,7 @@ class DeepSeekModel(BaseModel):
                     moe_quant_mode,
                     workload_distribution,
                     attention_dp_size,
+                    scale_num_tokens=tp_size,
                 )
             ]
         )
@@ -1266,6 +1269,8 @@ class DeepSeekModel(BaseModel):
                     moe_ep_size,
                     attention_dp_size,
                     False,
+                    is_context=True,
+                    scale_num_tokens=tp_size,
                 )
             ]
         )
@@ -1430,6 +1435,8 @@ class DeepSeekModel(BaseModel):
                     moe_ep_size,
                     attention_dp_size,
                     True,
+                    is_context=False,
+                    scale_num_tokens=tp_size,
                 )
             ]
         )
@@ -1466,6 +1473,8 @@ class DeepSeekModel(BaseModel):
                     moe_ep_size,
                     attention_dp_size,
                     False,
+                    is_context=False,
+                    scale_num_tokens=tp_size,
                 )
             ]
         )

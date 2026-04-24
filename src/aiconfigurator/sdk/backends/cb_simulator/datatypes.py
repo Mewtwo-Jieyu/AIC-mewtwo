@@ -13,6 +13,7 @@ class RequestState(Enum):
     WAITING = auto()     # in queue, not yet admitted
     PREFILLING = auto()  # admitted, prefill in progress
     DECODING = auto()    # prefill done, generating tokens
+    PREEMPTED = auto()   # evicted from KV cache, must recompute
     DONE = auto()        # generation complete
 
 
@@ -23,6 +24,11 @@ class CBSimConfig:
     max_num_seqs: int = 256
     num_requests: int = 200
     warmup_requests: int = 50
+    long_prefill_token_threshold: int = 0
+    num_gpu_blocks: int = 0
+    block_size: int = 16
+    overlap_factor: float = 1.0
+    per_iteration_overhead_ms: float = 0.0
 
 
 @dataclass
@@ -40,6 +46,7 @@ class Request:
     prefill_start_ms: float = -1.0
     first_token_ms: float = -1.0
     finish_ms: float = -1.0
+    num_preemptions: int = 0
 
     def __post_init__(self) -> None:
         if self.prefill_tokens_remaining < 0:
@@ -83,7 +90,12 @@ class CBSimResult:
     num_gpus: int
     total_iterations: int
     steady_state_requests: int
+    steady_state_iterations: int = 0
+    steady_state_time_ms: float = 0.0
     # Iteration-averaged scheduling counters (for ColumnsAgg fields)
     avg_prefill_reqs_per_iter: float = 0.0
     avg_decode_reqs_per_iter: float = 0.0
     avg_tokens_per_iter: float = 0.0
+    peak_prefill_reqs_per_iter: int = 0
+    peak_decode_reqs_per_iter: int = 0
+    peak_tokens_per_iter: int = 0

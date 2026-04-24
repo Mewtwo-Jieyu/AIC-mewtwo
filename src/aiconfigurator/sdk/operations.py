@@ -486,6 +486,7 @@ class MoE(Operation):
         self._is_gated = is_gated
         self._moe_backend = kwargs.get("moe_backend")
         self._enable_eplb = kwargs.get("enable_eplb", False)
+        self._scale_num_tokens = kwargs.get("scale_num_tokens", 1)
         # 3 GEMMs for gated (gate, up, down), 2 GEMMs for non-gated (up, down)
         num_gemms = 3 if is_gated else 2
         self._weights = (
@@ -501,7 +502,10 @@ class MoE(Operation):
     def query(self, database: PerfDatabase, **kwargs) -> PerformanceResult:
         """Query MoE latency with energy data."""
         # attention dp size will scale up the total input tokens.
-        x = kwargs.get("x") * self._attention_dp_size
+        x = kwargs.get("x")
+        if self._is_context:
+            x = max(1, x // self._scale_num_tokens)
+        x *= self._attention_dp_size
         overwrite_quant_mode = kwargs.get("quant_mode")
         quant_mode = self._quant_mode if overwrite_quant_mode is None else overwrite_quant_mode
 
@@ -691,6 +695,8 @@ class MoEDispatch(Operation):
             assert self._moe_tp_size == 1 or self._moe_ep_size == 1, (
                 "vllm does not support MoE TP and MoE EP at the same time"
             )
+            scaled_num_tokens = max(1, num_tokens // self._scale_num_tokens)
+            volume = scaled_num_tokens * self._hidden_size
 
             comm_latency = 0
 

@@ -1,0 +1,1334 @@
+{
+  "samples": [
+    {
+      "sample_index": 0,
+      "elapsed_s": 0.3890932910144329,
+      "iteration_count": 126710.0,
+      "iteration_tokens": 3299695.0,
+      "prompt_tokens": 875255.0,
+      "generation_tokens": 2424440.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 1,
+      "elapsed_s": 1.4943327080109157,
+      "iteration_count": 126714.0,
+      "iteration_tokens": 3314838.0,
+      "prompt_tokens": 890390.0,
+      "generation_tokens": 2424448.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 2,
+      "elapsed_s": 2.607882458018139,
+      "iteration_count": 126722.0,
+      "iteration_tokens": 3451132.0,
+      "prompt_tokens": 1026605.0,
+      "generation_tokens": 2424527.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 3,
+      "elapsed_s": 3.8170206249924377,
+      "iteration_count": 126726.0,
+      "iteration_tokens": 3484490.0,
+      "prompt_tokens": 1059902.0,
+      "generation_tokens": 2424588.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 4,
+      "elapsed_s": 5.011887500004377,
+      "iteration_count": 126730.0,
+      "iteration_tokens": 3517859.0,
+      "prompt_tokens": 1093199.0,
+      "generation_tokens": 2424660.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 5,
+      "elapsed_s": 6.217349249986,
+      "iteration_count": 126734.0,
+      "iteration_tokens": 3563351.0,
+      "prompt_tokens": 1138604.0,
+      "generation_tokens": 2424747.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 6,
+      "elapsed_s": 7.833354000002146,
+      "iteration_count": 126738.0,
+      "iteration_tokens": 3602802.0,
+      "prompt_tokens": 1177955.0,
+      "generation_tokens": 2424847.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 7,
+      "elapsed_s": 9.130790708004497,
+      "iteration_count": 126874.0,
+      "iteration_tokens": 3691895.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2429184.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 8,
+      "elapsed_s": 10.266892208019271,
+      "iteration_count": 127018.0,
+      "iteration_tokens": 3696503.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2433792.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 9,
+      "elapsed_s": 11.392036375007592,
+      "iteration_count": 127130.0,
+      "iteration_tokens": 3700087.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2437376.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 10,
+      "elapsed_s": 12.85235245799413,
+      "iteration_count": 127246.0,
+      "iteration_tokens": 3703799.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2441088.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 11,
+      "elapsed_s": 14.004790708015207,
+      "iteration_count": 127386.0,
+      "iteration_tokens": 3708279.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2445568.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 12,
+      "elapsed_s": 15.23830495798029,
+      "iteration_count": 127494.0,
+      "iteration_tokens": 3711735.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2449024.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 13,
+      "elapsed_s": 16.40085629100213,
+      "iteration_count": 127610.0,
+      "iteration_tokens": 3715447.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2452736.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 14,
+      "elapsed_s": 17.625094666029327,
+      "iteration_count": 127718.0,
+      "iteration_tokens": 3718903.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2456192.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 15,
+      "elapsed_s": 18.92242700001225,
+      "iteration_count": 127826.0,
+      "iteration_tokens": 3722359.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2459648.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 16,
+      "elapsed_s": 20.26265525002964,
+      "iteration_count": 127954.0,
+      "iteration_tokens": 3726455.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2463744.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 17,
+      "elapsed_s": 21.381788833008613,
+      "iteration_count": 128058.0,
+      "iteration_tokens": 3729783.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2467072.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 18,
+      "elapsed_s": 22.46543629100779,
+      "iteration_count": 128158.0,
+      "iteration_tokens": 3732983.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2470272.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 19,
+      "elapsed_s": 23.546817250025924,
+      "iteration_count": 128250.0,
+      "iteration_tokens": 3735927.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2473216.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 20,
+      "elapsed_s": 24.66896037501283,
+      "iteration_count": 128342.0,
+      "iteration_tokens": 3738871.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2476160.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 21,
+      "elapsed_s": 25.851664750021882,
+      "iteration_count": 128434.0,
+      "iteration_tokens": 3741815.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2479104.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 22,
+      "elapsed_s": 27.223078666022047,
+      "iteration_count": 128538.0,
+      "iteration_tokens": 3745143.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2482432.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 23,
+      "elapsed_s": 28.33433216600679,
+      "iteration_count": 128646.0,
+      "iteration_tokens": 3748599.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2485888.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 24,
+      "elapsed_s": 29.630188415991142,
+      "iteration_count": 128742.0,
+      "iteration_tokens": 3751671.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2488960.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 25,
+      "elapsed_s": 31.02787624998018,
+      "iteration_count": 128846.0,
+      "iteration_tokens": 3754999.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2492288.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 26,
+      "elapsed_s": 32.21058783301851,
+      "iteration_count": 128958.0,
+      "iteration_tokens": 3758583.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2495940.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 27,
+      "elapsed_s": 33.8899098749971,
+      "iteration_count": 129070.0,
+      "iteration_tokens": 3762167.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2499456.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 28,
+      "elapsed_s": 35.37337512499653,
+      "iteration_count": 129194.0,
+      "iteration_tokens": 3766135.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2503424.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 29,
+      "elapsed_s": 36.528310458001215,
+      "iteration_count": 129314.0,
+      "iteration_tokens": 3769975.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2507264.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 30,
+      "elapsed_s": 37.77253583300626,
+      "iteration_count": 129408.0,
+      "iteration_tokens": 3772987.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2510336.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 31,
+      "elapsed_s": 39.11716362502193,
+      "iteration_count": 129514.0,
+      "iteration_tokens": 3776375.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2513664.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 32,
+      "elapsed_s": 40.46551304101013,
+      "iteration_count": 129618.0,
+      "iteration_tokens": 3779703.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2516992.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 33,
+      "elapsed_s": 41.76672725001117,
+      "iteration_count": 129730.0,
+      "iteration_tokens": 3783287.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2520576.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 34,
+      "elapsed_s": 43.07668062497396,
+      "iteration_count": 129838.0,
+      "iteration_tokens": 3786743.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2524032.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 35,
+      "elapsed_s": 44.392229875025805,
+      "iteration_count": 129934.0,
+      "iteration_tokens": 3789815.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2527104.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 36,
+      "elapsed_s": 45.60815904097399,
+      "iteration_count": 130042.0,
+      "iteration_tokens": 3793271.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2530560.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 37,
+      "elapsed_s": 47.01234162499895,
+      "iteration_count": 130142.0,
+      "iteration_tokens": 3796471.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2533760.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 38,
+      "elapsed_s": 48.41300979099469,
+      "iteration_count": 130250.0,
+      "iteration_tokens": 3799927.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2537216.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 39,
+      "elapsed_s": 50.65929187502479,
+      "iteration_count": 130412.0,
+      "iteration_tokens": 3805115.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2542464.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 40,
+      "elapsed_s": 51.76251291600056,
+      "iteration_count": 130538.0,
+      "iteration_tokens": 3809143.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2546432.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 41,
+      "elapsed_s": 52.98886670800857,
+      "iteration_count": 130630.0,
+      "iteration_tokens": 3812087.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2549376.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 42,
+      "elapsed_s": 54.24957479099976,
+      "iteration_count": 130726.0,
+      "iteration_tokens": 3815159.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2552448.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 43,
+      "elapsed_s": 55.66818699997384,
+      "iteration_count": 130826.0,
+      "iteration_tokens": 3818359.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2555648.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 44,
+      "elapsed_s": 56.79194154101424,
+      "iteration_count": 130938.0,
+      "iteration_tokens": 3821943.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2559232.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 45,
+      "elapsed_s": 57.950516041019,
+      "iteration_count": 131026.0,
+      "iteration_tokens": 3824759.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2562048.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 46,
+      "elapsed_s": 59.114880624983925,
+      "iteration_count": 131118.0,
+      "iteration_tokens": 3827703.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2564992.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 47,
+      "elapsed_s": 60.428226249990985,
+      "iteration_count": 131214.0,
+      "iteration_tokens": 3830775.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2568064.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 48,
+      "elapsed_s": 61.57552399998531,
+      "iteration_count": 131310.0,
+      "iteration_tokens": 3833847.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2571136.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 49,
+      "elapsed_s": 62.70657837501494,
+      "iteration_count": 131402.0,
+      "iteration_tokens": 3836791.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2574080.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 50,
+      "elapsed_s": 63.81753529101843,
+      "iteration_count": 131494.0,
+      "iteration_tokens": 3839735.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2577024.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 51,
+      "elapsed_s": 64.93956333299866,
+      "iteration_count": 131582.0,
+      "iteration_tokens": 3842551.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2579840.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 52,
+      "elapsed_s": 66.02599533298053,
+      "iteration_count": 131668.0,
+      "iteration_tokens": 3845307.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2582656.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 53,
+      "elapsed_s": 67.17691024998203,
+      "iteration_count": 131754.0,
+      "iteration_tokens": 3848055.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2585344.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 54,
+      "elapsed_s": 68.28231379098725,
+      "iteration_count": 131846.0,
+      "iteration_tokens": 3850999.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2588288.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 55,
+      "elapsed_s": 69.41307941603009,
+      "iteration_count": 131930.0,
+      "iteration_tokens": 3853687.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2590976.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 56,
+      "elapsed_s": 70.7750184580218,
+      "iteration_count": 132022.0,
+      "iteration_tokens": 3856631.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2593920.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 57,
+      "elapsed_s": 72.19623000000138,
+      "iteration_count": 132132.0,
+      "iteration_tokens": 3860155.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2597504.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 58,
+      "elapsed_s": 73.71268691599835,
+      "iteration_count": 132246.0,
+      "iteration_tokens": 3863799.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2601088.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 59,
+      "elapsed_s": 75.30507337499876,
+      "iteration_count": 132358.0,
+      "iteration_tokens": 3867383.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2604672.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 60,
+      "elapsed_s": 76.65872512501664,
+      "iteration_count": 132482.0,
+      "iteration_tokens": 3871351.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2608640.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 61,
+      "elapsed_s": 77.99026083300123,
+      "iteration_count": 132590.0,
+      "iteration_tokens": 3874807.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2612096.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 62,
+      "elapsed_s": 79.11638412502361,
+      "iteration_count": 132690.0,
+      "iteration_tokens": 3878007.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2615296.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 63,
+      "elapsed_s": 80.23625537502812,
+      "iteration_count": 132778.0,
+      "iteration_tokens": 3880823.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2618112.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 64,
+      "elapsed_s": 81.3665357499849,
+      "iteration_count": 132862.0,
+      "iteration_tokens": 3883511.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2620800.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 65,
+      "elapsed_s": 82.49838154099416,
+      "iteration_count": 132950.0,
+      "iteration_tokens": 3886327.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2623616.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 66,
+      "elapsed_s": 83.57080699998187,
+      "iteration_count": 133038.0,
+      "iteration_tokens": 3889143.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2626432.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 67,
+      "elapsed_s": 84.68140108301304,
+      "iteration_count": 133122.0,
+      "iteration_tokens": 3891831.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2629120.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 68,
+      "elapsed_s": 85.85180599999148,
+      "iteration_count": 133206.0,
+      "iteration_tokens": 3894519.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2631808.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 69,
+      "elapsed_s": 86.97569537500385,
+      "iteration_count": 133298.0,
+      "iteration_tokens": 3897463.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2634752.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 70,
+      "elapsed_s": 88.14109358302085,
+      "iteration_count": 133386.0,
+      "iteration_tokens": 3900279.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2637568.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 71,
+      "elapsed_s": 89.40214525000192,
+      "iteration_count": 133478.0,
+      "iteration_tokens": 3903223.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2640512.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 72,
+      "elapsed_s": 90.52502800000366,
+      "iteration_count": 133574.0,
+      "iteration_tokens": 3906295.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2643584.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 73,
+      "elapsed_s": 91.65580087498529,
+      "iteration_count": 133662.0,
+      "iteration_tokens": 3909111.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2646400.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 74,
+      "elapsed_s": 92.80164274998242,
+      "iteration_count": 133750.0,
+      "iteration_tokens": 3911927.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2649216.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 75,
+      "elapsed_s": 93.9546704160166,
+      "iteration_count": 133838.0,
+      "iteration_tokens": 3914743.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2652032.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 76,
+      "elapsed_s": 95.15850291599054,
+      "iteration_count": 133926.0,
+      "iteration_tokens": 3917559.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2654848.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 77,
+      "elapsed_s": 96.24967237497913,
+      "iteration_count": 134018.0,
+      "iteration_tokens": 3920503.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2657792.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 78,
+      "elapsed_s": 97.37900516600348,
+      "iteration_count": 134102.0,
+      "iteration_tokens": 3923191.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2660480.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 79,
+      "elapsed_s": 98.5285573329893,
+      "iteration_count": 134190.0,
+      "iteration_tokens": 3926007.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2663296.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 80,
+      "elapsed_s": 99.61773100000573,
+      "iteration_count": 134278.0,
+      "iteration_tokens": 3928823.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2666112.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 81,
+      "elapsed_s": 100.69271841598675,
+      "iteration_count": 134362.0,
+      "iteration_tokens": 3931511.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2668800.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 82,
+      "elapsed_s": 101.81311275000917,
+      "iteration_count": 134446.0,
+      "iteration_tokens": 3934199.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2671488.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 83,
+      "elapsed_s": 103.01215075002983,
+      "iteration_count": 134532.0,
+      "iteration_tokens": 3936955.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2674304.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 84,
+      "elapsed_s": 104.13130541599821,
+      "iteration_count": 134622.0,
+      "iteration_tokens": 3939831.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2677120.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 85,
+      "elapsed_s": 105.26387037499808,
+      "iteration_count": 134710.0,
+      "iteration_tokens": 3942647.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2679936.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 86,
+      "elapsed_s": 106.41331295802956,
+      "iteration_count": 134798.0,
+      "iteration_tokens": 3945463.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2682752.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 87,
+      "elapsed_s": 107.53114974999335,
+      "iteration_count": 134882.0,
+      "iteration_tokens": 3948151.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2685440.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 88,
+      "elapsed_s": 108.62309404101688,
+      "iteration_count": 134970.0,
+      "iteration_tokens": 3950967.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2688256.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 89,
+      "elapsed_s": 109.73664316599024,
+      "iteration_count": 135054.0,
+      "iteration_tokens": 3953655.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2690944.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 90,
+      "elapsed_s": 110.88457712501986,
+      "iteration_count": 135138.0,
+      "iteration_tokens": 3956343.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2693632.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 91,
+      "elapsed_s": 112.02861450001365,
+      "iteration_count": 135226.0,
+      "iteration_tokens": 3959159.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2696448.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 92,
+      "elapsed_s": 113.16465099999914,
+      "iteration_count": 135310.0,
+      "iteration_tokens": 3961847.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2699136.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 93,
+      "elapsed_s": 114.26686291600345,
+      "iteration_count": 135398.0,
+      "iteration_tokens": 3964663.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2701952.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 94,
+      "elapsed_s": 115.34401958301896,
+      "iteration_count": 135482.0,
+      "iteration_tokens": 3967351.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2704640.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 95,
+      "elapsed_s": 116.52981724997517,
+      "iteration_count": 135562.0,
+      "iteration_tokens": 3969911.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2707268.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 96,
+      "elapsed_s": 117.70601454097778,
+      "iteration_count": 135654.0,
+      "iteration_tokens": 3972855.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2710144.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 97,
+      "elapsed_s": 118.90160779102007,
+      "iteration_count": 135742.0,
+      "iteration_tokens": 3975671.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2712960.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 98,
+      "elapsed_s": 120.0813904160168,
+      "iteration_count": 135830.0,
+      "iteration_tokens": 3978487.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2715776.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 99,
+      "elapsed_s": 121.20781487500062,
+      "iteration_count": 135922.0,
+      "iteration_tokens": 3981431.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2718720.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 100,
+      "elapsed_s": 122.3371501659858,
+      "iteration_count": 136006.0,
+      "iteration_tokens": 3984119.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2721408.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 101,
+      "elapsed_s": 123.47536183299962,
+      "iteration_count": 136092.0,
+      "iteration_tokens": 3986875.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2724224.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 102,
+      "elapsed_s": 124.57772470801137,
+      "iteration_count": 136178.0,
+      "iteration_tokens": 3989623.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2726912.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 103,
+      "elapsed_s": 125.81935879099183,
+      "iteration_count": 136262.0,
+      "iteration_tokens": 3992311.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2729600.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 104,
+      "elapsed_s": 126.9384047909989,
+      "iteration_count": 136358.0,
+      "iteration_tokens": 3995383.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2732672.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 105,
+      "elapsed_s": 128.30812620802317,
+      "iteration_count": 136450.0,
+      "iteration_tokens": 3998327.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2735616.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 106,
+      "elapsed_s": 129.42042404098902,
+      "iteration_count": 136546.0,
+      "iteration_tokens": 4001399.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2738688.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 107,
+      "elapsed_s": 130.72613762499532,
+      "iteration_count": 136630.0,
+      "iteration_tokens": 4004087.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2741376.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 108,
+      "elapsed_s": 131.86578912497498,
+      "iteration_count": 136726.0,
+      "iteration_tokens": 4007159.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2744448.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 109,
+      "elapsed_s": 132.95503574999748,
+      "iteration_count": 136810.0,
+      "iteration_tokens": 4009847.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2747136.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 110,
+      "elapsed_s": 134.09928733302513,
+      "iteration_count": 136894.0,
+      "iteration_tokens": 4012535.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2749824.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 111,
+      "elapsed_s": 135.23306187498383,
+      "iteration_count": 136978.0,
+      "iteration_tokens": 4015223.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2752512.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 112,
+      "elapsed_s": 136.38554720801767,
+      "iteration_count": 137066.0,
+      "iteration_tokens": 4018039.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2755328.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 113,
+      "elapsed_s": 137.61330370802898,
+      "iteration_count": 137162.0,
+      "iteration_tokens": 4021111.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2758400.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 114,
+      "elapsed_s": 138.83568662498146,
+      "iteration_count": 137242.0,
+      "iteration_tokens": 4023671.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2761028.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 115,
+      "elapsed_s": 139.99844945798395,
+      "iteration_count": 137338.0,
+      "iteration_tokens": 4026743.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2764032.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 116,
+      "elapsed_s": 141.1351397500257,
+      "iteration_count": 137422.0,
+      "iteration_tokens": 4029431.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2766720.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 117,
+      "elapsed_s": 142.2607245830004,
+      "iteration_count": 137508.0,
+      "iteration_tokens": 4032187.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2769536.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 118,
+      "elapsed_s": 143.4193030410097,
+      "iteration_count": 137594.0,
+      "iteration_tokens": 4034935.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2772224.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 119,
+      "elapsed_s": 144.55474616598804,
+      "iteration_count": 137682.0,
+      "iteration_tokens": 4037751.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2775040.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 120,
+      "elapsed_s": 145.6423469579895,
+      "iteration_count": 137766.0,
+      "iteration_tokens": 4040439.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2777728.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 121,
+      "elapsed_s": 146.75655216601444,
+      "iteration_count": 137850.0,
+      "iteration_tokens": 4043127.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2780416.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 122,
+      "elapsed_s": 147.91480562498327,
+      "iteration_count": 137934.0,
+      "iteration_tokens": 4045815.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2783104.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 123,
+      "elapsed_s": 149.02303137502167,
+      "iteration_count": 138018.0,
+      "iteration_tokens": 4048503.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2785792.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 124,
+      "elapsed_s": 150.17712045798544,
+      "iteration_count": 138106.0,
+      "iteration_tokens": 4051319.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2788608.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 125,
+      "elapsed_s": 151.29149591602618,
+      "iteration_count": 138190.0,
+      "iteration_tokens": 4054007.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2791296.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 126,
+      "elapsed_s": 152.46319275000133,
+      "iteration_count": 138274.0,
+      "iteration_tokens": 4056695.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2793984.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 127,
+      "elapsed_s": 153.69807662500534,
+      "iteration_count": 138362.0,
+      "iteration_tokens": 4059511.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2796800.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 128,
+      "elapsed_s": 154.90416395798093,
+      "iteration_count": 138454.0,
+      "iteration_tokens": 4062455.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2799744.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 129,
+      "elapsed_s": 156.05724024999654,
+      "iteration_count": 138546.0,
+      "iteration_tokens": 4065399.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2802688.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 130,
+      "elapsed_s": 157.27845395798795,
+      "iteration_count": 138634.0,
+      "iteration_tokens": 4068215.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2805504.0,
+      "request_success": 719.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 131,
+      "elapsed_s": 158.52954033302376,
+      "iteration_count": 138728.0,
+      "iteration_tokens": 4071045.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2808356.0,
+      "request_success": 806.0,
+      "preemptions": 0.0
+    },
+    {
+      "sample_index": 132,
+      "elapsed_s": 158.67539904097794,
+      "iteration_count": 138739.0,
+      "iteration_tokens": 4071151.0,
+      "prompt_tokens": 1262711.0,
+      "generation_tokens": 2808440.0,
+      "request_success": 847.0,
+      "preemptions": 0.0
+    }
+  ]
+}

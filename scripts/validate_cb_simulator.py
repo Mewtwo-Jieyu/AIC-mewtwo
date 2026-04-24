@@ -11,9 +11,11 @@ Config: Kimi-K2.5, vLLM 0.17, H200 SXM x16, tp=16 dp=1
 """
 from __future__ import annotations
 
+import argparse
 import logging
 import sys
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
@@ -43,27 +45,127 @@ class BenchmarkPoint:
     isl: int
     osl: int
     batch_size: int
-    real_tok_s_gpu: float
+    real_output_tok_s_gpu: float
+    real_total_tok_s_gpu: float | None = None
     real_ttft_ms: float | None = None
 
 
+@dataclass
+class MultiConfigPoint:
+    name: str
+    isl: int
+    osl: int
+    batch_size: int
+    tp: int
+    dp: int
+    moe_tp: int
+    moe_ep: int
+    real_total_tok_s_gpu: float
+
+    @property
+    def real_output_tok_s_gpu(self) -> float:
+        return self.real_total_tok_s_gpu * self.osl / (self.isl + self.osl)
+
+
+@dataclass(frozen=True)
+class ValidationResult:
+    overlap_factor: float
+    per_iteration_overhead_ms: float
+    ep8_per_iteration_overhead_ms: float
+    throughput_max: float
+    throughput_mean: float
+    multi_config_max: float
+    multi_config_mean: float
+    ttft_max: float
+    ttft_mean: float
+
+
 THROUGHPUT_DATA = [
-    BenchmarkPoint("3k-3k b=128", 3000, 3000, 128, 254.2),
-    BenchmarkPoint("8k-2k b=256", 8000, 2000, 256, 575.4),
-    BenchmarkPoint("10k-2k b=32", 10000, 2000, 32, 267.6),
-    BenchmarkPoint("10k-3k b=128", 10000, 3000, 128, 386.9),
-    BenchmarkPoint("16k-2k b=32", 16000, 2000, 32, 352.7),
-    BenchmarkPoint("30k-3k b=8", 30000, 3000, 8, 179.2),
-    BenchmarkPoint("32k-1k b=16", 32000, 1000, 16, 559.9),
+    BenchmarkPoint("3k-3k b=128", 3000, 3000, 128, 115.9, 254.2),
+    BenchmarkPoint("8k-2k b=256", 8000, 2000, 256, 117.6, 575.4),
+    BenchmarkPoint("10k-2k b=32", 10000, 2000, 32, 49.8, 267.6),
+    BenchmarkPoint("10k-3k b=128", 10000, 3000, 128, 89.5, 386.9),
+    BenchmarkPoint("16k-2k b=32", 16000, 2000, 32, 41.7, 352.7),
+    BenchmarkPoint("30k-3k b=8", 30000, 3000, 8, 18.2, 179.2),
+    BenchmarkPoint("32k-1k b=16", 32000, 1000, 16, 17.8, 559.9),
 ]
 
 TTFT_DATA = [
-    BenchmarkPoint("30k-3k b=4", 30000, 3000, 4, 0, 1231.0),
-    BenchmarkPoint("30k-3k b=8", 30000, 3000, 8, 0, 1823.0),
-    BenchmarkPoint("20k-5k b=4", 20000, 5000, 4, 0, 1326.0),
-    BenchmarkPoint("20k-5k b=8", 20000, 5000, 8, 0, 1649.0),
-    BenchmarkPoint("16k-2k b=16", 16000, 2000, 16, 0, 782.0),
-    BenchmarkPoint("16k-2k b=32", 16000, 2000, 32, 0, 814.0),
+    BenchmarkPoint("30k-3k b=4", 30000, 3000, 4, 0.0, real_ttft_ms=1231.0),
+    BenchmarkPoint("30k-3k b=8", 30000, 3000, 8, 0.0, real_ttft_ms=1823.0),
+    BenchmarkPoint("20k-5k b=4", 20000, 5000, 4, 0.0, real_ttft_ms=1326.0),
+    BenchmarkPoint("20k-5k b=8", 20000, 5000, 8, 0.0, real_ttft_ms=1649.0),
+    BenchmarkPoint("16k-2k b=16", 16000, 2000, 16, 0.0, real_ttft_ms=782.0),
+    BenchmarkPoint("16k-2k b=32", 16000, 2000, 32, 0.0, real_ttft_ms=814.0),
+]
+
+MULTI_CONFIG_DATA = [
+    MultiConfigPoint(
+        "K2.5-tp8ep8-8k2k",
+        8000,
+        2000,
+        128,
+        tp=8,
+        dp=1,
+        moe_tp=1,
+        moe_ep=8,
+        real_total_tok_s_gpu=667.64,
+    ),
+    MultiConfigPoint(
+        "K2.5-tp8ep8-32k3k",
+        32000,
+        3000,
+        128,
+        tp=8,
+        dp=1,
+        moe_tp=1,
+        moe_ep=8,
+        real_total_tok_s_gpu=612.14,
+    ),
+    MultiConfigPoint(
+        "K2.5-tp4ep8dp2-8k2k",
+        8000,
+        2000,
+        128,
+        tp=4,
+        dp=2,
+        moe_tp=1,
+        moe_ep=8,
+        real_total_tok_s_gpu=688.58,
+    ),
+    MultiConfigPoint(
+        "K2.5-tp4ep8dp2-32k3k",
+        32000,
+        3000,
+        128,
+        tp=4,
+        dp=2,
+        moe_tp=1,
+        moe_ep=8,
+        real_total_tok_s_gpu=621.57,
+    ),
+    MultiConfigPoint(
+        "K2.5-tp8ep8-8k2k-bt65536",
+        8000,
+        2000,
+        128,
+        tp=8,
+        dp=1,
+        moe_tp=1,
+        moe_ep=8,
+        real_total_tok_s_gpu=692.35,
+    ),
+    MultiConfigPoint(
+        "K2.5-tp4ep8dp2-8k2k-bt65536",
+        8000,
+        2000,
+        128,
+        tp=4,
+        dp=2,
+        moe_tp=1,
+        moe_ep=8,
+        real_total_tok_s_gpu=779.76,
+    ),
 ]
 
 
@@ -75,9 +177,21 @@ def _abs_error(predicted: float, real: float) -> float:
     return max(ratio, 1 / ratio)
 
 
-def _load_model_and_db() -> tuple:
+@lru_cache(maxsize=None)
+def _load_model_and_db(
+    tp: int = TP,
+    dp: int = 1,
+    moe_tp: int | None = None,
+    moe_ep: int = 1,
+) -> tuple:
     """Load model and database with same pattern as fit_cb_factor.py."""
-    model_config = ModelConfig(tp_size=TP, pp_size=1, moe_tp_size=TP, moe_ep_size=1)
+    model_config = ModelConfig(
+        tp_size=tp,
+        pp_size=1,
+        moe_tp_size=moe_tp if moe_tp is not None else tp,
+        moe_ep_size=moe_ep,
+        attention_dp_size=dp,
+    )
     model = get_model(MODEL_PATH, model_config, backend_name=BACKEND)
 
     systems_root = str(
@@ -91,90 +205,284 @@ def _load_model_and_db() -> tuple:
     return model, db, backend
 
 
-def _make_cb_config(concurrency: int) -> CBSimConfig:
-    """Create CBSimConfig with num_requests scaled to concurrency."""
+def _make_cb_config(
+    isl: int,
+    concurrency: int,
+    long_prefill_token_threshold: int = 0,
+    overlap_factor: float = 1.0,
+    per_iteration_overhead_ms: float = 0.0,
+) -> CBSimConfig:
+    """Create CBSimConfig aligned with run_agg default chunk budget."""
     # Need enough requests for meaningful steady-state measurement.
     # At minimum 3x concurrency to avoid requests running out.
     num_requests = max(200, concurrency * 3)
     warmup_requests = max(50, concurrency)
     return CBSimConfig(
+        max_num_batched_tokens=isl,
         num_requests=num_requests,
         warmup_requests=warmup_requests,
+        long_prefill_token_threshold=long_prefill_token_threshold,
+        overlap_factor=overlap_factor,
+        per_iteration_overhead_ms=per_iteration_overhead_ms,
     )
 
 
-def main() -> None:
+def _run_multi_config_validation(
+    overlap_factor: float,
+    per_iteration_overhead_ms: float,
+    ep8_per_iteration_overhead_ms: float,
+    verbose: bool = True,
+) -> list[float]:
+    if verbose:
+        print()
+        print("=" * 104)
+        print("MULTI-CONFIG THROUGHPUT (tok/s/GPU, output-only compare)")
+        print("CSV total tok/s/GPU is converted by output = total * OSL / (ISL + OSL)")
+        print(
+            f"{'Scenario':<32} {'tp':>3} {'dp':>3} {'ep':>3} {'RealOut':>8} "
+            f"{'RealTot':>8} {'CB-Sim':>8} {'Sim/Out':>10} {'Source':>14}"
+        )
+        print("-" * 104)
+
+    errs: list[float] = []
+    backend = VLLMBackend()
+    loaded: dict[tuple[int, int, int, int], tuple] = {}
+    for pt in MULTI_CONFIG_DATA:
+        key = (pt.tp, pt.dp, pt.moe_tp, pt.moe_ep)
+        if key not in loaded:
+            model, db, _ = _load_model_and_db(
+                tp=pt.tp,
+                dp=pt.dp,
+                moe_tp=pt.moe_tp,
+                moe_ep=pt.moe_ep,
+            )
+            loaded[key] = (model, db)
+        model, db = loaded[key]
+
+        cb_config = _make_cb_config(
+            pt.isl,
+            pt.batch_size,
+            overlap_factor=overlap_factor,
+            per_iteration_overhead_ms=ep8_per_iteration_overhead_ms,
+        )
+        cb_summary = backend.run_agg(
+            model,
+            db,
+            RuntimeConfig(batch_size=pt.batch_size, isl=pt.isl, osl=pt.osl),
+            ctx_tokens=pt.isl,
+            database_mode=common.DatabaseMode.HYBRID,
+            method="cb_sim",
+            cb_config=cb_config,
+        )
+        cb_dict = cb_summary.get_result_dict()
+        per_ops = cb_summary.get_per_ops_data()
+        sim_gpu = cb_dict["tokens/s/gpu"] if cb_dict else 0.0
+        real_output = pt.real_output_tok_s_gpu
+        ratio = sim_gpu / real_output if real_output > 0 else 0.0
+        errs.append(_abs_error(sim_gpu, real_output))
+        boundary = per_ops.get("cb_sim_boundary", {})
+        source = boundary.get("throughput_source", "unknown")
+
+        if verbose:
+            print(
+                f"{pt.name:<32} {pt.tp:>3} {pt.dp:>3} {pt.moe_ep:>3} "
+                f"{real_output:>8.1f} {pt.real_total_tok_s_gpu:>8.1f} "
+                f"{sim_gpu:>8.1f} {ratio:>9.2f}x {source:>14}"
+            )
+
+    if verbose:
+        print("-" * 104)
+        print(f"MULTI-CONFIG: max={max(errs):.2f}x mean={np.mean(errs):.2f}x")
+    return errs
+
+
+def run_validation(
+    overlap_factor: float = 0.0,
+    per_iteration_overhead_ms: float = 0.0,
+    ep8_per_iteration_overhead_ms: float = 90.0,
+    verbose: bool = True,
+) -> ValidationResult:
     model, db, backend = _load_model_and_db()
+    model_max_len = max(int(getattr(model, "_context_length", 0)), 0)
+    threshold = int(model_max_len * 0.04) if model_max_len > 0 else 0
 
     # --- Throughput ---
-    print("=" * 90)
-    print("THROUGHPUT (tok/s/GPU)")
-    print(f"{'Scenario':<22} {'Real':>8} {'CB-Sim':>8} {'B1':>8} {'Sim/Real':>10} {'B1/Real':>10}")
-    print("-" * 90)
+    if verbose:
+        print("=" * 90)
+        print("THROUGHPUT (tok/s/GPU, output-only compare)")
+        print(f"overlap_factor = {overlap_factor}")
+        print(f"per_iteration_overhead_ms = {per_iteration_overhead_ms}")
+        print(f"ep8_per_iteration_overhead_ms = {ep8_per_iteration_overhead_ms}")
+        print(
+            f"{'Scenario':<22} {'RealOut':>8} {'RealTot':>8} {'CB-Sim':>8} "
+            f"{'B1':>8} {'Sim/Out':>10} {'B1/Out':>10}"
+        )
+        print("-" * 100)
 
     sim_errs: list[float] = []
     b1_errs: list[float] = []
 
     for pt in THROUGHPUT_DATA:
-        # CB sim — num_gpus=1 because simulator models single-GPU behavior
-        cb_config = _make_cb_config(pt.batch_size)
-        sim = CBSimulator(backend, model, db, cb_config)
-        r = sim.run(isl=pt.isl, osl=pt.osl, concurrency=pt.batch_size, num_gpus=1)
-        sim_gpu = r.throughput_tok_s_gpu
+        # CB sim: validate the same public metric surface exposed by run_agg().
+        cb_config = _make_cb_config(
+            pt.isl,
+            pt.batch_size,
+            overlap_factor=overlap_factor,
+            per_iteration_overhead_ms=per_iteration_overhead_ms,
+        )
+        cb_summary = backend.run_agg(
+            model, db,
+            RuntimeConfig(batch_size=pt.batch_size, isl=pt.isl, osl=pt.osl),
+            ctx_tokens=pt.isl,
+            database_mode=common.DatabaseMode.HYBRID,
+            method="cb_sim",
+            cb_config=cb_config,
+        )
+        cb_dict = cb_summary.get_result_dict()
+        sim_gpu = cb_dict["tokens/s/gpu"] if cb_dict else 0
 
-        # B1 baseline (with correction factors enabled)
-        ctx_tokens = pt.isl
-        try:
-            b1_summary = backend.run_agg(
-                model, db,
-                RuntimeConfig(batch_size=pt.batch_size, isl=pt.isl, osl=pt.osl),
-                ctx_tokens=ctx_tokens,
-                database_mode=common.DatabaseMode.HYBRID,
-            )
-            b1_dict = b1_summary.get_result_dict()
-            b1_gpu = b1_dict["tokens/s/gpu"] if b1_dict else 0
-        except Exception as e:
-            logger.warning("B1 failed for %s: %s", pt.name, e)
+        # B1 baseline is display-only; parameter sweep skips it.
+        if verbose:
+            try:
+                b1_summary = backend.run_agg(
+                    model, db,
+                    RuntimeConfig(batch_size=pt.batch_size, isl=pt.isl, osl=pt.osl),
+                    ctx_tokens=pt.isl,
+                    database_mode=common.DatabaseMode.HYBRID,
+                )
+                b1_dict = b1_summary.get_result_dict()
+                b1_gpu = b1_dict["tokens/s/gpu"] if b1_dict else 0
+            except Exception as e:
+                logger.warning("B1 failed for %s: %s", pt.name, e)
+                b1_gpu = 0
+        else:
             b1_gpu = 0
 
-        sim_r = sim_gpu / pt.real_tok_s_gpu if pt.real_tok_s_gpu > 0 else 0
-        b1_r = b1_gpu / pt.real_tok_s_gpu if pt.real_tok_s_gpu > 0 else 0
-        sim_errs.append(_abs_error(sim_gpu, pt.real_tok_s_gpu))
-        b1_errs.append(_abs_error(b1_gpu, pt.real_tok_s_gpu))
+        sim_r = (
+            sim_gpu / pt.real_output_tok_s_gpu if pt.real_output_tok_s_gpu > 0 else 0
+        )
+        b1_r = (
+            b1_gpu / pt.real_output_tok_s_gpu if pt.real_output_tok_s_gpu > 0 else 0
+        )
+        sim_errs.append(_abs_error(sim_gpu, pt.real_output_tok_s_gpu))
+        if verbose:
+            b1_errs.append(_abs_error(b1_gpu, pt.real_output_tok_s_gpu))
 
-        print(f"{pt.name:<22} {pt.real_tok_s_gpu:>8.1f} {sim_gpu:>8.1f} {b1_gpu:>8.1f} {sim_r:>9.2f}x {b1_r:>9.2f}x")
+        real_total = pt.real_total_tok_s_gpu if pt.real_total_tok_s_gpu is not None else 0.0
+        if verbose:
+            print(
+                f"{pt.name:<22} {pt.real_output_tok_s_gpu:>8.1f} {real_total:>8.1f} "
+                f"{sim_gpu:>8.1f} {b1_gpu:>8.1f} {sim_r:>9.2f}x {b1_r:>9.2f}x"
+            )
 
-    print("-" * 90)
-    print(f"CB-Sim: max={max(sim_errs):.2f}x mean={np.mean(sim_errs):.2f}x | "
-          f"B1: max={max(b1_errs):.2f}x mean={np.mean(b1_errs):.2f}x")
+    if verbose:
+        print("-" * 100)
+        print(f"CB-Sim: max={max(sim_errs):.2f}x mean={np.mean(sim_errs):.2f}x | "
+              f"B1: max={max(b1_errs):.2f}x mean={np.mean(b1_errs):.2f}x")
 
     # --- TTFT ---
-    print()
-    print("=" * 90)
-    print("TTFT (ms)")
-    print(f"{'Scenario':<22} {'Real':>8} {'CB-Sim':>8} {'Sim/Real':>10}")
-    print("-" * 90)
+    if verbose:
+        print()
+        print("=" * 90)
+        print("TTFT (ms)")
+        print(f"long_prefill_token_threshold compare = {threshold}")
+        print(
+            f"{'Scenario':<22} {'Real':>8} {'CB-Sim':>8} "
+            f"{'CB+Thresh':>10} {'Sim/Real':>10} {'Thr/Real':>10}"
+        )
+        print("-" * 90)
 
     ttft_errs: list[float] = []
+    ttft_thresh_errs: list[float] = []
     for pt in TTFT_DATA:
-        cb_config = _make_cb_config(pt.batch_size)
-        sim = CBSimulator(backend, model, db, cb_config)
-        r = sim.run(isl=pt.isl, osl=pt.osl, concurrency=pt.batch_size, num_gpus=1)
-        ratio = r.mean_ttft_ms / pt.real_ttft_ms if pt.real_ttft_ms else 0
-        ttft_errs.append(_abs_error(r.mean_ttft_ms, pt.real_ttft_ms))
-        print(f"{pt.name:<22} {pt.real_ttft_ms:>8.1f} {r.mean_ttft_ms:>8.1f} {ratio:>9.2f}x")
+        base_config = _make_cb_config(
+            pt.isl,
+            pt.batch_size,
+            overlap_factor=overlap_factor,
+            per_iteration_overhead_ms=per_iteration_overhead_ms,
+        )
+        base_sim = CBSimulator(backend, model, db, base_config)
+        base_result = base_sim.run(
+            isl=pt.isl, osl=pt.osl, concurrency=pt.batch_size, num_gpus=1,
+        )
+        thresh_config = _make_cb_config(
+            pt.isl,
+            pt.batch_size,
+            long_prefill_token_threshold=threshold,
+            overlap_factor=overlap_factor,
+            per_iteration_overhead_ms=per_iteration_overhead_ms,
+        )
+        thresh_sim = CBSimulator(backend, model, db, thresh_config)
+        thresh_result = thresh_sim.run(
+            isl=pt.isl, osl=pt.osl, concurrency=pt.batch_size, num_gpus=1,
+        )
+        ratio = base_result.mean_ttft_ms / pt.real_ttft_ms if pt.real_ttft_ms else 0
+        thresh_ratio = (
+            thresh_result.mean_ttft_ms / pt.real_ttft_ms if pt.real_ttft_ms else 0
+        )
+        ttft_errs.append(_abs_error(base_result.mean_ttft_ms, pt.real_ttft_ms))
+        ttft_thresh_errs.append(
+            _abs_error(thresh_result.mean_ttft_ms, pt.real_ttft_ms),
+        )
+        if verbose:
+            print(
+                f"{pt.name:<22} {pt.real_ttft_ms:>8.1f} {base_result.mean_ttft_ms:>8.1f} "
+                f"{thresh_result.mean_ttft_ms:>10.1f} {ratio:>9.2f}x {thresh_ratio:>9.2f}x"
+            )
 
-    print("-" * 90)
-    print(f"TTFT: max={max(ttft_errs):.2f}x mean={np.mean(ttft_errs):.2f}x")
+    if verbose:
+        print("-" * 90)
+        print(
+            f"TTFT: base max={max(ttft_errs):.2f}x mean={np.mean(ttft_errs):.2f}x | "
+            f"threshold max={max(ttft_thresh_errs):.2f}x mean={np.mean(ttft_thresh_errs):.2f}x"
+        )
+
+    multi_errs = _run_multi_config_validation(
+        overlap_factor,
+        per_iteration_overhead_ms,
+        ep8_per_iteration_overhead_ms,
+        verbose=verbose,
+    )
 
     # --- Summary ---
-    print()
-    print("=" * 90)
-    print("ACCEPTANCE CRITERIA:")
     thr_ok = max(sim_errs) <= 1.5
-    ttft_ok = max(ttft_errs) <= 2.0
-    print(f"  Throughput max error <= 1.5x: {'PASS' if thr_ok else 'FAIL'} ({max(sim_errs):.2f}x)")
-    print(f"  TTFT max error <= 2.0x:       {'PASS' if ttft_ok else 'FAIL'} ({max(ttft_errs):.2f}x)")
+    ttft_ok = max(ttft_thresh_errs) <= 2.0
+    multi_ok = max(multi_errs) <= 1.5
+    if verbose:
+        print()
+        print("=" * 90)
+        print("ACCEPTANCE CRITERIA:")
+        print(f"  Throughput max error <= 1.5x: {'PASS' if thr_ok else 'FAIL'} ({max(sim_errs):.2f}x)")
+        print(f"  Multi-config max error <= 1.5x: {'PASS' if multi_ok else 'FAIL'} ({max(multi_errs):.2f}x)")
+        print(f"  TTFT max error <= 2.0x:       {'PASS' if ttft_ok else 'FAIL'} ({max(ttft_thresh_errs):.2f}x)")
+
+    return ValidationResult(
+        overlap_factor=overlap_factor,
+        per_iteration_overhead_ms=per_iteration_overhead_ms,
+        ep8_per_iteration_overhead_ms=ep8_per_iteration_overhead_ms,
+        throughput_max=max(sim_errs),
+        throughput_mean=float(np.mean(sim_errs)),
+        multi_config_max=max(multi_errs),
+        multi_config_mean=float(np.mean(multi_errs)),
+        ttft_max=max(ttft_thresh_errs),
+        ttft_mean=float(np.mean(ttft_thresh_errs)),
+    )
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Validate CB simulator against real vLLM benchmark data."
+    )
+    parser.add_argument("--overlap-factor", type=float, default=0.0)
+    parser.add_argument("--per-iteration-overhead-ms", type=float, default=0.0)
+    parser.add_argument("--ep8-per-iteration-overhead-ms", type=float, default=90.0)
+    args = parser.parse_args()
+
+    run_validation(
+        overlap_factor=args.overlap_factor,
+        per_iteration_overhead_ms=args.per_iteration_overhead_ms,
+        ep8_per_iteration_overhead_ms=args.ep8_per_iteration_overhead_ms,
+    )
 
 
 if __name__ == "__main__":

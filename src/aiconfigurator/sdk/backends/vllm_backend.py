@@ -30,6 +30,13 @@ class VLLMBackend(BaseBackend):
         self._agg_cache_v2: dict[tuple, InferenceSummary] = {}
         self.name = common.BackendName.vllm
 
+    _DEFAULT_METHOD = "batch_sync"
+    _CALIBRATED_METHOD = "batch_sync_calibrated"
+    _VLLM_MAX_CHUNK_TOKENS: int = 8192
+    _CB_SIM_DEFAULT_OVERLAP_FACTOR: float = 0.0
+    _CB_SIM_DEFAULT_DECODE_OVERHEAD_MS: float = 0.0
+    _CB_SIM_8GPU_EP_DECODE_OVERHEAD_MS: float = 90.0
+
     @staticmethod
     def _get_cb_efficiency_factor(b: int, isl: int, osl: int) -> float:
         """Continuous batching efficiency correction factor (v2).
@@ -76,7 +83,9 @@ class VLLMBackend(BaseBackend):
         LOOCV max error: 1.73x (vs uncorrected 32x resource calculation error).
         See scripts/fit_ttft_cb_factor.py for full derivation.
 
-        Calibrated range: ISL=16k-30k, b=4-32.
+        Fitted range: ISL=16k-30k, b=4-32 (clean data, see fit_ttft_cb_factor.py).
+        ISL 3k-16k is intentional extrapolation — validated on noisy 3k-3k data,
+        acceptable for scenario-A use cases but not formally in the calibrated set.
         At low concurrency (b ≤ 4) or ISL/OSL ≈ 1: correction approaches 1.0.
         At very high concurrency (b > 64): queue-wait dominates; correction
           may over-predict — B2 queue-aware modeling is the proper long-term fix.
@@ -92,13 +101,62 @@ class VLLMBackend(BaseBackend):
         factor = a * math.log(max(isl_osl_ratio, 0.01)) + b_coeff * math.log(max(b, 1)) + c
         return max(factor, 1.0)
 
+    @staticmethod
+    def _should_apply_cb_calibration(
+        model: BaseModel,
+        database: PerfDatabase,
+        runtime_config: RuntimeConfig,
+    ) -> bool:
+        isl = runtime_config.isl
+        osl = runtime_config.osl
+        b = runtime_config.batch_size
+
+        # ISL lower bound is 3000 to cover scenario-A (3k-3k) as intentional
+        # extrapolation beyond the fitted range (16k-30k clean data).
+        return (
+            model.model_path == "moonshotai/Kimi-K2.5"
+            and database.system == "h200_sxm"
+            and model.config.tp_size == 16
+            and model.config.pp_size == 1
+            and model.config.attention_dp_size == 1
+            and 3000 <= isl <= 32000
+            and 1000 <= osl <= 3000
+            and 4 <= b <= 256
+        )
+
+    @classmethod
+    def _resolve_chunked_prefill_tokens(cls, **kwargs) -> int:
+        return int(kwargs.get("chunked_prefill_tokens") or cls._VLLM_MAX_CHUNK_TOKENS)
+
+    @classmethod
+    def _get_cb_sim_decode_overhead_ms(
+        cls,
+        model: BaseModel,
+        database: PerfDatabase,
+    ) -> float:
+        total_gpus = (
+            model.config.tp_size
+            * model.config.pp_size
+            * model.config.attention_dp_size
+        )
+        if (
+            database.system == "h200_sxm"
+            and database.backend == common.BackendName.vllm.value
+            and total_gpus == 8
+            and model.config.moe_ep_size == 8
+        ):
+            return cls._CB_SIM_8GPU_EP_DECODE_OVERHEAD_MS
+        return cls._CB_SIM_DEFAULT_DECODE_OVERHEAD_MS
+
     def run_agg(
         self, model: BaseModel, database: PerfDatabase, runtime_config: RuntimeConfig, **kwargs
     ) -> InferenceSummary:
         """
         Run the agg inference. TODO: add vLLM's own implementation
         """
-        method = kwargs.get("method", "batch_sync")
+        method = kwargs.get("method", self._DEFAULT_METHOD)
+        if method not in {self._DEFAULT_METHOD, self._CALIBRATED_METHOD, "cb_sim"}:
+            raise ValueError(f"Unsupported vLLM agg method: {method}")
 
         # Dispatch to CB simulator if requested
         if method == "cb_sim":
@@ -106,7 +164,62 @@ class VLLMBackend(BaseBackend):
             osl = runtime_config.osl
             b = runtime_config.batch_size
             ctx_tokens = kwargs.get("ctx_tokens", self._VLLM_MAX_CHUNK_TOKENS)
-            cache_key = (isl, osl, b, ctx_tokens, "cb_sim")
+            cb_config = kwargs.get("cb_config")
+            default_overlap_factor = self._CB_SIM_DEFAULT_OVERLAP_FACTOR
+            default_overhead_ms = self._get_cb_sim_decode_overhead_ms(
+                model,
+                database,
+            )
+            overlap_factor = float(
+                getattr(
+                    cb_config,
+                    "overlap_factor",
+                    kwargs.get("overlap_factor", default_overlap_factor),
+                )
+            )
+            per_iteration_overhead_ms = float(
+                getattr(
+                    cb_config,
+                    "per_iteration_overhead_ms",
+                    kwargs.get("per_iteration_overhead_ms", default_overhead_ms),
+                )
+            )
+            cb_config_key = (
+                "default",
+                overlap_factor,
+                per_iteration_overhead_ms,
+            )
+            if cb_config is not None:
+                cb_config_key = (
+                    cb_config.max_num_batched_tokens,
+                    cb_config.max_num_seqs,
+                    cb_config.num_requests,
+                    cb_config.warmup_requests,
+                    cb_config.long_prefill_token_threshold,
+                    cb_config.num_gpu_blocks,
+                    cb_config.block_size,
+                    cb_config.overlap_factor,
+                    cb_config.per_iteration_overhead_ms,
+                )
+            model_key = (
+                model.model_path,
+                database.system,
+                database.backend,
+                database.version,
+                model.config.tp_size,
+                model.config.pp_size,
+                model.config.attention_dp_size,
+                model.config.moe_tp_size,
+                model.config.moe_ep_size,
+                model.config.gemm_quant_mode.name,
+                model.config.kvcache_quant_mode.name,
+                model.config.fmha_quant_mode.name,
+                model.config.moe_quant_mode.name,
+                model.config.comm_quant_mode.name,
+            )
+            cache_key = (
+                model_key, isl, osl, b, ctx_tokens, "cb_sim", cb_config_key,
+            )
             if cache_key in self._agg_cache_v2:
                 return self._agg_cache_v2[cache_key]
             summary = self._run_agg_cb_sim(model, database, runtime_config, **kwargs)
@@ -117,6 +230,8 @@ class VLLMBackend(BaseBackend):
         osl = runtime_config.osl
         prefix = runtime_config.prefix
         b = runtime_config.batch_size
+        ctx_seq_imbalance_correction_scale = runtime_config.seq_imbalance_correction_scale
+        gen_seq_imbalance_correction_scale = runtime_config.gen_seq_imbalance_correction_scale
         ctx_tokens = kwargs.get("ctx_tokens")
         assert ctx_tokens is not None, "ctx_tokens is required"
         balance_score = isl * b / ctx_tokens / osl
@@ -184,7 +299,12 @@ class VLLMBackend(BaseBackend):
                     database,
                     # num tokens for gemm needs to be adjusted for prefix, depends on the avg prefix len per request
                     RuntimeConfig(
-                        batch_size=1, beam_width=1, isl=num_tokens, osl=1, prefix=prefix * np.floor(ctx_tokens / isl)
+                        batch_size=1,
+                        beam_width=1,
+                        isl=num_tokens,
+                        osl=1,
+                        prefix=prefix * np.floor(ctx_tokens / isl),
+                        seq_imbalance_correction_scale=ctx_seq_imbalance_correction_scale,
                     ),
                     mode="static_ctx",
                 )
@@ -207,7 +327,14 @@ class VLLMBackend(BaseBackend):
                 summary = self.run_static(
                     model,
                     database,
-                    RuntimeConfig(batch_size=batch_size, beam_width=1, isl=num_tokens, osl=1, prefix=prefix),
+                    RuntimeConfig(
+                        batch_size=batch_size,
+                        beam_width=1,
+                        isl=num_tokens,
+                        osl=1,
+                        prefix=prefix,
+                        seq_imbalance_correction_scale=ctx_seq_imbalance_correction_scale,
+                    ),
                     mode="static_ctx",
                 )
                 latency_dict = summary.get_context_latency_dict()
@@ -224,7 +351,13 @@ class VLLMBackend(BaseBackend):
                     summary = self.run_static(
                         model,
                         database,
-                        RuntimeConfig(batch_size=num_tokens, beam_width=1, isl=isl + osl // 2, osl=2),
+                        RuntimeConfig(
+                            batch_size=num_tokens,
+                            beam_width=1,
+                            isl=isl + osl // 2,
+                            osl=2,
+                            gen_seq_imbalance_correction_scale=gen_seq_imbalance_correction_scale,
+                        ),
                         mode="static_gen",
                     )
                     latency_dict = summary.get_generation_latency_dict()
@@ -260,7 +393,13 @@ class VLLMBackend(BaseBackend):
                 summary = self.run_static(
                     model,
                     database,
-                    RuntimeConfig(batch_size=num_tokens, beam_width=1, isl=isl + osl // 2, osl=2),
+                    RuntimeConfig(
+                        batch_size=num_tokens,
+                        beam_width=1,
+                        isl=isl + osl // 2,
+                        osl=2,
+                        gen_seq_imbalance_correction_scale=gen_seq_imbalance_correction_scale,
+                    ),
                     mode="static_gen",
                 )
                 latency_dict = summary.get_generation_latency_dict()
@@ -298,14 +437,6 @@ class VLLMBackend(BaseBackend):
                 f"{correction_factor} when b: {b}, ctx_tokens: {ctx_tokens} isl {isl}"
             )
 
-            # B1b: Continuous batching TTFT correction.
-            # AIC's batch model overestimates TTFT at moderate concurrency because it
-            # assumes all b requests prefill simultaneously. In vLLM CB, each request
-            # starts prefilling on arrival — TTFT ≈ single_request_prefill + queue_wait.
-            ttft_cb_correction = self._get_ttft_cb_correction(b, isl, osl)
-            ttft /= ttft_cb_correction
-            logger.debug(f"TTFT CB correction (B1b): {ttft_cb_correction:.2f} (b={b}, isl={isl}, osl={osl})")
-
             tpot = (mix_step_latency_ms * num_mix_steps_for_tpot_calc + genonly_step_latency_ms * num_genonly_steps) / (
                 num_mix_steps_for_tpot_calc + num_genonly_steps
             )
@@ -316,15 +447,30 @@ class VLLMBackend(BaseBackend):
                 * (osl - 1)
             )
 
-            # Continuous batching efficiency correction.
-            # AIC's batch model underestimates throughput because it assumes synchronous
-            # batch execution, while vLLM's continuous batching allows pipeline overlap.
-            # Factor fitted from 7 Kimi-K2.5 + H200 benchmark scenarios (LOOCV max 1.87x).
-            # Model: factor = a * (ISL/OSL)^b * bs^c + d
-            cb_factor = self._get_cb_efficiency_factor(b, isl, osl)
-            output_throughput *= cb_factor
-            tpot /= cb_factor
-            logger.debug(f"CB efficiency factor: {cb_factor:.2f} (b={b}, isl={isl}, osl={osl})")
+            calibration_applied = False
+            calibration_reason = "disabled"
+            ttft_cb_correction = 1.0
+            cb_factor = 1.0
+            if method == self._CALIBRATED_METHOD:
+                if self._should_apply_cb_calibration(model, database, runtime_config):
+                    ttft_cb_correction = self._get_ttft_cb_correction(b, isl, osl)
+                    cb_factor = self._get_cb_efficiency_factor(b, isl, osl)
+                    ttft /= ttft_cb_correction
+                    output_throughput *= cb_factor
+                    tpot /= cb_factor
+                    calibration_applied = True
+                    calibration_reason = "applied"
+                else:
+                    calibration_reason = "out_of_calibrated_regime"
+                logger.debug(
+                    "vLLM CB calibration %s: ttft_correction=%.2f cb_factor=%.2f (b=%s, isl=%s, osl=%s)",
+                    calibration_reason,
+                    ttft_cb_correction,
+                    cb_factor,
+                    b,
+                    isl,
+                    osl,
+                )
             logger.debug(
                 f"ctx_tokens: {ctx_tokens}, b: {b}, osl: {osl}, isl: {isl}, "
                 f"num_mix_steps: {num_mix_steps}, num_genonly_steps: {num_genonly_steps}, "
@@ -375,7 +521,18 @@ class VLLMBackend(BaseBackend):
                 num_tokens = num_gen_requests + ctx_tokens
             else:
                 num_tokens = ctx_tokens
-            memory = self._get_memory_usage(model, database, b, 1, isl, osl, num_tokens)
+            memory = self._get_memory_usage(
+                model,
+                database,
+                b,
+                1,
+                isl,
+                osl,
+                num_tokens,
+                prefix=prefix,
+                enable_chunked_prefill=kwargs.get("enable_chunked_prefill", False),
+                chunked_prefill_tokens=self._resolve_chunked_prefill_tokens(**kwargs),
+            )
             logger.debug(
                 f"Memory (b={b}, isl={isl}, osl={osl}): total={memory['total']:.2f} GiB "
                 f"weights={memory['weights']:.2f} act={memory['activations']:.2f} kv={memory['kvcache']:.2f}"
@@ -455,6 +612,13 @@ class VLLMBackend(BaseBackend):
                 "mix_step_latency_ms": float(mix_step_latency_ms),
                 "genonly_step_latency_ms": float(genonly_step_latency_ms),
             }
+            per_ops_data["batch_sync_boundary"] = {
+                "method": method,
+                "cb_calibration_applied": calibration_applied,
+                "cb_calibration_reason": calibration_reason,
+                "ttft_cb_correction": float(ttft_cb_correction),
+                "throughput_cb_factor": float(cb_factor),
+            }
             summary.set_per_ops_data(per_ops_data)
 
             # caching
@@ -477,41 +641,67 @@ class VLLMBackend(BaseBackend):
             runtime_config.isl, runtime_config.osl,
             runtime_config.prefix, runtime_config.batch_size,
         )
-        ctx_tokens = kwargs.get("ctx_tokens", self._VLLM_MAX_CHUNK_TOKENS)
-        cb_config = kwargs.get("cb_config", CBSimConfig(
-            max_num_batched_tokens=ctx_tokens,
-        ))
+        ctx_tokens = kwargs.get("ctx_tokens", self._resolve_chunked_prefill_tokens(**kwargs))
+        cb_config = kwargs.get("cb_config")
+        if cb_config is None:
+            cb_config = CBSimConfig(
+                max_num_batched_tokens=ctx_tokens,
+                overlap_factor=float(
+                    kwargs.get("overlap_factor", self._CB_SIM_DEFAULT_OVERLAP_FACTOR)
+                ),
+                per_iteration_overhead_ms=float(
+                    kwargs.get(
+                        "per_iteration_overhead_ms",
+                        self._get_cb_sim_decode_overhead_ms(model, database),
+                    )
+                ),
+            )
 
         tp = model.config.tp_size
         pp = model.config.pp_size
         dp = model.config.attention_dp_size
         num_gpus = tp * pp * dp
 
-        # Simulator runs with per-GPU view (no dp/pp scaling inside)
+        # Simulator returns TP-group throughput. Pass tp so the reported
+        # per-GPU throughput is tp-normalized, then scale only across pp/dp.
         sim = CBSimulator(self, model, database, cb_config)
         result = sim.run(
             isl=isl, osl=osl, concurrency=b,
-            prefix=prefix, num_gpus=1,
+            prefix=prefix, num_gpus=tp,
         )
 
+        # CB sim throughput validated against real benchmarks (Phase 2).
+        # Output-only throughput now comes directly from the simulator.
         # Scale throughput for dp/pp (same pattern as batch_sync line 351-353)
         scale_factor = pp * dp
-        output_throughput = result.throughput_tok_s * scale_factor
+        raw_output_throughput = result.throughput_tok_s * scale_factor
+        output_throughput = raw_output_throughput
         concurrency_scaled = b * scale_factor
 
         ttft = result.mean_ttft_ms
         tpot = result.mean_tpot_ms
         request_latency = ttft + tpot * max(osl - 1, 0)
         request_rate = output_throughput / max(osl - 1, 1)
-        tokens_s_gpu = result.throughput_tok_s / tp
+        tokens_s_gpu = output_throughput / num_gpus
         tokens_s_user = 1000 / tpot if tpot > 0 else 0.0
         seq_s = request_rate
         seq_s_gpu = seq_s / num_gpus
         balance_score = isl * b / ctx_tokens / osl
 
         # Memory check (same as batch_sync path)
-        num_tokens = int(result.avg_tokens_per_iter) if result.avg_tokens_per_iter > 0 else ctx_tokens
-        memory = self._get_memory_usage(model, database, b, 1, isl, osl, num_tokens)
+        num_tokens = result.peak_tokens_per_iter if result.peak_tokens_per_iter > 0 else ctx_tokens
+        memory = self._get_memory_usage(
+            model,
+            database,
+            b,
+            1,
+            isl,
+            osl,
+            num_tokens,
+            prefix=prefix,
+            enable_chunked_prefill=kwargs.get("enable_chunked_prefill", False),
+            chunked_prefill_tokens=self._resolve_chunked_prefill_tokens(**kwargs),
+        )
 
         moe_tp = model.config.moe_tp_size
         moe_ep = model.config.moe_ep_size
@@ -566,7 +756,22 @@ class VLLMBackend(BaseBackend):
                 "avg_prefill_reqs_per_iter": float(avg_ctx_reqs),
                 "avg_decode_reqs_per_iter": float(avg_gen_reqs),
                 "avg_tokens_per_iter": float(avg_tokens),
+                "peak_prefill_reqs_per_iter": float(result.peak_prefill_reqs_per_iter),
+                "peak_decode_reqs_per_iter": float(result.peak_decode_reqs_per_iter),
+                "peak_tokens_per_iter": float(result.peak_tokens_per_iter),
+                "steady_state_iterations": result.steady_state_iterations,
+                "steady_state_time_ms": float(result.steady_state_time_ms),
                 "total_iterations": result.total_iterations,
+                "overlap_factor": float(cb_config.overlap_factor),
+                "per_iteration_overhead_ms": float(cb_config.per_iteration_overhead_ms),
+            },
+            "cb_sim_boundary": {
+                "ttft_source": "cb_sim",
+                "tpot_source": "cb_sim",
+                "throughput_source": "cb_sim",
+                "cb_sim_raw_tokens_s": float(raw_output_throughput),
+                "cb_sim_tokens_s": float(output_throughput),
+                "cb_sim_tokens_s_gpu": float(tokens_s_gpu),
             },
         }
         summary.set_per_ops_data(per_ops_data)
@@ -656,6 +861,7 @@ class VLLMBackend(BaseBackend):
                     database=database,
                     runtime_config=RuntimeConfig(batch_size=b, isl=isl, osl=osl, prefix=prefix),
                     ctx_tokens=ctx_tokens,
+                    enable_chunked_prefill=enable_chunked_prefill,
                     **fwd_kwargs,
                 )
 
@@ -678,11 +884,6 @@ class VLLMBackend(BaseBackend):
         summary.set_oom(all_oom)
         return summary
 
-    # vLLM default chunked-prefill window. When ISL > this, vLLM processes the
-    # context in chunks rather than a single forward pass, so peak activation
-    # memory is bounded by this value instead of isl * batch_size.
-    _VLLM_MAX_CHUNK_TOKENS: int = 8192
-
     def _get_memory_usage(
         self,
         model: BaseModel,
@@ -692,17 +893,23 @@ class VLLMBackend(BaseBackend):
         isl: int,
         osl: int,
         num_tokens: int = 0,
+        prefix: int = 0,
+        *,
+        enable_chunked_prefill: bool = False,
+        chunked_prefill_tokens: int | None = None,
     ) -> dict[str, float]:
         from aiconfigurator.sdk.backends.trtllm_backend import TRTLLMBackend
 
-        # vLLM uses chunked prefill: activation memory is bounded by the chunk
-        # size, not by isl * batch_size. Cap num_tokens accordingly so the
-        # activation term in TRTLLMBackend._get_memory_usage does not
-        # overestimate for long-context requests.
         if num_tokens == 0:
-            num_tokens = isl * batch_size
-        num_tokens_for_act = min(num_tokens, self._VLLM_MAX_CHUNK_TOKENS)
+            num_tokens = (isl - prefix) * batch_size
 
+        if not enable_chunked_prefill:
+            return TRTLLMBackend()._get_memory_usage(
+                model, database, batch_size, beam_width, isl, osl, num_tokens,
+            )
+
+        chunk_window = int(chunked_prefill_tokens or self._VLLM_MAX_CHUNK_TOKENS)
+        num_tokens_for_act = min(num_tokens, chunk_window)
         return TRTLLMBackend()._get_memory_usage(
-            model, database, batch_size, beam_width, isl, osl, num_tokens_for_act
+            model, database, batch_size, beam_width, isl, osl, num_tokens_for_act,
         )
