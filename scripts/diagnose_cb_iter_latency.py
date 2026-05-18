@@ -23,6 +23,7 @@ from aiconfigurator.sdk.backends.cb_simulator.forward_descriptor import (
     VLLMCompiledBodyRuntimeKey,
     VLLMForwardDescriptor,
     VLLMRuntimeShapeKey,
+    VLLMSchedulerRuntimeDescriptor,
     attention_subkey_from_runtime_shape_key,
     compiled_body_runtime_key_from_nccl_summary_csv,
     compare_forward_descriptors,
@@ -34,6 +35,7 @@ from aiconfigurator.sdk.backends.cb_simulator.forward_descriptor import (
     make_topology_key,
     runtime_shape_key_from_rank_row,
     runtime_shape_key_from_scheduled,
+    scheduler_runtime_descriptor_from_scheduled,
 )
 from aiconfigurator.sdk.backends.cb_simulator.simulator import CBSimulator
 from aiconfigurator.sdk.backends.vllm_backend import VLLMBackend
@@ -773,6 +775,37 @@ def build_cb_forward_descriptors(
     ]
 
 
+def build_cb_scheduler_descriptors(
+    rows: list[CBIterationTraceRow],
+    args: argparse.Namespace,
+) -> list[VLLMSchedulerRuntimeDescriptor]:
+    topology_key = _topology_key_from_args(args)
+    moe_tp = args.moe_tp if args.moe_tp is not None else args.tp
+    cfg = _make_cb_config(args)
+    return [
+        scheduler_runtime_descriptor_from_scheduled(
+            source="cb_sim",
+            scenario=_scenario_name(args),
+            iteration=row.iter_index,
+            phase=row.phase_type,
+            scheduled_context_tokens=row.prefill_tokens,
+            scheduled_decode_tokens=row.decode_batch_size,
+            scheduled_context_reqs=row.prefill_requests,
+            scheduled_decode_reqs=row.decode_batch_size,
+            max_num_batched_tokens=cfg.max_num_batched_tokens,
+            max_num_seqs=args.max_num_seqs,
+            forward_token_count=row.prefill_tokens + row.decode_batch_size,
+            cudagraph_runtime_mode="AIC_UNSET",
+            topology_key=topology_key,
+            tp=args.tp,
+            dp=args.dp,
+            moe_tp=moe_tp,
+            moe_ep=args.moe_ep,
+        )
+        for row in rows
+    ]
+
+
 def parse_runtime_shape_descriptors(
     path: Path,
     args: argparse.Namespace,
@@ -1380,6 +1413,15 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--runtime-shape-key-distribution-out", type=Path)
     parser.add_argument("--runtime-shape-key-vllm-rank", type=int, default=0)
     parser.add_argument(
+        "--experimental-scheduler-descriptor",
+        action="store_true",
+        help=(
+            "Emit scheduler/runtime descriptor diagnostics only. "
+            "This does not change cb_sim latency."
+        ),
+    )
+    parser.add_argument("--scheduler-descriptor-out", type=Path)
+    parser.add_argument(
         "--experimental-compiled-body-key",
         action="store_true",
         help=(
@@ -1502,6 +1544,13 @@ def main() -> None:
                 "--vllm-runtime-shape-rank-rows"
             )
 
+    if args.experimental_scheduler_descriptor:
+        if args.scheduler_descriptor_out is None:
+            raise ValueError(
+                "--experimental-scheduler-descriptor requires "
+                "--scheduler-descriptor-out"
+            )
+
     if args.experimental_compiled_body_key:
         if args.compiled_body_key_out is None:
             raise ValueError(
@@ -1618,6 +1667,11 @@ def main() -> None:
                 "wrote vLLM runtime shape key distribution: "
                 f"{args.runtime_shape_key_distribution_out}"
             )
+
+    if args.experimental_scheduler_descriptor:
+        scheduler_descriptors = build_cb_scheduler_descriptors(cb_rows, args)
+        _write_rows(args.scheduler_descriptor_out, scheduler_descriptors)
+        print(f"wrote scheduler descriptors: {args.scheduler_descriptor_out}")
 
     if args.metrics_before is not None or args.metrics_after is not None:
         if args.metrics_before is None or args.metrics_after is None:

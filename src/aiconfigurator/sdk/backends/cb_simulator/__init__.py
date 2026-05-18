@@ -7,6 +7,7 @@ from .forward_descriptor import (
     VLLMCompiledBodyRuntimeKey,
     VLLMForwardDescriptor,
     VLLMRuntimeShapeKey,
+    VLLMSchedulerRuntimeDescriptor,
 )
 from .simulator import CBSimulator
 
@@ -22,4 +23,5 @@ __all__ = [
     "VLLMCompiledBodyRuntimeKey",
     "VLLMForwardDescriptor",
     "VLLMRuntimeShapeKey",
+    "VLLMSchedulerRuntimeDescriptor",
 ]
