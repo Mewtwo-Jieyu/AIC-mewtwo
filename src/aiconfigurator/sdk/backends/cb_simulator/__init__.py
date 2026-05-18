@@ -1,5 +1,13 @@
 """vLLM Continuous Batching Simulator."""
 from .datatypes import CBSimConfig, CBSimResult, Request, ScheduleResult
+from .forward_descriptor import (
+    AttentionRuntimeShapeKey,
+    ForwardWrapperShapeKey,
+    KVRuntimeShapeKey,
+    VLLMCompiledBodyRuntimeKey,
+    VLLMForwardDescriptor,
+    VLLMRuntimeShapeKey,
+)
 from .simulator import CBSimulator
 
 __all__ = [
@@ -8,4 +16,10 @@ __all__ = [
     "CBSimulator",
     "Request",
     "ScheduleResult",
+    "AttentionRuntimeShapeKey",
+    "ForwardWrapperShapeKey",
+    "KVRuntimeShapeKey",
+    "VLLMCompiledBodyRuntimeKey",
+    "VLLMForwardDescriptor",
+    "VLLMRuntimeShapeKey",
 ]

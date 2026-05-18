@@ -18,6 +18,23 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from aiconfigurator.sdk.backends.cb_simulator import CBSimConfig
 from aiconfigurator.sdk.backends.cb_simulator.datatypes import Request, RequestState
+from aiconfigurator.sdk.backends.cb_simulator.forward_descriptor import (
+    RuntimeShapeSubkeyDistributionRow,
+    VLLMCompiledBodyRuntimeKey,
+    VLLMForwardDescriptor,
+    VLLMRuntimeShapeKey,
+    attention_subkey_from_runtime_shape_key,
+    compiled_body_runtime_key_from_nccl_summary_csv,
+    compare_forward_descriptors,
+    compare_runtime_shape_keys,
+    descriptor_from_runtime_shape_summary,
+    descriptor_from_scheduled,
+    forward_wrapper_subkey_from_runtime_shape_key,
+    kv_subkey_from_runtime_shape_key,
+    make_topology_key,
+    runtime_shape_key_from_rank_row,
+    runtime_shape_key_from_scheduled,
+)
 from aiconfigurator.sdk.backends.cb_simulator.simulator import CBSimulator
 from aiconfigurator.sdk.backends.vllm_backend import VLLMBackend
 from aiconfigurator.sdk.config import ModelConfig
@@ -297,6 +314,15 @@ def _write_rows(path: Path, rows: Iterable[object]) -> None:
         writer.writeheader()
         for row in rows:
             writer.writerow(asdict(row))
+
+
+def _scenario_name(args: argparse.Namespace) -> str:
+    return f"{args.isl}x{args.osl}_b{args.concurrency}"
+
+
+def _topology_key_from_args(args: argparse.Namespace) -> str:
+    moe_tp = args.moe_tp if args.moe_tp is not None else args.tp
+    return make_topology_key(args.tp, args.dp, moe_tp, args.moe_ep)
 
 
 def _parse_float_list(raw: str) -> list[float]:
@@ -719,6 +745,222 @@ def compare_phasewise(
     return compare_rows, compare_summaries
 
 
+def build_cb_forward_descriptors(
+    rows: list[CBIterationTraceRow],
+    args: argparse.Namespace,
+) -> list[VLLMForwardDescriptor]:
+    topology_key = _topology_key_from_args(args)
+    moe_tp = args.moe_tp if args.moe_tp is not None else args.tp
+    cfg = _make_cb_config(args)
+    return [
+        descriptor_from_scheduled(
+            source="cb_sim",
+            scenario=_scenario_name(args),
+            iteration=row.iter_index,
+            phase=row.phase_type,
+            scheduled_context_tokens=row.prefill_tokens,
+            scheduled_decode_tokens=row.decode_batch_size,
+            topology_key=topology_key,
+            tp=args.tp,
+            dp=args.dp,
+            moe_tp=moe_tp,
+            moe_ep=args.moe_ep,
+            max_num_batched_tokens=cfg.max_num_batched_tokens,
+            max_num_seqs=args.max_num_seqs,
+            decode_avg_kv_len=row.decode_avg_kv_len,
+        )
+        for row in rows
+    ]
+
+
+def parse_runtime_shape_descriptors(
+    path: Path,
+    args: argparse.Namespace,
+) -> list[VLLMForwardDescriptor]:
+    topology_key = _topology_key_from_args(args)
+    moe_tp = args.moe_tp if args.moe_tp is not None else args.tp
+    cfg = _make_cb_config(args)
+    with path.open(newline="") as f:
+        reader = csv.DictReader(f)
+        return [
+            descriptor_from_runtime_shape_summary(
+                row,
+                source="vllm_runtime_shape",
+                scenario=_scenario_name(args),
+                topology_key=topology_key,
+                tp=args.tp,
+                dp=args.dp,
+                moe_tp=moe_tp,
+                moe_ep=args.moe_ep,
+                max_num_batched_tokens=cfg.max_num_batched_tokens,
+                max_num_seqs=args.max_num_seqs,
+            )
+            for row in reader
+        ]
+
+
+def build_cb_runtime_shape_keys(
+    rows: list[CBIterationTraceRow],
+    args: argparse.Namespace,
+) -> list[VLLMRuntimeShapeKey]:
+    topology_key = _topology_key_from_args(args)
+    moe_tp = args.moe_tp if args.moe_tp is not None else args.tp
+    return [
+        runtime_shape_key_from_scheduled(
+            source="cb_sim",
+            scenario=_scenario_name(args),
+            iteration=row.iter_index,
+            phase=row.phase_type,
+            scheduled_context_tokens=row.prefill_tokens,
+            scheduled_decode_tokens=row.decode_batch_size,
+            topology_key=topology_key,
+            tp=args.tp,
+            dp=args.dp,
+            moe_tp=moe_tp,
+            moe_ep=args.moe_ep,
+        )
+        for row in rows
+    ]
+
+
+def parse_runtime_shape_keys(
+    path: Path,
+    args: argparse.Namespace,
+) -> list[VLLMRuntimeShapeKey]:
+    topology_key = _topology_key_from_args(args)
+    moe_tp = args.moe_tp if args.moe_tp is not None else args.tp
+    with path.open(newline="") as f:
+        reader = csv.DictReader(f)
+        rows = [
+            runtime_shape_key_from_rank_row(
+                row,
+                source="vllm_runtime_shape",
+                scenario=_scenario_name(args),
+                topology_key=topology_key,
+                tp=args.tp,
+                dp=args.dp,
+                moe_tp=moe_tp,
+                moe_ep=args.moe_ep,
+            )
+            for row in reader
+            if int(float(row["rank"])) == args.runtime_shape_key_vllm_rank
+        ]
+    if not rows:
+        raise ValueError(
+            "no vLLM runtime shape key rows for rank "
+            f"{args.runtime_shape_key_vllm_rank}"
+        )
+    return rows
+
+
+def build_vllm_runtime_shape_key_distribution(
+    path: Path,
+    args: argparse.Namespace,
+) -> list[RuntimeShapeSubkeyDistributionRow]:
+    topology_key = _topology_key_from_args(args)
+    moe_tp = args.moe_tp if args.moe_tp is not None else args.tp
+    grouped: dict[
+        tuple[str, object],
+        dict[str, object],
+    ] = {}
+    with path.open(newline="") as f:
+        for raw in csv.DictReader(f):
+            key = runtime_shape_key_from_rank_row(
+                raw,
+                source="vllm_runtime_shape",
+                scenario=_scenario_name(args),
+                topology_key=topology_key,
+                tp=args.tp,
+                dp=args.dp,
+                moe_tp=moe_tp,
+                moe_ep=args.moe_ep,
+            )
+            rank = int(float(raw["rank"]))
+            for key_type, subkey in (
+                ("attention", attention_subkey_from_runtime_shape_key(key)),
+                ("kv", kv_subkey_from_runtime_shape_key(key)),
+                ("forward_wrapper", forward_wrapper_subkey_from_runtime_shape_key(key)),
+            ):
+                group_key = (key_type, subkey)
+                if group_key not in grouped:
+                    grouped[group_key] = {"count": 0, "iterations": set(), "ranks": set()}
+                grouped[group_key]["count"] = int(grouped[group_key]["count"]) + 1
+                grouped[group_key]["iterations"].add(key.iteration)
+                grouped[group_key]["ranks"].add(rank)
+
+    rows: list[RuntimeShapeSubkeyDistributionRow] = []
+    for (key_type, subkey), stats in sorted(
+        grouped.items(),
+        key=lambda item: (
+            item[0][0],
+            getattr(item[0][1], "phase"),
+            str(item[0][1]),
+        ),
+    ):
+        rows.append(
+            RuntimeShapeSubkeyDistributionRow(
+                key_type=key_type,
+                scenario=_scenario_name(args),
+                phase=getattr(subkey, "phase"),
+                topology_key=getattr(subkey, "topology_key"),
+                rank_rows=int(stats["count"]),
+                iterations=len(stats["iterations"]),
+                ranks=",".join(str(rank) for rank in sorted(stats["ranks"])),
+                cudagraph_runtime_mode=str(
+                    getattr(subkey, "cudagraph_runtime_mode", "")
+                ),
+                attention_actual_tokens=str(
+                    getattr(subkey, "attention_actual_tokens", "")
+                ),
+                attention_max_query_len=str(
+                    getattr(subkey, "attention_max_query_len", "")
+                ),
+                slot_mapping_tokens=str(getattr(subkey, "slot_mapping_tokens", "")),
+                block_table_shape=str(getattr(subkey, "block_table_shape", "")),
+                forward_context_tokens=str(
+                    getattr(subkey, "forward_context_tokens", "")
+                ),
+                forward_token_count=str(getattr(subkey, "forward_token_count", "")),
+            )
+        )
+    return rows
+
+
+def build_compiled_body_runtime_key(
+    args: argparse.Namespace,
+) -> VLLMCompiledBodyRuntimeKey:
+    moe_tp = args.moe_tp if args.moe_tp is not None else args.tp
+    if (args.tp, args.dp, moe_tp, args.moe_ep) != (4, 2, 1, 8):
+        raise ValueError(
+            "--experimental-compiled-body-key currently requires "
+            "tp=4, dp=2, moe_tp=1, moe_ep=8 to match Phase 39 evidence"
+        )
+    return compiled_body_runtime_key_from_nccl_summary_csv(
+        args.compiled_body_key_nccl_summary,
+        source="phase39_nccl_trace",
+        scenario=_scenario_name(args),
+        phase="mixed",
+        topology_key=_topology_key_from_args(args),
+        tp=args.tp,
+        dp=args.dp,
+        ep=args.moe_ep,
+        world_size=args.tp * args.dp,
+        forward_regime="NONE:248",
+        tokens_padded=248,
+        tokens_actual=241,
+        cudagraph_runtime_mode="NONE",
+        moe_module="DeepseekV2MoE",
+        moe_kernel="wna16",
+        moe_hidden=7168,
+        moe_intermediate=2048,
+        moe_experts=384,
+        moe_topk=8,
+        moe_dtype="bfloat16",
+        tuning_config_loaded=False,
+        fallback=True,
+    )
+
+
 def _make_cb_config(args: argparse.Namespace) -> CBSimConfig:
     num_requests = args.num_requests
     if num_requests <= 0:
@@ -1106,6 +1348,56 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--per-iteration-overhead-ms", type=float, default=0.0)
     parser.add_argument("--ep8-per-iteration-overhead-ms", type=float, default=90.0)
     parser.add_argument(
+        "--experimental-forward-descriptor",
+        action="store_true",
+        help=(
+            "Emit vLLM forward descriptor diagnostics only. "
+            "This does not change cb_sim latency."
+        ),
+    )
+    parser.add_argument(
+        "--vllm-runtime-shape-summary",
+        type=Path,
+        help="Phase 7 runtime-shape iteration_summary.csv for descriptor compare.",
+    )
+    parser.add_argument("--forward-descriptor-out", type=Path)
+    parser.add_argument("--forward-descriptor-compare-out", type=Path)
+    parser.add_argument(
+        "--experimental-runtime-shape-key",
+        action="store_true",
+        help=(
+            "Emit vLLM runtime shape key diagnostics only. "
+            "This does not change cb_sim latency."
+        ),
+    )
+    parser.add_argument(
+        "--vllm-runtime-shape-rank-rows",
+        type=Path,
+        help="Phase 10 runtime_shape_rank_rows.csv for runtime shape key compare.",
+    )
+    parser.add_argument("--runtime-shape-key-out", type=Path)
+    parser.add_argument("--runtime-shape-key-compare-out", type=Path)
+    parser.add_argument("--runtime-shape-key-distribution-out", type=Path)
+    parser.add_argument("--runtime-shape-key-vllm-rank", type=int, default=0)
+    parser.add_argument(
+        "--experimental-compiled-body-key",
+        action="store_true",
+        help=(
+            "Emit vLLM compiled-body runtime key diagnostics only. "
+            "This does not change cb_sim latency."
+        ),
+    )
+    parser.add_argument("--compiled-body-key-out", type=Path)
+    parser.add_argument(
+        "--compiled-body-key-nccl-summary",
+        type=Path,
+        default=Path(
+            "docs/iter_gap_investigation/phase39_nccl_trace_10k2k_b32_bt8192/"
+            "nccl_trace_phase39_summary.csv"
+        ),
+        help="Phase 39 NCCL trace summary CSV used only for candidate flags.",
+    )
+    parser.add_argument(
         "--sweep-alpha-overhead",
         action="store_true",
         help="Run validate_cb_simulator.py across alpha/overhead candidates.",
@@ -1164,6 +1456,79 @@ def main() -> None:
             print(f"wrote sweep: {args.sweep_out}")
         return
 
+    if args.experimental_forward_descriptor:
+        if (
+            args.forward_descriptor_out is None
+            and args.forward_descriptor_compare_out is None
+        ):
+            raise ValueError(
+                "--experimental-forward-descriptor requires "
+                "--forward-descriptor-out or --forward-descriptor-compare-out"
+            )
+        if (
+            args.forward_descriptor_compare_out is not None
+            and args.vllm_runtime_shape_summary is None
+        ):
+            raise ValueError(
+                "--forward-descriptor-compare-out requires "
+                "--vllm-runtime-shape-summary"
+            )
+
+    if args.experimental_runtime_shape_key:
+        if (
+            args.runtime_shape_key_out is None
+            and args.runtime_shape_key_compare_out is None
+            and args.runtime_shape_key_distribution_out is None
+        ):
+            raise ValueError(
+                "--experimental-runtime-shape-key requires "
+                "--runtime-shape-key-out, --runtime-shape-key-compare-out, "
+                "or --runtime-shape-key-distribution-out"
+            )
+        if (
+            args.runtime_shape_key_compare_out is not None
+            and args.vllm_runtime_shape_rank_rows is None
+        ):
+            raise ValueError(
+                "--runtime-shape-key-compare-out requires "
+                "--vllm-runtime-shape-rank-rows"
+            )
+        if (
+            args.runtime_shape_key_distribution_out is not None
+            and args.vllm_runtime_shape_rank_rows is None
+        ):
+            raise ValueError(
+                "--runtime-shape-key-distribution-out requires "
+                "--vllm-runtime-shape-rank-rows"
+            )
+
+    if args.experimental_compiled_body_key:
+        if args.compiled_body_key_out is None:
+            raise ValueError(
+                "--experimental-compiled-body-key requires --compiled-body-key-out"
+            )
+        key = build_compiled_body_runtime_key(args)
+        _write_rows(args.compiled_body_key_out, [key])
+        print(f"wrote compiled-body runtime key: {args.compiled_body_key_out}")
+        return
+
+    if (
+        args.experimental_runtime_shape_key
+        and args.runtime_shape_key_distribution_out is not None
+        and args.runtime_shape_key_out is None
+        and args.runtime_shape_key_compare_out is None
+    ):
+        distribution_rows = build_vllm_runtime_shape_key_distribution(
+            args.vllm_runtime_shape_rank_rows,
+            args,
+        )
+        _write_rows(args.runtime_shape_key_distribution_out, distribution_rows)
+        print(
+            "wrote vLLM runtime shape key distribution: "
+            f"{args.runtime_shape_key_distribution_out}"
+        )
+        return
+
     if args.validate_scenarios:
         summaries: list[CBScenarioSummary] = []
         for spec in VALIDATE_THROUGHPUT_SCENARIOS:
@@ -1206,6 +1571,53 @@ def main() -> None:
     if args.cb_trace_out is not None:
         _write_rows(args.cb_trace_out, cb_rows)
         print(f"wrote cb trace: {args.cb_trace_out}")
+
+    if args.experimental_forward_descriptor:
+        cb_descriptors = build_cb_forward_descriptors(cb_rows, args)
+        if args.forward_descriptor_out is not None:
+            _write_rows(args.forward_descriptor_out, cb_descriptors)
+            print(f"wrote cb forward descriptors: {args.forward_descriptor_out}")
+        if args.forward_descriptor_compare_out is not None:
+            vllm_descriptors = parse_runtime_shape_descriptors(
+                args.vllm_runtime_shape_summary,
+                args,
+            )
+            compare_rows = compare_forward_descriptors(
+                cb_descriptors,
+                vllm_descriptors,
+            )
+            _write_rows(args.forward_descriptor_compare_out, compare_rows)
+            print(
+                "wrote forward descriptor compare: "
+                f"{args.forward_descriptor_compare_out}"
+            )
+
+    if args.experimental_runtime_shape_key:
+        cb_keys = build_cb_runtime_shape_keys(cb_rows, args)
+        if args.runtime_shape_key_out is not None:
+            _write_rows(args.runtime_shape_key_out, cb_keys)
+            print(f"wrote cb runtime shape keys: {args.runtime_shape_key_out}")
+        if args.runtime_shape_key_compare_out is not None:
+            vllm_keys = parse_runtime_shape_keys(
+                args.vllm_runtime_shape_rank_rows,
+                args,
+            )
+            compare_rows = compare_runtime_shape_keys(cb_keys, vllm_keys)
+            _write_rows(args.runtime_shape_key_compare_out, compare_rows)
+            print(
+                "wrote runtime shape key compare: "
+                f"{args.runtime_shape_key_compare_out}"
+            )
+        if args.runtime_shape_key_distribution_out is not None:
+            distribution_rows = build_vllm_runtime_shape_key_distribution(
+                args.vllm_runtime_shape_rank_rows,
+                args,
+            )
+            _write_rows(args.runtime_shape_key_distribution_out, distribution_rows)
+            print(
+                "wrote vLLM runtime shape key distribution: "
+                f"{args.runtime_shape_key_distribution_out}"
+            )
 
     if args.metrics_before is not None or args.metrics_after is not None:
         if args.metrics_before is None or args.metrics_after is None:
