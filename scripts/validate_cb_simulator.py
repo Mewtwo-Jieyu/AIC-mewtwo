@@ -12,9 +12,10 @@ Config: Kimi-K2.5, vLLM 0.17, H200 SXM x16, tp=16 dp=1
 from __future__ import annotations
 
 import argparse
+import csv
 import logging
 import sys
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from functools import lru_cache
 from pathlib import Path
 
@@ -24,6 +25,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from aiconfigurator.sdk import common
 from aiconfigurator.sdk.backends.cb_simulator import CBSimConfig, CBSimulator
+from aiconfigurator.sdk.backends.cb_simulator.forward_descriptor import (
+    compiled_body_runtime_key_from_nccl_summary_csv,
+    descriptor_from_scheduled,
+    make_topology_key,
+    runtime_shape_key_from_scheduled,
+)
 from aiconfigurator.sdk.backends.vllm_backend import VLLMBackend
 from aiconfigurator.sdk.config import ModelConfig, RuntimeConfig
 from aiconfigurator.sdk.models import get_model
@@ -167,6 +174,129 @@ MULTI_CONFIG_DATA = [
         real_total_tok_s_gpu=779.76,
     ),
 ]
+
+
+def _write_rows(path: Path, rows: list[object]) -> None:
+    if not rows:
+        raise ValueError(f"no rows for {path}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = list(asdict(rows[0]).keys())
+    with path.open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(asdict(row))
+
+
+def run_experimental_forward_descriptor(out_csv: Path) -> None:
+    topology_key = make_topology_key(TP, 1, TP, 1)
+    rows = []
+    for point in THROUGHPUT_DATA:
+        scenario = point.name.replace(" ", "_")
+        rows.append(
+            descriptor_from_scheduled(
+                source="validate_input_shape",
+                scenario=scenario,
+                iteration=0,
+                phase="prefill",
+                scheduled_context_tokens=point.isl,
+                scheduled_decode_tokens=0,
+                topology_key=topology_key,
+                tp=TP,
+                dp=1,
+                moe_tp=TP,
+                moe_ep=1,
+                max_num_batched_tokens=point.isl,
+                max_num_seqs=256,
+            )
+        )
+        rows.append(
+            descriptor_from_scheduled(
+                source="validate_input_shape",
+                scenario=scenario,
+                iteration=1,
+                phase="pure_decode",
+                scheduled_context_tokens=0,
+                scheduled_decode_tokens=point.batch_size,
+                topology_key=topology_key,
+                tp=TP,
+                dp=1,
+                moe_tp=TP,
+                moe_ep=1,
+                max_num_batched_tokens=point.isl,
+                max_num_seqs=256,
+            )
+        )
+    _write_rows(out_csv, rows)
+    print(f"wrote experimental forward descriptors: {out_csv}")
+
+
+def run_experimental_runtime_shape_key(out_csv: Path) -> None:
+    topology_key = make_topology_key(TP, 1, TP, 1)
+    rows = []
+    for point in THROUGHPUT_DATA:
+        scenario = point.name.replace(" ", "_")
+        rows.append(
+            runtime_shape_key_from_scheduled(
+                source="validate_input_shape",
+                scenario=scenario,
+                iteration=0,
+                phase="prefill",
+                scheduled_context_tokens=point.isl,
+                scheduled_decode_tokens=0,
+                topology_key=topology_key,
+                tp=TP,
+                dp=1,
+                moe_tp=TP,
+                moe_ep=1,
+            )
+        )
+        rows.append(
+            runtime_shape_key_from_scheduled(
+                source="validate_input_shape",
+                scenario=scenario,
+                iteration=1,
+                phase="pure_decode",
+                scheduled_context_tokens=0,
+                scheduled_decode_tokens=point.batch_size,
+                topology_key=topology_key,
+                tp=TP,
+                dp=1,
+                moe_tp=TP,
+                moe_ep=1,
+            )
+        )
+    _write_rows(out_csv, rows)
+    print(f"wrote experimental runtime shape keys: {out_csv}")
+
+
+def run_experimental_compiled_body_key(out_csv: Path, nccl_summary_csv: Path) -> None:
+    key = compiled_body_runtime_key_from_nccl_summary_csv(
+        nccl_summary_csv,
+        source="phase39_nccl_trace",
+        scenario="10k2k_b32_bt8192",
+        phase="mixed",
+        topology_key=make_topology_key(4, 2, 1, 8),
+        tp=4,
+        dp=2,
+        ep=8,
+        world_size=8,
+        forward_regime="NONE:248",
+        tokens_padded=248,
+        tokens_actual=241,
+        cudagraph_runtime_mode="NONE",
+        moe_module="DeepseekV2MoE",
+        moe_kernel="wna16",
+        moe_hidden=7168,
+        moe_intermediate=2048,
+        moe_experts=384,
+        moe_topk=8,
+        moe_dtype="bfloat16",
+        tuning_config_loaded=False,
+        fallback=True,
+    )
+    _write_rows(out_csv, [key])
+    print(f"wrote experimental compiled-body runtime key: {out_csv}")
 
 
 def _abs_error(predicted: float, real: float) -> float:
@@ -476,7 +606,79 @@ def main() -> None:
     parser.add_argument("--overlap-factor", type=float, default=0.0)
     parser.add_argument("--per-iteration-overhead-ms", type=float, default=0.0)
     parser.add_argument("--ep8-per-iteration-overhead-ms", type=float, default=90.0)
+    parser.add_argument(
+        "--experimental-forward-descriptor",
+        action="store_true",
+        help=(
+            "Emit vLLM forward descriptor schema diagnostics only. "
+            "This does not change the default cb_sim validation path."
+        ),
+    )
+    parser.add_argument(
+        "--experimental-forward-descriptor-out",
+        type=Path,
+        default=Path(
+            "docs/iter_gap_investigation/phase8_forward_descriptor/"
+            "validate_forward_descriptor_inputs.csv"
+        ),
+    )
+    parser.add_argument(
+        "--experimental-runtime-shape-key",
+        action="store_true",
+        help=(
+            "Emit vLLM runtime shape key schema diagnostics only. "
+            "This does not change the default cb_sim validation path."
+        ),
+    )
+    parser.add_argument(
+        "--experimental-runtime-shape-key-out",
+        type=Path,
+        default=Path(
+            "docs/iter_gap_investigation/phase10_runtime_shape_key/"
+            "validate_runtime_shape_keys.csv"
+        ),
+    )
+    parser.add_argument(
+        "--experimental-compiled-body-key",
+        action="store_true",
+        help=(
+            "Emit vLLM compiled-body runtime key diagnostics only. "
+            "This does not change the default cb_sim validation path."
+        ),
+    )
+    parser.add_argument(
+        "--experimental-compiled-body-key-out",
+        type=Path,
+        default=Path(
+            "docs/iter_gap_investigation/phase41_compiled_body_runtime_key/"
+            "validate_compiled_body_runtime_key.csv"
+        ),
+    )
+    parser.add_argument(
+        "--experimental-compiled-body-key-nccl-summary",
+        type=Path,
+        default=Path(
+            "docs/iter_gap_investigation/phase39_nccl_trace_10k2k_b32_bt8192/"
+            "nccl_trace_phase39_summary.csv"
+        ),
+        help="Phase 39 NCCL trace summary CSV used only for candidate flags.",
+    )
     args = parser.parse_args()
+
+    if args.experimental_forward_descriptor:
+        run_experimental_forward_descriptor(args.experimental_forward_descriptor_out)
+        return
+
+    if args.experimental_runtime_shape_key:
+        run_experimental_runtime_shape_key(args.experimental_runtime_shape_key_out)
+        return
+
+    if args.experimental_compiled_body_key:
+        run_experimental_compiled_body_key(
+            args.experimental_compiled_body_key_out,
+            args.experimental_compiled_body_key_nccl_summary,
+        )
+        return
 
     run_validation(
         overlap_factor=args.overlap_factor,
