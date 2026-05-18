@@ -62,6 +62,74 @@ class ForwardDescriptorCompareRow:
 
 
 @dataclass(frozen=True)
+class VLLMSchedulerRuntimeDescriptor:
+    """Scheduler/runtime-shape descriptor for experimental diagnostics.
+
+    This is a mechanism descriptor only. It must not contain latency,
+    residual, profiler, or throughput fields.
+    """
+
+    source: str
+    scenario: str
+    iteration: int
+    phase: str
+    scheduled_context_tokens: int
+    scheduled_decode_tokens: int
+    scheduled_total_tokens: int
+    scheduled_context_reqs: int
+    scheduled_decode_reqs: int
+    scheduled_total_reqs: int
+    max_num_batched_tokens: int
+    max_num_seqs: int
+    forward_token_count: int
+    forward_regime: str
+    cudagraph_runtime_mode: str
+    topology_key: str
+    tp: int
+    dp: int
+    moe_tp: int
+    moe_ep: int
+    valid_for_default: bool
+    perf_database: bool
+    diagnostic_only: bool
+
+
+@dataclass(frozen=True)
+class SchedulerDescriptorCompareRow:
+    scenario: str
+    phase: str
+    ordinal_in_phase: int
+    topology_key: str
+    cb_iter_index: int
+    cb_scheduled_context_tokens: int
+    cb_scheduled_decode_tokens: int
+    cb_scheduled_total_tokens: int
+    cb_scheduled_context_reqs: int
+    cb_scheduled_decode_reqs: int
+    cb_scheduled_total_reqs: int
+    cb_forward_token_count: int
+    cb_forward_regime: str
+    cb_cudagraph_runtime_mode: str
+    vllm_iter_index: int
+    vllm_scheduled_context_tokens: int
+    vllm_scheduled_decode_tokens: int
+    vllm_scheduled_total_tokens: int
+    vllm_scheduled_context_reqs: int
+    vllm_scheduled_decode_reqs: int
+    vllm_scheduled_total_reqs: int
+    vllm_forward_token_count: int
+    vllm_forward_regime: str
+    vllm_cudagraph_runtime_mode: str
+    scheduled_total_token_delta: int
+    scheduled_total_req_delta: int
+    forward_token_delta: int
+    same_scheduled_total_tokens: int
+    same_scheduled_total_reqs: int
+    same_forward_token_count: int
+    same_forward_regime: int
+
+
+@dataclass(frozen=True)
 class VLLMRuntimeShapeKey:
     """Mechanism-shape key for experimental vLLM diagnostics.
 
@@ -205,6 +273,106 @@ def make_forward_regime(cudagraph_runtime_mode: str, forward_token_count: int) -
     if forward_token_count < 0:
         raise ValueError("forward_token_count must be non-negative")
     return f"{cudagraph_runtime_mode}:{forward_token_count}"
+
+
+def _validate_phase(phase: str) -> None:
+    if phase not in {"prefill", "mixed", "pure_decode"}:
+        raise ValueError(f"phase must be prefill, mixed, or pure_decode: {phase!r}")
+
+
+def _validate_non_negative(value: int, field: str) -> None:
+    if value < 0:
+        raise ValueError(f"{field} must be non-negative")
+
+
+def _validate_positive(value: int, field: str) -> None:
+    if value <= 0:
+        raise ValueError(f"{field} must be positive")
+
+
+def scheduler_runtime_descriptor_from_scheduled(
+    *,
+    source: str,
+    scenario: str,
+    iteration: int,
+    phase: str,
+    scheduled_context_tokens: int,
+    scheduled_decode_tokens: int,
+    scheduled_context_reqs: int,
+    scheduled_decode_reqs: int,
+    max_num_batched_tokens: int,
+    max_num_seqs: int,
+    forward_token_count: int,
+    cudagraph_runtime_mode: str,
+    topology_key: str,
+    tp: int,
+    dp: int,
+    moe_tp: int,
+    moe_ep: int,
+) -> VLLMSchedulerRuntimeDescriptor:
+    if not source:
+        raise ValueError("source must be non-empty")
+    if not scenario:
+        raise ValueError("scenario must be non-empty")
+    _validate_phase(phase)
+    for field, value in (
+        ("iteration", iteration),
+        ("scheduled_context_tokens", scheduled_context_tokens),
+        ("scheduled_decode_tokens", scheduled_decode_tokens),
+        ("scheduled_context_reqs", scheduled_context_reqs),
+        ("scheduled_decode_reqs", scheduled_decode_reqs),
+        ("forward_token_count", forward_token_count),
+    ):
+        _validate_non_negative(value, field)
+    for field, value in (
+        ("max_num_batched_tokens", max_num_batched_tokens),
+        ("max_num_seqs", max_num_seqs),
+        ("tp", tp),
+        ("dp", dp),
+        ("moe_tp", moe_tp),
+        ("moe_ep", moe_ep),
+    ):
+        _validate_positive(value, field)
+
+    expected_topology_key = make_topology_key(tp, dp, moe_tp, moe_ep)
+    if topology_key != expected_topology_key:
+        raise ValueError(
+            f"topology_key mismatch: {topology_key!r} != {expected_topology_key!r}"
+        )
+
+    scheduled_total_tokens = scheduled_context_tokens + scheduled_decode_tokens
+    scheduled_total_reqs = scheduled_context_reqs + scheduled_decode_reqs
+    if forward_token_count < scheduled_total_tokens:
+        raise ValueError(
+            "forward_token_count must cover scheduled_total_tokens: "
+            f"{forward_token_count} < {scheduled_total_tokens}"
+        )
+
+    return VLLMSchedulerRuntimeDescriptor(
+        source=source,
+        scenario=scenario,
+        iteration=iteration,
+        phase=phase,
+        scheduled_context_tokens=scheduled_context_tokens,
+        scheduled_decode_tokens=scheduled_decode_tokens,
+        scheduled_total_tokens=scheduled_total_tokens,
+        scheduled_context_reqs=scheduled_context_reqs,
+        scheduled_decode_reqs=scheduled_decode_reqs,
+        scheduled_total_reqs=scheduled_total_reqs,
+        max_num_batched_tokens=max_num_batched_tokens,
+        max_num_seqs=max_num_seqs,
+        forward_token_count=forward_token_count,
+        forward_regime=make_forward_regime(cudagraph_runtime_mode, forward_token_count),
+        cudagraph_runtime_mode=cudagraph_runtime_mode,
+        topology_key=topology_key,
+        tp=tp,
+        dp=dp,
+        moe_tp=moe_tp,
+        moe_ep=moe_ep,
+        valid_for_default=False,
+        perf_database=False,
+        diagnostic_only=True,
+    )
 
 
 def descriptor_from_scheduled(
@@ -585,6 +753,75 @@ def compare_forward_descriptors(
                     scheduled_total_delta=vllm_total - cb_total,
                     forward_token_delta=(
                         vllm_row.forward_token_count - cb_row.forward_token_count
+                    ),
+                    same_forward_token_count=int(
+                        vllm_row.forward_token_count == cb_row.forward_token_count
+                    ),
+                    same_forward_regime=int(
+                        vllm_row.forward_regime == cb_row.forward_regime
+                    ),
+                )
+            )
+    return compare_rows
+
+
+def compare_scheduler_runtime_descriptors(
+    cb_rows: list[VLLMSchedulerRuntimeDescriptor],
+    vllm_rows: list[VLLMSchedulerRuntimeDescriptor],
+) -> list[SchedulerDescriptorCompareRow]:
+    """Ordinal diagnostic compare for scheduler/runtime descriptors."""
+    compare_rows: list[SchedulerDescriptorCompareRow] = []
+    for phase in ("prefill", "mixed", "pure_decode"):
+        cb_phase = [row for row in cb_rows if row.phase == phase]
+        vllm_phase = [row for row in vllm_rows if row.phase == phase]
+        for ordinal, (cb_row, vllm_row) in enumerate(
+            zip(cb_phase, vllm_phase, strict=False),
+            start=1,
+        ):
+            compare_rows.append(
+                SchedulerDescriptorCompareRow(
+                    scenario=cb_row.scenario,
+                    phase=phase,
+                    ordinal_in_phase=ordinal,
+                    topology_key=cb_row.topology_key,
+                    cb_iter_index=cb_row.iteration,
+                    cb_scheduled_context_tokens=cb_row.scheduled_context_tokens,
+                    cb_scheduled_decode_tokens=cb_row.scheduled_decode_tokens,
+                    cb_scheduled_total_tokens=cb_row.scheduled_total_tokens,
+                    cb_scheduled_context_reqs=cb_row.scheduled_context_reqs,
+                    cb_scheduled_decode_reqs=cb_row.scheduled_decode_reqs,
+                    cb_scheduled_total_reqs=cb_row.scheduled_total_reqs,
+                    cb_forward_token_count=cb_row.forward_token_count,
+                    cb_forward_regime=cb_row.forward_regime,
+                    cb_cudagraph_runtime_mode=cb_row.cudagraph_runtime_mode,
+                    vllm_iter_index=vllm_row.iteration,
+                    vllm_scheduled_context_tokens=(
+                        vllm_row.scheduled_context_tokens
+                    ),
+                    vllm_scheduled_decode_tokens=vllm_row.scheduled_decode_tokens,
+                    vllm_scheduled_total_tokens=vllm_row.scheduled_total_tokens,
+                    vllm_scheduled_context_reqs=vllm_row.scheduled_context_reqs,
+                    vllm_scheduled_decode_reqs=vllm_row.scheduled_decode_reqs,
+                    vllm_scheduled_total_reqs=vllm_row.scheduled_total_reqs,
+                    vllm_forward_token_count=vllm_row.forward_token_count,
+                    vllm_forward_regime=vllm_row.forward_regime,
+                    vllm_cudagraph_runtime_mode=vllm_row.cudagraph_runtime_mode,
+                    scheduled_total_token_delta=(
+                        vllm_row.scheduled_total_tokens
+                        - cb_row.scheduled_total_tokens
+                    ),
+                    scheduled_total_req_delta=(
+                        vllm_row.scheduled_total_reqs - cb_row.scheduled_total_reqs
+                    ),
+                    forward_token_delta=(
+                        vllm_row.forward_token_count - cb_row.forward_token_count
+                    ),
+                    same_scheduled_total_tokens=int(
+                        vllm_row.scheduled_total_tokens
+                        == cb_row.scheduled_total_tokens
+                    ),
+                    same_scheduled_total_reqs=int(
+                        vllm_row.scheduled_total_reqs == cb_row.scheduled_total_reqs
                     ),
                     same_forward_token_count=int(
                         vllm_row.forward_token_count == cb_row.forward_token_count
