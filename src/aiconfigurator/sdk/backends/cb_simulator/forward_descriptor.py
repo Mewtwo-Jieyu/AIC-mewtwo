@@ -95,6 +95,88 @@ class VLLMSchedulerRuntimeDescriptor:
 
 
 @dataclass(frozen=True)
+class VLLMSchedulerAlignedDescriptor:
+    """DP-aware scheduler descriptor for experimental alignment diagnostics."""
+
+    alignment_key: str
+    alignment_key_type: str
+    engine_step_id: int
+    dp_rank: int
+    source: str
+    scenario: str
+    iteration: int
+    phase: str
+    scheduled_context_tokens: int
+    scheduled_decode_tokens: int
+    scheduled_total_tokens: int
+    scheduled_context_reqs: int
+    scheduled_decode_reqs: int
+    scheduled_total_reqs: int
+    max_num_batched_tokens: int
+    max_num_seqs: int
+    forward_token_count: int
+    forward_regime: str
+    cudagraph_runtime_mode: str
+    topology_key: str
+    tp: int
+    dp: int
+    moe_tp: int
+    moe_ep: int
+    valid_for_default: bool
+    perf_database: bool
+    diagnostic_only: bool
+
+
+@dataclass(frozen=True)
+class SchedulerAlignedCompareRow:
+    alignment_key: str
+    alignment_key_type: str
+    dp_rank: int
+    scenario: str
+    phase: str
+    topology_key: str
+    cb_engine_step_id: int
+    cb_iter_index: int
+    cb_scheduled_context_tokens: int
+    cb_scheduled_decode_tokens: int
+    cb_scheduled_total_tokens: int
+    cb_scheduled_context_reqs: int
+    cb_scheduled_decode_reqs: int
+    cb_scheduled_total_reqs: int
+    cb_forward_token_count: int
+    cb_forward_regime: str
+    cb_cudagraph_runtime_mode: str
+    vllm_engine_step_id: int
+    vllm_iter_index: int
+    vllm_scheduled_context_tokens: int
+    vllm_scheduled_decode_tokens: int
+    vllm_scheduled_total_tokens: int
+    vllm_scheduled_context_reqs: int
+    vllm_scheduled_decode_reqs: int
+    vllm_scheduled_total_reqs: int
+    vllm_forward_token_count: int
+    vllm_forward_regime: str
+    vllm_cudagraph_runtime_mode: str
+    scheduled_context_token_delta: int
+    scheduled_decode_token_delta: int
+    scheduled_total_token_delta: int
+    scheduled_context_req_delta: int
+    scheduled_decode_req_delta: int
+    scheduled_total_req_delta: int
+    forward_token_delta: int
+    same_phase: int
+    same_topology_key: int
+    same_scheduled_total_tokens: int
+    same_scheduled_total_reqs: int
+    same_forward_token_count: int
+    same_forward_regime: int
+    same_cudagraph_runtime_mode: int
+    valid_for_default: bool
+    perf_database: bool
+    diagnostic_only: bool
+
+
+@dataclass(frozen=True)
 class SchedulerDescriptorCompareRow:
     scenario: str
     phase: str
@@ -375,6 +457,464 @@ def scheduler_runtime_descriptor_from_scheduled(
     )
 
 
+def scheduler_aligned_descriptor_from_scheduled(
+    *,
+    source: str,
+    scenario: str,
+    dp_rank: int,
+    engine_step_id: int,
+    phase: str,
+    scheduled_context_tokens: int,
+    scheduled_decode_tokens: int,
+    scheduled_context_reqs: int,
+    scheduled_decode_reqs: int,
+    max_num_batched_tokens: int,
+    max_num_seqs: int,
+    forward_token_count: int,
+    cudagraph_runtime_mode: str,
+    topology_key: str,
+    tp: int,
+    dp: int,
+    moe_tp: int,
+    moe_ep: int,
+) -> VLLMSchedulerAlignedDescriptor:
+    _validate_non_negative(engine_step_id, "engine_step_id")
+    _validate_non_negative(dp_rank, "dp_rank")
+    _validate_positive(dp, "dp")
+    if dp_rank >= dp:
+        raise ValueError(f"dp_rank must be smaller than dp: {dp_rank} >= {dp}")
+
+    descriptor = scheduler_runtime_descriptor_from_scheduled(
+        source=source,
+        scenario=scenario,
+        iteration=engine_step_id,
+        phase=phase,
+        scheduled_context_tokens=scheduled_context_tokens,
+        scheduled_decode_tokens=scheduled_decode_tokens,
+        scheduled_context_reqs=scheduled_context_reqs,
+        scheduled_decode_reqs=scheduled_decode_reqs,
+        max_num_batched_tokens=max_num_batched_tokens,
+        max_num_seqs=max_num_seqs,
+        forward_token_count=forward_token_count,
+        cudagraph_runtime_mode=cudagraph_runtime_mode,
+        topology_key=topology_key,
+        tp=tp,
+        dp=dp,
+        moe_tp=moe_tp,
+        moe_ep=moe_ep,
+    )
+    alignment_key_type = "engine_core_dp_step"
+    alignment_key = f"engine_dp:{dp_rank}:step:{engine_step_id}"
+    return VLLMSchedulerAlignedDescriptor(
+        alignment_key=alignment_key,
+        alignment_key_type=alignment_key_type,
+        engine_step_id=engine_step_id,
+        dp_rank=dp_rank,
+        source=descriptor.source,
+        scenario=descriptor.scenario,
+        iteration=descriptor.iteration,
+        phase=descriptor.phase,
+        scheduled_context_tokens=descriptor.scheduled_context_tokens,
+        scheduled_decode_tokens=descriptor.scheduled_decode_tokens,
+        scheduled_total_tokens=descriptor.scheduled_total_tokens,
+        scheduled_context_reqs=descriptor.scheduled_context_reqs,
+        scheduled_decode_reqs=descriptor.scheduled_decode_reqs,
+        scheduled_total_reqs=descriptor.scheduled_total_reqs,
+        max_num_batched_tokens=descriptor.max_num_batched_tokens,
+        max_num_seqs=descriptor.max_num_seqs,
+        forward_token_count=descriptor.forward_token_count,
+        forward_regime=descriptor.forward_regime,
+        cudagraph_runtime_mode=descriptor.cudagraph_runtime_mode,
+        topology_key=descriptor.topology_key,
+        tp=descriptor.tp,
+        dp=descriptor.dp,
+        moe_tp=descriptor.moe_tp,
+        moe_ep=descriptor.moe_ep,
+        valid_for_default=descriptor.valid_for_default,
+        perf_database=descriptor.perf_database,
+        diagnostic_only=descriptor.diagnostic_only,
+    )
+
+
+def _pad_to_multiple(value: int, multiple: int) -> int:
+    _validate_non_negative(value, "value")
+    _validate_positive(multiple, "multiple")
+    if value == 0:
+        return 0
+    return ((value + multiple - 1) // multiple) * multiple
+
+
+def vllm_like_scheduler_aligned_descriptors(
+    *,
+    source: str,
+    scenario: str,
+    isl: int,
+    osl: int,
+    concurrency: int,
+    max_num_batched_tokens: int,
+    max_num_seqs: int,
+    tp: int,
+    dp: int,
+    moe_tp: int,
+    moe_ep: int,
+    block_size: int = 16,
+    graph_padding_multiple: int = 8,
+) -> list[VLLMSchedulerAlignedDescriptor]:
+    """Build a descriptor-only vLLM-like DP scheduler sequence.
+
+    This first-evidence generator targets three captured scheduler shapes:
+    Phase62 10k2k_b32, Phase69 3k3k_b128, and Phase71/73 32k1k_b16.
+    It intentionally fail-fasts instead of guessing unsupported DP/request
+    splits, budgets, or topology variants.
+    """
+    if not source:
+        raise ValueError("source must be non-empty")
+    if not scenario:
+        raise ValueError("scenario must be non-empty")
+    for field, value in (
+        ("isl", isl),
+        ("osl", osl),
+        ("concurrency", concurrency),
+        ("max_num_batched_tokens", max_num_batched_tokens),
+        ("max_num_seqs", max_num_seqs),
+        ("tp", tp),
+        ("dp", dp),
+        ("moe_tp", moe_tp),
+        ("moe_ep", moe_ep),
+        ("block_size", block_size),
+        ("graph_padding_multiple", graph_padding_multiple),
+    ):
+        _validate_positive(value, field)
+    if concurrency % dp != 0:
+        raise ValueError("concurrency must be divisible by dp for DP-local rows")
+    per_dp_reqs = concurrency // dp
+    if per_dp_reqs < 2:
+        raise ValueError("vLLM-like scheduler descriptor requires >=2 reqs per DP")
+    topology_key = make_topology_key(tp, dp, moe_tp, moe_ep)
+    rows: list[VLLMSchedulerAlignedDescriptor] = []
+
+    def append_row(
+        *,
+        dp_rank: int,
+        engine_step_id: int,
+        context_tokens: int,
+        decode_tokens: int,
+        context_reqs: int,
+        decode_reqs: int,
+        cudagraph_runtime_mode: str,
+        forward_token_count: int,
+    ) -> None:
+        phase = "mixed"
+        if context_tokens > 0 and decode_tokens == 0:
+            phase = "prefill"
+        elif context_tokens == 0 and decode_tokens > 0:
+            phase = "pure_decode"
+        rows.append(
+            scheduler_aligned_descriptor_from_scheduled(
+                source=source,
+                scenario=scenario,
+                dp_rank=dp_rank,
+                engine_step_id=engine_step_id,
+                phase=phase,
+                scheduled_context_tokens=context_tokens,
+                scheduled_decode_tokens=decode_tokens,
+                scheduled_context_reqs=context_reqs,
+                scheduled_decode_reqs=decode_reqs,
+                max_num_batched_tokens=max_num_batched_tokens,
+                max_num_seqs=max_num_seqs,
+                forward_token_count=forward_token_count,
+                cudagraph_runtime_mode=cudagraph_runtime_mode,
+                topology_key=topology_key,
+                tp=tp,
+                dp=dp,
+                moe_tp=moe_tp,
+                moe_ep=moe_ep,
+            )
+        )
+
+    if isl <= max_num_batched_tokens:
+        phase69_shape = (
+            dp == 2
+            and concurrency == 128
+            and isl == 3000
+            and osl == 3000
+            and max_num_batched_tokens == 8192
+            and graph_padding_multiple == 8
+        )
+        if not phase69_shape:
+            raise ValueError(
+                "short-ISL vLLM-like scheduler descriptor currently supports "
+                "only the Phase69 3k3k_b128 bt8192 holdout"
+            )
+
+        dp0_reqs = per_dp_reqs - 1
+        dp1_reqs = per_dp_reqs + 1
+        short_suffix_tokens = graph_padding_multiple
+
+        append_row(
+            dp_rank=0,
+            engine_step_id=0,
+            context_tokens=isl,
+            decode_tokens=0,
+            context_reqs=1,
+            decode_reqs=0,
+            cudagraph_runtime_mode="NONE",
+            forward_token_count=isl,
+        )
+        append_row(
+            dp_rank=0,
+            engine_step_id=1,
+            context_tokens=0,
+            decode_tokens=1,
+            context_reqs=0,
+            decode_reqs=1,
+            cudagraph_runtime_mode="NONE",
+            forward_token_count=1,
+        )
+        append_row(
+            dp_rank=0,
+            engine_step_id=2,
+            context_tokens=(dp0_reqs - 1) * short_suffix_tokens,
+            decode_tokens=1,
+            context_reqs=dp0_reqs - 1,
+            decode_reqs=1,
+            cudagraph_runtime_mode="PIECEWISE",
+            forward_token_count=512,
+        )
+        for engine_step_id in range(3, osl):
+            append_row(
+                dp_rank=0,
+                engine_step_id=engine_step_id,
+                context_tokens=0,
+                decode_tokens=dp0_reqs,
+                context_reqs=0,
+                decode_reqs=dp0_reqs,
+                cudagraph_runtime_mode="FULL",
+                forward_token_count=_pad_to_multiple(
+                    dp1_reqs,
+                    graph_padding_multiple,
+                ),
+            )
+        append_row(
+            dp_rank=0,
+            engine_step_id=osl,
+            context_tokens=0,
+            decode_tokens=dp0_reqs - 1,
+            context_reqs=0,
+            decode_reqs=dp0_reqs - 1,
+            cudagraph_runtime_mode="FULL",
+            forward_token_count=_pad_to_multiple(
+                dp1_reqs,
+                graph_padding_multiple,
+            ),
+        )
+        append_row(
+            dp_rank=0,
+            engine_step_id=osl + 1,
+            context_tokens=0,
+            decode_tokens=dp0_reqs - 1,
+            context_reqs=0,
+            decode_reqs=dp0_reqs - 1,
+            cudagraph_runtime_mode="FULL",
+            forward_token_count=_pad_to_multiple(
+                dp0_reqs - 1,
+                graph_padding_multiple,
+            ),
+        )
+
+        append_row(
+            dp_rank=1,
+            engine_step_id=0,
+            context_tokens=isl + (dp1_reqs - 1) * short_suffix_tokens,
+            decode_tokens=0,
+            context_reqs=dp1_reqs,
+            decode_reqs=0,
+            cudagraph_runtime_mode="NONE",
+            forward_token_count=isl + (dp1_reqs - 1) * short_suffix_tokens,
+        )
+        append_row(
+            dp_rank=1,
+            engine_step_id=1,
+            context_tokens=0,
+            decode_tokens=dp1_reqs,
+            context_reqs=0,
+            decode_reqs=dp1_reqs,
+            cudagraph_runtime_mode="PIECEWISE",
+            forward_token_count=512,
+        )
+        for engine_step_id in range(2, osl):
+            append_row(
+                dp_rank=1,
+                engine_step_id=engine_step_id,
+                context_tokens=0,
+                decode_tokens=dp1_reqs,
+                context_reqs=0,
+                decode_reqs=dp1_reqs,
+                cudagraph_runtime_mode="FULL",
+                forward_token_count=_pad_to_multiple(
+                    dp1_reqs,
+                    graph_padding_multiple,
+                ),
+        )
+        return rows
+
+    phase71_shape = (
+        tp == 4
+        and dp == 2
+        and moe_tp == 1
+        and moe_ep == 8
+        and concurrency == 16
+        and isl == 32000
+        and osl == 1000
+        and max_num_batched_tokens == 8192
+        and graph_padding_multiple == 8
+    )
+    if phase71_shape:
+        prefill_chunks = (8192, 8192, 8192, 7536)
+        for dp_rank in range(dp):
+            for engine_step_id, context_tokens in enumerate(prefill_chunks):
+                append_row(
+                    dp_rank=dp_rank,
+                    engine_step_id=engine_step_id,
+                    context_tokens=context_tokens,
+                    decode_tokens=0,
+                    context_reqs=1 if engine_step_id < 3 else per_dp_reqs,
+                    decode_reqs=0,
+                    cudagraph_runtime_mode="NONE",
+                    forward_token_count=context_tokens,
+                )
+
+            append_row(
+                dp_rank=dp_rank,
+                engine_step_id=4,
+                context_tokens=0,
+                decode_tokens=per_dp_reqs,
+                context_reqs=0,
+                decode_reqs=per_dp_reqs,
+                cudagraph_runtime_mode="FULL" if dp_rank == 0 else "NONE",
+                forward_token_count=per_dp_reqs,
+            )
+            for engine_step_id in range(5, 1003):
+                append_row(
+                    dp_rank=dp_rank,
+                    engine_step_id=engine_step_id,
+                    context_tokens=0,
+                    decode_tokens=per_dp_reqs,
+                    context_reqs=0,
+                    decode_reqs=per_dp_reqs,
+                    cudagraph_runtime_mode="FULL",
+                    forward_token_count=per_dp_reqs,
+                )
+        return rows
+
+    if isl == 32000 and osl == 1000:
+        raise ValueError(
+            "32k1k vLLM-like scheduler descriptor currently supports only "
+            "the Phase71 32k1k_b16 bt8192 tp4dp2ep8 holdout"
+        )
+
+    leader_remaining = isl - max_num_batched_tokens
+    follower_count = per_dp_reqs - 1
+    follower_suffix_tokens = follower_count * block_size
+    if leader_remaining + follower_suffix_tokens > max_num_batched_tokens:
+        raise ValueError(
+            "leader remainder plus follower suffix chunks exceed token budget"
+        )
+
+    for dp_rank in range(dp):
+        append_row(
+            dp_rank=dp_rank,
+            engine_step_id=0,
+            context_tokens=max_num_batched_tokens,
+            decode_tokens=0,
+            context_reqs=1,
+            decode_reqs=0,
+            cudagraph_runtime_mode="NONE",
+            forward_token_count=max_num_batched_tokens,
+        )
+
+        if dp_rank == 0:
+            append_row(
+                dp_rank=dp_rank,
+                engine_step_id=1,
+                context_tokens=leader_remaining + follower_suffix_tokens,
+                decode_tokens=0,
+                context_reqs=per_dp_reqs,
+                decode_reqs=0,
+                cudagraph_runtime_mode="NONE",
+                forward_token_count=leader_remaining + follower_suffix_tokens,
+            )
+            for engine_step_id in range(2, osl + 1):
+                append_row(
+                    dp_rank=dp_rank,
+                    engine_step_id=engine_step_id,
+                    context_tokens=0,
+                    decode_tokens=per_dp_reqs,
+                    context_reqs=0,
+                    decode_reqs=per_dp_reqs,
+                    cudagraph_runtime_mode="FULL",
+                    forward_token_count=_pad_to_multiple(
+                        per_dp_reqs,
+                        graph_padding_multiple,
+                    ),
+                )
+            continue
+
+        append_row(
+            dp_rank=dp_rank,
+            engine_step_id=1,
+            context_tokens=leader_remaining,
+            decode_tokens=0,
+            context_reqs=1,
+            decode_reqs=0,
+            cudagraph_runtime_mode="NONE",
+            forward_token_count=leader_remaining,
+        )
+        mixed_tokens = follower_suffix_tokens + 1
+        append_row(
+            dp_rank=dp_rank,
+            engine_step_id=2,
+            context_tokens=follower_suffix_tokens,
+            decode_tokens=1,
+            context_reqs=follower_count,
+            decode_reqs=1,
+            cudagraph_runtime_mode="NONE",
+            forward_token_count=_pad_to_multiple(
+                mixed_tokens,
+                graph_padding_multiple,
+            ),
+        )
+        for engine_step_id in range(3, osl + 1):
+            append_row(
+                dp_rank=dp_rank,
+                engine_step_id=engine_step_id,
+                context_tokens=0,
+                decode_tokens=per_dp_reqs,
+                context_reqs=0,
+                decode_reqs=per_dp_reqs,
+                cudagraph_runtime_mode="FULL",
+                forward_token_count=_pad_to_multiple(
+                    per_dp_reqs,
+                    graph_padding_multiple,
+                ),
+            )
+        append_row(
+            dp_rank=dp_rank,
+            engine_step_id=osl + 1,
+            context_tokens=0,
+            decode_tokens=follower_count,
+            context_reqs=0,
+            decode_reqs=follower_count,
+            cudagraph_runtime_mode="FULL",
+            forward_token_count=_pad_to_multiple(
+                follower_count,
+                graph_padding_multiple,
+            ),
+        )
+
+    return rows
+
+
 def descriptor_from_scheduled(
     *,
     source: str,
@@ -445,6 +985,74 @@ def _required_false(raw: dict[str, str], field: str) -> None:
     value = _required_non_empty(raw, field).strip().lower()
     if value not in {"false", "0"}:
         raise ValueError(f"{field} must be false")
+
+
+def _required_true(raw: dict[str, str], field: str) -> None:
+    value = _required_non_empty(raw, field).strip().lower()
+    if value not in {"true", "1"}:
+        raise ValueError(f"{field} must be true")
+
+
+def _reject_forbidden_descriptor_fields(raw: dict[str, str]) -> None:
+    forbidden = (
+        "latency_ms",
+        "duration_ms",
+        "residual_ms",
+        "profiled_cuda",
+        "profiler",
+        "nccl",
+        "NCCL",
+        "sync_wait",
+        "throughput",
+    )
+    for field in raw:
+        if any(token in field for token in forbidden):
+            raise ValueError(f"forbidden field in descriptor row: {field}")
+
+
+def scheduler_aligned_descriptor_from_csv_row(
+    raw: dict[str, str],
+) -> VLLMSchedulerAlignedDescriptor:
+    _reject_forbidden_descriptor_fields(raw)
+    if _required_non_empty(raw, "alignment_key_type") != "engine_core_dp_step":
+        raise ValueError("alignment_key_type must be engine_core_dp_step")
+    _required_false(raw, "valid_for_default")
+    _required_false(raw, "perf_database")
+    _required_true(raw, "diagnostic_only")
+
+    descriptor = scheduler_aligned_descriptor_from_scheduled(
+        source=_required_non_empty(raw, "source"),
+        scenario=_required_non_empty(raw, "scenario"),
+        dp_rank=_required_int(raw, "dp_rank"),
+        engine_step_id=_required_int(raw, "engine_step_id"),
+        phase=_required_non_empty(raw, "phase"),
+        scheduled_context_tokens=_required_int(raw, "scheduled_context_tokens"),
+        scheduled_decode_tokens=_required_int(raw, "scheduled_decode_tokens"),
+        scheduled_context_reqs=_required_int(raw, "scheduled_context_reqs"),
+        scheduled_decode_reqs=_required_int(raw, "scheduled_decode_reqs"),
+        max_num_batched_tokens=_required_int(raw, "max_num_batched_tokens"),
+        max_num_seqs=_required_int(raw, "max_num_seqs"),
+        forward_token_count=_required_int(raw, "forward_token_count"),
+        cudagraph_runtime_mode=_required_non_empty(raw, "cudagraph_runtime_mode"),
+        topology_key=_required_non_empty(raw, "topology_key"),
+        tp=_required_int(raw, "tp"),
+        dp=_required_int(raw, "dp"),
+        moe_tp=_required_int(raw, "moe_tp"),
+        moe_ep=_required_int(raw, "moe_ep"),
+    )
+    if _required_non_empty(raw, "alignment_key") != descriptor.alignment_key:
+        raise ValueError("alignment_key mismatch")
+    if _required_int(raw, "iteration") != descriptor.iteration:
+        raise ValueError("iteration must equal engine_step_id")
+    if _required_int(raw, "scheduled_total_tokens") != (
+        descriptor.scheduled_total_tokens
+    ):
+        raise ValueError("scheduled_total_tokens mismatch")
+    if _required_int(raw, "scheduled_total_reqs") != descriptor.scheduled_total_reqs:
+        raise ValueError("scheduled_total_reqs mismatch")
+    if _required_non_empty(raw, "forward_regime") != descriptor.forward_regime:
+        raise ValueError("forward_regime mismatch")
+    return descriptor
 
 
 def _parse_shape_tokens(raw_shape: str, field: str) -> int:
@@ -831,6 +1439,157 @@ def compare_scheduler_runtime_descriptors(
                     ),
                 )
             )
+    return compare_rows
+
+
+def _scheduler_alignment_key(
+    row: VLLMSchedulerAlignedDescriptor,
+    source_name: str,
+) -> tuple[str, int]:
+    if row.alignment_key_type != "engine_core_dp_step":
+        raise ValueError(
+            f"{source_name} alignment_key_type must be engine_core_dp_step"
+        )
+    expected_key = f"engine_dp:{row.dp_rank}:step:{row.engine_step_id}"
+    if row.alignment_key != expected_key:
+        raise ValueError(
+            f"{source_name} alignment_key mismatch: "
+            f"{row.alignment_key!r} != {expected_key!r}"
+        )
+    if row.iteration != row.engine_step_id:
+        raise ValueError(
+            f"{source_name} iteration must equal engine_step_id: "
+            f"{row.iteration} != {row.engine_step_id}"
+        )
+    if row.valid_for_default:
+        raise ValueError(f"{source_name} valid_for_default must be false")
+    if row.perf_database:
+        raise ValueError(f"{source_name} perf_database must be false")
+    if not row.diagnostic_only:
+        raise ValueError(f"{source_name} diagnostic_only must be true")
+    return (row.alignment_key, row.dp_rank)
+
+
+def _index_scheduler_aligned_rows(
+    rows: list[VLLMSchedulerAlignedDescriptor],
+    source_name: str,
+) -> dict[tuple[str, int], VLLMSchedulerAlignedDescriptor]:
+    if not rows:
+        raise ValueError(f"{source_name} aligned rows must be non-empty")
+    indexed: dict[tuple[str, int], VLLMSchedulerAlignedDescriptor] = {}
+    for row in rows:
+        key = _scheduler_alignment_key(row, source_name)
+        if key in indexed:
+            raise ValueError(
+                f"duplicate {source_name} alignment key: {key[0]} dp={key[1]}"
+            )
+        indexed[key] = row
+    return indexed
+
+
+def compare_scheduler_aligned_descriptors(
+    cb_rows: list[VLLMSchedulerAlignedDescriptor],
+    vllm_rows: list[VLLMSchedulerAlignedDescriptor],
+) -> list[SchedulerAlignedCompareRow]:
+    cb_index = _index_scheduler_aligned_rows(cb_rows, "cb")
+    vllm_index = _index_scheduler_aligned_rows(vllm_rows, "vllm")
+    cb_keys = set(cb_index)
+    vllm_keys = set(vllm_index)
+    missing_vllm = sorted(cb_keys - vllm_keys)
+    if missing_vllm:
+        missing = ", ".join(f"{key} dp={dp}" for key, dp in missing_vllm[:5])
+        raise ValueError(f"missing vllm alignment keys: {missing}")
+    missing_cb = sorted(vllm_keys - cb_keys)
+    if missing_cb:
+        missing = ", ".join(f"{key} dp={dp}" for key, dp in missing_cb[:5])
+        raise ValueError(f"missing cb alignment keys: {missing}")
+
+    compare_rows: list[SchedulerAlignedCompareRow] = []
+    for key in sorted(cb_keys, key=lambda item: (item[1], cb_index[item].engine_step_id)):
+        cb_row = cb_index[key]
+        vllm_row = vllm_index[key]
+        compare_rows.append(
+            SchedulerAlignedCompareRow(
+                alignment_key=cb_row.alignment_key,
+                alignment_key_type=cb_row.alignment_key_type,
+                dp_rank=cb_row.dp_rank,
+                scenario=cb_row.scenario,
+                phase=cb_row.phase,
+                topology_key=cb_row.topology_key,
+                cb_engine_step_id=cb_row.engine_step_id,
+                cb_iter_index=cb_row.iteration,
+                cb_scheduled_context_tokens=cb_row.scheduled_context_tokens,
+                cb_scheduled_decode_tokens=cb_row.scheduled_decode_tokens,
+                cb_scheduled_total_tokens=cb_row.scheduled_total_tokens,
+                cb_scheduled_context_reqs=cb_row.scheduled_context_reqs,
+                cb_scheduled_decode_reqs=cb_row.scheduled_decode_reqs,
+                cb_scheduled_total_reqs=cb_row.scheduled_total_reqs,
+                cb_forward_token_count=cb_row.forward_token_count,
+                cb_forward_regime=cb_row.forward_regime,
+                cb_cudagraph_runtime_mode=cb_row.cudagraph_runtime_mode,
+                vllm_engine_step_id=vllm_row.engine_step_id,
+                vllm_iter_index=vllm_row.iteration,
+                vllm_scheduled_context_tokens=(
+                    vllm_row.scheduled_context_tokens
+                ),
+                vllm_scheduled_decode_tokens=vllm_row.scheduled_decode_tokens,
+                vllm_scheduled_total_tokens=vllm_row.scheduled_total_tokens,
+                vllm_scheduled_context_reqs=vllm_row.scheduled_context_reqs,
+                vllm_scheduled_decode_reqs=vllm_row.scheduled_decode_reqs,
+                vllm_scheduled_total_reqs=vllm_row.scheduled_total_reqs,
+                vllm_forward_token_count=vllm_row.forward_token_count,
+                vllm_forward_regime=vllm_row.forward_regime,
+                vllm_cudagraph_runtime_mode=vllm_row.cudagraph_runtime_mode,
+                scheduled_context_token_delta=(
+                    vllm_row.scheduled_context_tokens
+                    - cb_row.scheduled_context_tokens
+                ),
+                scheduled_decode_token_delta=(
+                    vllm_row.scheduled_decode_tokens
+                    - cb_row.scheduled_decode_tokens
+                ),
+                scheduled_total_token_delta=(
+                    vllm_row.scheduled_total_tokens
+                    - cb_row.scheduled_total_tokens
+                ),
+                scheduled_context_req_delta=(
+                    vllm_row.scheduled_context_reqs
+                    - cb_row.scheduled_context_reqs
+                ),
+                scheduled_decode_req_delta=(
+                    vllm_row.scheduled_decode_reqs
+                    - cb_row.scheduled_decode_reqs
+                ),
+                scheduled_total_req_delta=(
+                    vllm_row.scheduled_total_reqs - cb_row.scheduled_total_reqs
+                ),
+                forward_token_delta=(
+                    vllm_row.forward_token_count - cb_row.forward_token_count
+                ),
+                same_phase=int(vllm_row.phase == cb_row.phase),
+                same_topology_key=int(vllm_row.topology_key == cb_row.topology_key),
+                same_scheduled_total_tokens=int(
+                    vllm_row.scheduled_total_tokens
+                    == cb_row.scheduled_total_tokens
+                ),
+                same_scheduled_total_reqs=int(
+                    vllm_row.scheduled_total_reqs == cb_row.scheduled_total_reqs
+                ),
+                same_forward_token_count=int(
+                    vllm_row.forward_token_count == cb_row.forward_token_count
+                ),
+                same_forward_regime=int(
+                    vllm_row.forward_regime == cb_row.forward_regime
+                ),
+                same_cudagraph_runtime_mode=int(
+                    vllm_row.cudagraph_runtime_mode
+                    == cb_row.cudagraph_runtime_mode
+                ),
+                valid_for_default=False,
+                perf_database=False,
+                diagnostic_only=True,
+            )
+        )
     return compare_rows
 
 
