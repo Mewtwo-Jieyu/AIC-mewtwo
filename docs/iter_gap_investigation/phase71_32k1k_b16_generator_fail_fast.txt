@@ -1,0 +1,4 @@
+command: diagnose_cb_iter_latency.py --isl 32000 --osl 1000 --concurrency 16 --tp 4 --dp 2 --moe-tp 1 --moe-ep 8 --max-num-batched-tokens 8192 --experimental-vllm-like-scheduler-descriptor
+result: fail-fast
+error: ValueError: leader remainder plus follower suffix chunks exceed token budget
+decision: no fallback descriptor or intersection-only compare was generated

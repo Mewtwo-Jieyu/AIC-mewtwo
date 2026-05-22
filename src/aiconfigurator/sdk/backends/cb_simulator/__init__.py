@@ -4,10 +4,13 @@ from .forward_descriptor import (
     AttentionRuntimeShapeKey,
     ForwardWrapperShapeKey,
     KVRuntimeShapeKey,
+    SchedulerAlignedCompareRow,
     VLLMCompiledBodyRuntimeKey,
     VLLMForwardDescriptor,
     VLLMRuntimeShapeKey,
+    VLLMSchedulerAlignedDescriptor,
     VLLMSchedulerRuntimeDescriptor,
+    vllm_like_scheduler_aligned_descriptors,
 )
 from .simulator import CBSimulator
 
@@ -20,8 +23,11 @@ __all__ = [
     "AttentionRuntimeShapeKey",
     "ForwardWrapperShapeKey",
     "KVRuntimeShapeKey",
+    "SchedulerAlignedCompareRow",
     "VLLMCompiledBodyRuntimeKey",
     "VLLMForwardDescriptor",
     "VLLMRuntimeShapeKey",
+    "VLLMSchedulerAlignedDescriptor",
     "VLLMSchedulerRuntimeDescriptor",
+    "vllm_like_scheduler_aligned_descriptors",
 ]

@@ -23,11 +23,13 @@ from aiconfigurator.sdk.backends.cb_simulator.forward_descriptor import (
     VLLMCompiledBodyRuntimeKey,
     VLLMForwardDescriptor,
     VLLMRuntimeShapeKey,
+    VLLMSchedulerAlignedDescriptor,
     VLLMSchedulerRuntimeDescriptor,
     attention_subkey_from_runtime_shape_key,
     compiled_body_runtime_key_from_nccl_summary_csv,
     compare_forward_descriptors,
     compare_runtime_shape_keys,
+    compare_scheduler_aligned_descriptors,
     descriptor_from_runtime_shape_summary,
     descriptor_from_scheduled,
     forward_wrapper_subkey_from_runtime_shape_key,
@@ -35,7 +37,10 @@ from aiconfigurator.sdk.backends.cb_simulator.forward_descriptor import (
     make_topology_key,
     runtime_shape_key_from_rank_row,
     runtime_shape_key_from_scheduled,
+    scheduler_aligned_descriptor_from_scheduled,
+    scheduler_aligned_descriptor_from_csv_row,
     scheduler_runtime_descriptor_from_scheduled,
+    vllm_like_scheduler_aligned_descriptors,
 )
 from aiconfigurator.sdk.backends.cb_simulator.simulator import CBSimulator
 from aiconfigurator.sdk.backends.vllm_backend import VLLMBackend
@@ -806,6 +811,70 @@ def build_cb_scheduler_descriptors(
     ]
 
 
+def build_cb_scheduler_aligned_descriptors(
+    rows: list[CBIterationTraceRow],
+    args: argparse.Namespace,
+    *,
+    dp_rank: int,
+) -> list[VLLMSchedulerAlignedDescriptor]:
+    topology_key = _topology_key_from_args(args)
+    moe_tp = args.moe_tp if args.moe_tp is not None else args.tp
+    cfg = _make_cb_config(args)
+    return [
+        scheduler_aligned_descriptor_from_scheduled(
+            source="cb_sim",
+            scenario=_scenario_name(args),
+            dp_rank=dp_rank,
+            engine_step_id=engine_step_id,
+            phase=row.phase_type,
+            scheduled_context_tokens=row.prefill_tokens,
+            scheduled_decode_tokens=row.decode_batch_size,
+            scheduled_context_reqs=row.prefill_requests,
+            scheduled_decode_reqs=row.decode_batch_size,
+            max_num_batched_tokens=cfg.max_num_batched_tokens,
+            max_num_seqs=args.max_num_seqs,
+            forward_token_count=row.prefill_tokens + row.decode_batch_size,
+            cudagraph_runtime_mode="AIC_UNSET",
+            topology_key=topology_key,
+            tp=args.tp,
+            dp=args.dp,
+            moe_tp=moe_tp,
+            moe_ep=args.moe_ep,
+        )
+        for engine_step_id, row in enumerate(rows)
+    ]
+
+
+def parse_scheduler_aligned_descriptors(
+    path: Path,
+) -> list[VLLMSchedulerAlignedDescriptor]:
+    with path.open(newline="") as f:
+        return [
+            scheduler_aligned_descriptor_from_csv_row(row)
+            for row in csv.DictReader(f)
+        ]
+
+
+def build_cb_vllm_like_scheduler_aligned_descriptors(
+    args: argparse.Namespace,
+) -> list[VLLMSchedulerAlignedDescriptor]:
+    topology_moe_tp = args.moe_tp if args.moe_tp is not None else args.tp
+    return vllm_like_scheduler_aligned_descriptors(
+        source="cb_sim_vllm_like",
+        scenario=_scenario_name(args),
+        isl=args.isl,
+        osl=args.osl,
+        concurrency=args.concurrency,
+        max_num_batched_tokens=_make_cb_config(args).max_num_batched_tokens,
+        max_num_seqs=args.max_num_seqs,
+        tp=args.tp,
+        dp=args.dp,
+        moe_tp=topology_moe_tp,
+        moe_ep=args.moe_ep,
+        block_size=args.block_size,
+    )
+
+
 def parse_runtime_shape_descriptors(
     path: Path,
     args: argparse.Namespace,
@@ -1422,6 +1491,27 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--scheduler-descriptor-out", type=Path)
     parser.add_argument(
+        "--experimental-scheduler-alignment-descriptor",
+        action="store_true",
+        help=(
+            "Emit DP-aware scheduler alignment descriptors only. "
+            "This does not change cb_sim latency."
+        ),
+    )
+    parser.add_argument("--scheduler-alignment-descriptor-out", type=Path)
+    parser.add_argument("--scheduler-alignment-dp-rank", type=int)
+    parser.add_argument("--scheduler-alignment-vllm-csv", type=Path)
+    parser.add_argument("--scheduler-alignment-compare-out", type=Path)
+    parser.add_argument(
+        "--experimental-vllm-like-scheduler-descriptor",
+        action="store_true",
+        help=(
+            "Emit an experimental vLLM-like DP scheduler descriptor. "
+            "This does not change cb_sim latency."
+        ),
+    )
+    parser.add_argument("--vllm-like-scheduler-descriptor-out", type=Path)
+    parser.add_argument(
         "--experimental-compiled-body-key",
         action="store_true",
         help=(
@@ -1551,6 +1641,58 @@ def main() -> None:
                 "--scheduler-descriptor-out"
             )
 
+    if args.experimental_scheduler_alignment_descriptor:
+        if args.scheduler_alignment_descriptor_out is None:
+            raise ValueError(
+                "--experimental-scheduler-alignment-descriptor requires "
+                "--scheduler-alignment-descriptor-out"
+            )
+        if (
+            args.scheduler_alignment_compare_out is not None
+            and args.scheduler_alignment_vllm_csv is None
+        ):
+            raise ValueError(
+                "--scheduler-alignment-compare-out requires "
+                "--scheduler-alignment-vllm-csv"
+            )
+        if args.scheduler_alignment_dp_rank is None and args.dp > 1:
+            raise ValueError(
+                "--experimental-scheduler-alignment-descriptor with dp > 1 "
+                "requires --scheduler-alignment-dp-rank"
+            )
+
+    if args.experimental_vllm_like_scheduler_descriptor:
+        if args.vllm_like_scheduler_descriptor_out is None:
+            raise ValueError(
+                "--experimental-vllm-like-scheduler-descriptor requires "
+                "--vllm-like-scheduler-descriptor-out"
+            )
+        if (
+            args.scheduler_alignment_compare_out is not None
+            and args.scheduler_alignment_vllm_csv is None
+        ):
+            raise ValueError(
+                "--scheduler-alignment-compare-out requires "
+                "--scheduler-alignment-vllm-csv"
+            )
+        rows = build_cb_vllm_like_scheduler_aligned_descriptors(args)
+        _write_rows(args.vllm_like_scheduler_descriptor_out, rows)
+        print(
+            "wrote vLLM-like scheduler descriptors: "
+            f"{args.vllm_like_scheduler_descriptor_out}"
+        )
+        if args.scheduler_alignment_compare_out is not None:
+            vllm_rows = parse_scheduler_aligned_descriptors(
+                args.scheduler_alignment_vllm_csv
+            )
+            compare_rows = compare_scheduler_aligned_descriptors(rows, vllm_rows)
+            _write_rows(args.scheduler_alignment_compare_out, compare_rows)
+            print(
+                "wrote vLLM-like scheduler strict compare: "
+                f"{args.scheduler_alignment_compare_out}"
+            )
+        return
+
     if args.experimental_compiled_body_key:
         if args.compiled_body_key_out is None:
             raise ValueError(
@@ -1672,6 +1814,39 @@ def main() -> None:
         scheduler_descriptors = build_cb_scheduler_descriptors(cb_rows, args)
         _write_rows(args.scheduler_descriptor_out, scheduler_descriptors)
         print(f"wrote scheduler descriptors: {args.scheduler_descriptor_out}")
+
+    if args.experimental_scheduler_alignment_descriptor:
+        dp_rank = (
+            args.scheduler_alignment_dp_rank
+            if args.scheduler_alignment_dp_rank is not None
+            else 0
+        )
+        scheduler_alignment_descriptors = build_cb_scheduler_aligned_descriptors(
+            cb_rows,
+            args,
+            dp_rank=dp_rank,
+        )
+        _write_rows(
+            args.scheduler_alignment_descriptor_out,
+            scheduler_alignment_descriptors,
+        )
+        print(
+            "wrote scheduler alignment descriptors: "
+            f"{args.scheduler_alignment_descriptor_out}"
+        )
+        if args.scheduler_alignment_compare_out is not None:
+            vllm_alignment_descriptors = parse_scheduler_aligned_descriptors(
+                args.scheduler_alignment_vllm_csv
+            )
+            compare_rows = compare_scheduler_aligned_descriptors(
+                scheduler_alignment_descriptors,
+                vllm_alignment_descriptors,
+            )
+            _write_rows(args.scheduler_alignment_compare_out, compare_rows)
+            print(
+                "wrote scheduler alignment compare: "
+                f"{args.scheduler_alignment_compare_out}"
+            )
 
     if args.metrics_before is not None or args.metrics_after is not None:
         if args.metrics_before is None or args.metrics_after is None:

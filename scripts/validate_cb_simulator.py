@@ -30,6 +30,7 @@ from aiconfigurator.sdk.backends.cb_simulator.forward_descriptor import (
     descriptor_from_scheduled,
     make_topology_key,
     runtime_shape_key_from_scheduled,
+    scheduler_aligned_descriptor_from_scheduled,
     scheduler_runtime_descriptor_from_scheduled,
 )
 from aiconfigurator.sdk.backends.vllm_backend import VLLMBackend
@@ -320,6 +321,59 @@ def run_experimental_scheduler_descriptor(out_csv: Path) -> None:
         )
     _write_rows(out_csv, rows)
     print(f"wrote experimental scheduler descriptors: {out_csv}")
+
+
+def run_experimental_scheduler_alignment_descriptor(out_csv: Path) -> None:
+    topology_key = make_topology_key(TP, 1, TP, 1)
+    rows = []
+    for point in THROUGHPUT_DATA:
+        scenario = point.name.replace(" ", "_")
+        rows.append(
+            scheduler_aligned_descriptor_from_scheduled(
+                source="validate_input_shape",
+                scenario=scenario,
+                dp_rank=0,
+                engine_step_id=0,
+                phase="prefill",
+                scheduled_context_tokens=point.isl,
+                scheduled_decode_tokens=0,
+                scheduled_context_reqs=1,
+                scheduled_decode_reqs=0,
+                max_num_batched_tokens=point.isl,
+                max_num_seqs=256,
+                forward_token_count=point.isl,
+                cudagraph_runtime_mode="AIC_UNSET",
+                topology_key=topology_key,
+                tp=TP,
+                dp=1,
+                moe_tp=TP,
+                moe_ep=1,
+            )
+        )
+        rows.append(
+            scheduler_aligned_descriptor_from_scheduled(
+                source="validate_input_shape",
+                scenario=scenario,
+                dp_rank=0,
+                engine_step_id=1,
+                phase="pure_decode",
+                scheduled_context_tokens=0,
+                scheduled_decode_tokens=point.batch_size,
+                scheduled_context_reqs=0,
+                scheduled_decode_reqs=point.batch_size,
+                max_num_batched_tokens=point.isl,
+                max_num_seqs=256,
+                forward_token_count=point.batch_size,
+                cudagraph_runtime_mode="AIC_UNSET",
+                topology_key=topology_key,
+                tp=TP,
+                dp=1,
+                moe_tp=TP,
+                moe_ep=1,
+            )
+        )
+    _write_rows(out_csv, rows)
+    print(f"wrote experimental scheduler alignment descriptors: {out_csv}")
 
 
 def run_experimental_compiled_body_key(out_csv: Path, nccl_summary_csv: Path) -> None:
@@ -707,6 +761,22 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--experimental-scheduler-alignment-descriptor",
+        action="store_true",
+        help=(
+            "Emit DP-aware scheduler/runtime alignment descriptors only. "
+            "This does not change the default cb_sim validation path."
+        ),
+    )
+    parser.add_argument(
+        "--experimental-scheduler-alignment-descriptor-out",
+        type=Path,
+        default=Path(
+            "docs/iter_gap_investigation/phase63_scheduler_alignment_descriptor/"
+            "validate_scheduler_alignment_descriptors.csv"
+        ),
+    )
+    parser.add_argument(
         "--experimental-compiled-body-key",
         action="store_true",
         help=(
@@ -744,6 +814,12 @@ def main() -> None:
     if args.experimental_scheduler_descriptor:
         run_experimental_scheduler_descriptor(
             args.experimental_scheduler_descriptor_out
+        )
+        return
+
+    if args.experimental_scheduler_alignment_descriptor:
+        run_experimental_scheduler_alignment_descriptor(
+            args.experimental_scheduler_alignment_descriptor_out
         )
         return
 
