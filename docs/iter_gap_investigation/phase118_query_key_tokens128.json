@@ -1,0 +1,20 @@
+{
+  "backend": "vllm",
+  "vllm_version": "0.19.0",
+  "device": "NVIDIA_H200",
+  "model_family": "KimiK25",
+  "module": "DeepseekV2MoE",
+  "experts_impl": "SharedFusedMoE",
+  "kernel": "WNA16",
+  "dtype": "int4_w4a16",
+  "activation_dtype": "bfloat16",
+  "hidden": "7168",
+  "intermediate": "2048",
+  "global_experts": "384",
+  "local_experts": "48",
+  "topk": "8",
+  "topology": "tp4dp2ep8",
+  "config_sha256": "15c797eed1dd441e1d6d50fcf7584b2264d248d5ebc1144e1c95e6c4e885d853",
+  "input_kind": "synthetic_random_hidden_states",
+  "tokens_actual": "128"
+}
