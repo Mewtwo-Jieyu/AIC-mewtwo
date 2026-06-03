@@ -1,0 +1,8 @@
+tokens_actual,occurrence_count,phase117_exact_key_covered,source,evidence_kind,valid_for_time_model,valid_for_default,perf_database,notes
+1,6960,false,capture2_drain,diagnostic_exact_shape,false,false,false,no_interpolation_or_extrapolation
+15,240,false,capture2_drain,diagnostic_exact_shape,false,false,false,no_interpolation_or_extrapolation
+16,959280,false,capture2_drain,diagnostic_exact_shape,false,false,false,no_interpolation_or_extrapolation
+241,240,false,capture2_drain,diagnostic_exact_shape,false,false,false,no_interpolation_or_extrapolation
+1808,240,false,capture2_drain,diagnostic_exact_shape,false,false,false,no_interpolation_or_extrapolation
+2048,240,false,capture2_drain,diagnostic_exact_shape,false,false,false,no_interpolation_or_extrapolation
+8192,480,false,capture2_drain,diagnostic_exact_shape,false,false,false,no_interpolation_or_extrapolation
