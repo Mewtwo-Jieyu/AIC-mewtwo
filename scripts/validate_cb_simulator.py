@@ -69,6 +69,7 @@ class MultiConfigPoint:
     isl: int
     osl: int
     batch_size: int
+    max_num_batched_tokens: int
     tp: int
     dp: int
     moe_tp: int
@@ -78,6 +79,24 @@ class MultiConfigPoint:
     @property
     def real_output_tok_s_gpu(self) -> float:
         return self.real_total_tok_s_gpu * self.osl / (self.isl + self.osl)
+
+
+@dataclass(frozen=True)
+class MultiConfigTopKRow:
+    name: str
+    tp: int
+    dp: int
+    ep: int
+    max_bt: int
+    real_output_tok_s_gpu: float
+    sim_output_tok_s_gpu: float
+    error_ratio: float
+    rank: int
+    real_rank: int
+    rank_delta: int
+    diagnostic_only: bool
+    valid_for_default: bool
+    perf_database: bool
 
 
 @dataclass(frozen=True)
@@ -118,6 +137,7 @@ MULTI_CONFIG_DATA = [
         8000,
         2000,
         128,
+        max_num_batched_tokens=8000,
         tp=8,
         dp=1,
         moe_tp=1,
@@ -129,6 +149,7 @@ MULTI_CONFIG_DATA = [
         32000,
         3000,
         128,
+        max_num_batched_tokens=32000,
         tp=8,
         dp=1,
         moe_tp=1,
@@ -140,6 +161,7 @@ MULTI_CONFIG_DATA = [
         8000,
         2000,
         128,
+        max_num_batched_tokens=8000,
         tp=4,
         dp=2,
         moe_tp=1,
@@ -151,6 +173,7 @@ MULTI_CONFIG_DATA = [
         32000,
         3000,
         128,
+        max_num_batched_tokens=32000,
         tp=4,
         dp=2,
         moe_tp=1,
@@ -162,6 +185,7 @@ MULTI_CONFIG_DATA = [
         8000,
         2000,
         128,
+        max_num_batched_tokens=65536,
         tp=8,
         dp=1,
         moe_tp=1,
@@ -173,6 +197,7 @@ MULTI_CONFIG_DATA = [
         8000,
         2000,
         128,
+        max_num_batched_tokens=65536,
         tp=4,
         dp=2,
         moe_tp=1,
@@ -494,6 +519,7 @@ def _make_cb_config(
     long_prefill_token_threshold: int = 0,
     overlap_factor: float = 1.0,
     per_iteration_overhead_ms: float = 0.0,
+    max_num_batched_tokens: int | None = None,
 ) -> CBSimConfig:
     """Create CBSimConfig aligned with run_agg default chunk budget."""
     # Need enough requests for meaningful steady-state measurement.
@@ -501,13 +527,104 @@ def _make_cb_config(
     num_requests = max(200, concurrency * 3)
     warmup_requests = max(50, concurrency)
     return CBSimConfig(
-        max_num_batched_tokens=isl,
+        max_num_batched_tokens=max_num_batched_tokens or isl,
         num_requests=num_requests,
         warmup_requests=warmup_requests,
         long_prefill_token_threshold=long_prefill_token_threshold,
         overlap_factor=overlap_factor,
         per_iteration_overhead_ms=per_iteration_overhead_ms,
     )
+
+
+def _rank_by_output(values: dict[str, float]) -> dict[str, int]:
+    ordered = sorted(values.items(), key=lambda item: (-item[1], item[0]))
+    return {name: rank for rank, (name, _) in enumerate(ordered, start=1)}
+
+
+def run_diagnostic_multi_config_topk(
+    overlap_factor: float = 0.0,
+    ep8_per_iteration_overhead_ms: float = 90.0,
+    verbose: bool = True,
+) -> list[MultiConfigTopKRow]:
+    """Run budget-aware diagnostic Top-K rows without changing validation gates."""
+    backend = VLLMBackend()
+    loaded: dict[tuple[int, int, int, int], tuple] = {}
+    raw_rows: list[tuple[MultiConfigPoint, float, float]] = []
+    for pt in MULTI_CONFIG_DATA:
+        key = (pt.tp, pt.dp, pt.moe_tp, pt.moe_ep)
+        if key not in loaded:
+            model, db, _ = _load_model_and_db(
+                tp=pt.tp,
+                dp=pt.dp,
+                moe_tp=pt.moe_tp,
+                moe_ep=pt.moe_ep,
+            )
+            loaded[key] = (model, db)
+        model, db = loaded[key]
+
+        cb_config = _make_cb_config(
+            pt.isl,
+            pt.batch_size,
+            max_num_batched_tokens=pt.max_num_batched_tokens,
+            overlap_factor=overlap_factor,
+            per_iteration_overhead_ms=ep8_per_iteration_overhead_ms,
+        )
+        cb_summary = backend.run_agg(
+            model,
+            db,
+            RuntimeConfig(batch_size=pt.batch_size, isl=pt.isl, osl=pt.osl),
+            ctx_tokens=pt.max_num_batched_tokens,
+            database_mode=common.DatabaseMode.HYBRID,
+            method="cb_sim",
+            cb_config=cb_config,
+        )
+        cb_dict = cb_summary.get_result_dict()
+        sim_gpu = cb_dict["tokens/s/gpu"] if cb_dict else 0.0
+        raw_rows.append((pt, pt.real_output_tok_s_gpu, sim_gpu))
+
+    real_ranks = _rank_by_output({pt.name: real for pt, real, _ in raw_rows})
+    sim_ranks = _rank_by_output({pt.name: sim for pt, _, sim in raw_rows})
+    rows = [
+        MultiConfigTopKRow(
+            name=pt.name,
+            tp=pt.tp,
+            dp=pt.dp,
+            ep=pt.moe_ep,
+            max_bt=pt.max_num_batched_tokens,
+            real_output_tok_s_gpu=real,
+            sim_output_tok_s_gpu=sim,
+            error_ratio=_abs_error(sim, real),
+            rank=sim_ranks[pt.name],
+            real_rank=real_ranks[pt.name],
+            rank_delta=sim_ranks[pt.name] - real_ranks[pt.name],
+            diagnostic_only=True,
+            valid_for_default=False,
+            perf_database=False,
+        )
+        for pt, real, sim in raw_rows
+    ]
+    rows.sort(key=lambda row: (row.rank, row.real_rank, row.name))
+
+    if verbose:
+        print()
+        print("=" * 116)
+        print("DIAGNOSTIC MULTI-CONFIG TOP-K (budget-aware, not default AIC)")
+        print(
+            f"{'Rank':>4} {'RealR':>5} {'Delta':>5} {'Scenario':<34} "
+            f"{'tp':>3} {'dp':>3} {'ep':>3} {'max_bt':>7} "
+            f"{'RealOut':>8} {'CB-Sim':>8} {'Error':>8}"
+        )
+        print("-" * 116)
+        for row in rows:
+            print(
+                f"{row.rank:>4} {row.real_rank:>5} {row.rank_delta:>5} "
+                f"{row.name:<34} {row.tp:>3} {row.dp:>3} {row.ep:>3} "
+                f"{row.max_bt:>7} {row.real_output_tok_s_gpu:>8.1f} "
+                f"{row.sim_output_tok_s_gpu:>8.1f} {row.error_ratio:>7.2f}x"
+            )
+        print("-" * 116)
+        print("diagnostic_only=true valid_for_default=false perf_database=false")
+    return rows
 
 
 def _run_multi_config_validation(
@@ -769,6 +886,20 @@ def main() -> None:
     parser.add_argument("--per-iteration-overhead-ms", type=float, default=0.0)
     parser.add_argument("--ep8-per-iteration-overhead-ms", type=float, default=90.0)
     parser.add_argument(
+        "--diagnostic-multi-config-topk",
+        action="store_true",
+        help=(
+            "Emit budget-aware multi-config Top-K diagnostics only. "
+            "This does not change acceptance gates or default cb_sim behavior."
+        ),
+    )
+    parser.add_argument(
+        "--diagnostic-multi-config-topk-out",
+        type=Path,
+        default=None,
+        help="Optional CSV path for budget-aware Top-K diagnostic rows.",
+    )
+    parser.add_argument(
         "--experimental-forward-descriptor",
         action="store_true",
         help=(
@@ -874,6 +1005,15 @@ def main() -> None:
         ),
     )
     args = parser.parse_args()
+
+    if args.diagnostic_multi_config_topk:
+        rows = run_diagnostic_multi_config_topk(
+            overlap_factor=args.overlap_factor,
+            ep8_per_iteration_overhead_ms=args.ep8_per_iteration_overhead_ms,
+        )
+        if args.diagnostic_multi_config_topk_out is not None:
+            _write_rows(args.diagnostic_multi_config_topk_out, rows)
+        return
 
     if args.experimental_forward_descriptor:
         run_experimental_forward_descriptor(args.experimental_forward_descriptor_out)
