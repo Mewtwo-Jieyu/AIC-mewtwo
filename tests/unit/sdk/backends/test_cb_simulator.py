@@ -39,6 +39,24 @@ def _load_diagnose_cb_iter_latency_module():
     return module
 
 
+def _load_validate_cb_simulator_module():
+    script_path = (
+        Path(__file__).resolve().parents[4]
+        / "scripts"
+        / "validate_cb_simulator.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "validate_cb_simulator",
+        script_path,
+    )
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def _make_req(rid: int, isl: int = 1000, osl: int = 100) -> Request:
     return Request(request_id=rid, isl=isl, osl=osl, arrival_time_ms=0.0)
 
@@ -1212,3 +1230,66 @@ class TestDiagnoseCBIterLatencyScript:
 
         assert rows[0].passed == 0
         assert rows[0].acceptance_score == pytest.approx(1.48 / 1.47)
+
+
+class TestValidateCBSimulatorBudgetAwareTopK:
+    def test_multi_config_points_define_budget_explicitly(self) -> None:
+        module = _load_validate_cb_simulator_module()
+
+        by_name = {point.name: point for point in module.MULTI_CONFIG_DATA}
+
+        assert by_name["K2.5-tp8ep8-8k2k"].max_num_batched_tokens == 8000
+        assert by_name["K2.5-tp4ep8dp2-32k3k"].max_num_batched_tokens == 32000
+        assert by_name["K2.5-tp8ep8-8k2k-bt65536"].max_num_batched_tokens == 65536
+        assert by_name["K2.5-tp4ep8dp2-8k2k-bt65536"].max_num_batched_tokens == 65536
+
+    def test_diagnostic_topk_uses_budget_and_keeps_baseline_gates(self, monkeypatch) -> None:
+        module = _load_validate_cb_simulator_module()
+        captured: list[tuple[int, int]] = []
+
+        class _FakeSummary:
+            def __init__(self, sim_gpu: float) -> None:
+                self._sim_gpu = sim_gpu
+
+            def get_result_dict(self):
+                return {"tokens/s/gpu": self._sim_gpu}
+
+            def get_per_ops_data(self):
+                return {"cb_sim_boundary": {"throughput_source": "cb_sim"}}
+
+        class _FakeBackend:
+            def run_agg(self, model, db, runtime_config, **kwargs):
+                cb_config = kwargs["cb_config"]
+                captured.append((kwargs["ctx_tokens"], cb_config.max_num_batched_tokens))
+                sim_gpu = 100.0 + cb_config.max_num_batched_tokens / 1024.0
+                return _FakeSummary(sim_gpu)
+
+        def fake_load_model_and_db(*, tp, dp, moe_tp, moe_ep):
+            model = SimpleNamespace(model_path="fake", config=SimpleNamespace())
+            db = SimpleNamespace(system="h200_sxm", backend="vllm")
+            return model, db, None
+
+        monkeypatch.setattr(module, "VLLMBackend", _FakeBackend)
+        monkeypatch.setattr(module, "_load_model_and_db", fake_load_model_and_db)
+
+        before_gates = (
+            module.THROUGHPUT_MAX_ACCEPTANCE,
+            module.MULTI_CONFIG_MAX_ACCEPTANCE,
+            module.TTFT_MAX_ACCEPTANCE,
+        )
+        rows = module.run_diagnostic_multi_config_topk(verbose=False)
+        after_gates = (
+            module.THROUGHPUT_MAX_ACCEPTANCE,
+            module.MULTI_CONFIG_MAX_ACCEPTANCE,
+            module.TTFT_MAX_ACCEPTANCE,
+        )
+        by_name = {row.name: row for row in rows}
+
+        assert by_name["K2.5-tp8ep8-8k2k-bt65536"].max_bt == 65536
+        assert by_name["K2.5-tp4ep8dp2-8k2k-bt65536"].max_bt == 65536
+        assert by_name["K2.5-tp8ep8-8k2k"].max_bt == 8000
+        assert captured.count((65536, 65536)) == 2
+        assert all(row.diagnostic_only for row in rows)
+        assert not any(row.valid_for_default for row in rows)
+        assert not any(row.perf_database for row in rows)
+        assert before_gates == after_gates
