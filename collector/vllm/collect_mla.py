@@ -4,6 +4,7 @@
 
 import math
 import os
+import time
 
 import torch
 import vllm
@@ -315,6 +316,444 @@ def run_attention_torch(
         kernel_source=kernel_source,
         perf_filename=perf_filename,
     )
+
+
+def _shape(tensor):
+    return "x".join(str(dim) for dim in tensor.shape)
+
+
+def _mixed_state_smoke_batch_spec() -> BatchSpec:
+    return BatchSpec(
+        seq_lens=[16] * 15 + [2],
+        query_lens=[16] * 15 + [1],
+        name="mixed_241_16_248",
+    )
+
+
+def _validate_mla_smoke_key(
+    phase,
+    topology_key,
+    attention_actual_tokens,
+    attention_max_query_len,
+    num_tokens_padded,
+):
+    if (phase, attention_actual_tokens, attention_max_query_len, num_tokens_padded) != ("mixed", 241, 16, 248):
+        raise SystemExit("MLA state-smoke only supports mixed 241/16/248")
+    if topology_key != "tp4dp2moetp1ep8":
+        raise SystemExit("MLA state-smoke only supports tp4dp2moetp1ep8")
+
+
+def _percentile_ms(samples, percentile):
+    ordered = sorted(samples)
+    idx = min(len(ordered) - 1, round((len(ordered) - 1) * percentile / 100))
+    return ordered[idx]
+
+
+def _summarize_ms(samples):
+    if not samples:
+        raise SystemExit("MLA timing-smoke needs at least one measurement")
+    return {
+        "mean": sum(samples) / len(samples),
+        "p50": _percentile_ms(samples, 50),
+        "p99": _percentile_ms(samples, 99),
+    }
+
+
+def _prepare_mla_smoke_state(
+    exit_stack,
+    phase="mixed",
+    topology_key="tp4dp2moetp1ep8",
+    attention_actual_tokens=241,
+    attention_max_query_len=16,
+    num_tokens_padded=248,
+    device="cuda:0",
+):
+    _validate_mla_smoke_key(
+        phase,
+        topology_key,
+        attention_actual_tokens,
+        attention_max_query_len,
+        num_tokens_padded,
+    )
+
+    dtype = torch.bfloat16
+    batch_spec = _mixed_state_smoke_batch_spec()
+    if batch_spec.compute_num_tokens() != attention_actual_tokens:
+        raise SystemExit("MLA state-smoke query token count mismatch")
+    if max(batch_spec.query_lens) != attention_max_query_len:
+        raise SystemExit("MLA state-smoke max query length mismatch")
+
+    num_heads_global = 64
+    tp_size = 4
+    num_heads = num_heads_global // tp_size
+    num_kv_heads = num_heads
+    q_lora_rank = 1536
+    kv_lora_rank = 512
+    qk_rope_head_dim = 64
+    qk_nope_head_dim = 128
+    qk_head_dim = qk_nope_head_dim + qk_rope_head_dim
+    v_head_dim = 128
+    block_size = 16
+    head_dim = kv_lora_rank + qk_rope_head_dim
+    num_kv_cache_blocks = 16384
+    model = os.path.join(os.path.dirname(__file__), "fake_mla_hf_model")
+    vllm_config = create_vllm_config(
+        model_name=model,
+        max_model_len=max(batch_spec.seq_lens),
+        block_size=block_size,
+        num_gpu_blocks=num_kv_cache_blocks,
+        max_num_seqs=len(batch_spec.seq_lens),
+        use_fp8_kv_cache=False,
+    )
+
+    exit_stack.enter_context(set_current_vllm_config(vllm_config))
+    setup_distributed(device)
+    torch.cuda.set_device(device)
+
+    try:
+        backend = current_platform.get_attn_backend_cls(
+            None,
+            head_dim,
+            dtype,
+            kv_cache_dtype=None,
+            block_size=block_size,
+            use_v1=True,
+            use_mla=True,
+            has_sink=False,
+            use_sparse=False,
+        )
+    except TypeError:
+        try:
+            backend = current_platform.get_attn_backend_cls(
+                None,
+                head_dim,
+                dtype,
+                kv_cache_dtype=None,
+                block_size=block_size,
+                use_mla=True,
+                has_sink=False,
+                use_sparse=False,
+            )
+        except TypeError:
+            from vllm.v1.attention.selector import AttentionSelectorConfig
+
+            attn_selector_config = AttentionSelectorConfig(
+                head_size=head_dim,
+                dtype=dtype,
+                kv_cache_dtype=None,
+                block_size=block_size,
+                use_mla=True,
+                has_sink=False,
+                use_sparse=False,
+            )
+            backend = current_platform.get_attn_backend_cls(None, attn_selector_config)
+
+    if _Backend is not None:
+        backend_name = _Backend[resolve_obj_by_qualname(backend).get_name()]
+        builder_cls, impl_cls = get_attention_backend(backend_name)
+    else:
+        backend_cls = resolve_obj_by_qualname(backend)
+        backend_name = backend_cls.get_name()
+        builder_cls = backend_cls.get_builder_cls()
+        impl_cls = backend_cls.get_impl_cls()
+
+    try:
+        vllm.utils.torch_utils.set_random_seed(42)
+    except AttributeError:
+        current_platform.seed_everything(42)
+
+    assert convert_dtype_to_torch(vllm_config.model_config.dtype) == torch.bfloat16
+    kv_cache_spec = create_standard_kv_cache_spec(vllm_config, use_fp8_kv_cache=False)
+
+    all_q_vllm, all_kv_c_vllm, all_k_pe_vllm = [], [], []
+    for s_len, q_len in zip(batch_spec.seq_lens, batch_spec.query_lens, strict=True):
+        context_len = s_len - q_len
+        q_c = torch.randn(q_len, num_heads, qk_head_dim, dtype=dtype, device=device)
+        kv_c_full = torch.randn(s_len, kv_lora_rank, dtype=dtype, device=device)
+        k_pe_full = torch.randn(s_len, 1, qk_rope_head_dim, dtype=dtype, device=device)
+        all_q_vllm.append(q_c)
+        all_kv_c_vllm.append(kv_c_full[context_len:])
+        all_k_pe_vllm.append(k_pe_full[context_len:])
+
+    query_vllm = torch.cat(all_q_vllm, dim=0)
+    kv_c_vllm = torch.cat(all_kv_c_vllm, dim=0)
+    k_pe_vllm = torch.cat(all_k_pe_vllm, dim=0)
+    if int(query_vllm.shape[0]) != attention_actual_tokens:
+        raise SystemExit("MLA state-smoke query tensor token mismatch")
+    if int(kv_c_vllm.shape[0]) != attention_actual_tokens:
+        raise SystemExit("MLA state-smoke kv_c tensor token mismatch")
+    if int(k_pe_vllm.shape[0]) != attention_actual_tokens:
+        raise SystemExit("MLA state-smoke k_pe tensor token mismatch")
+
+    common_attn_metadata = create_common_attn_metadata(batch_spec, block_size, torch.device(device))
+    common_attn_metadata.block_table_tensor = torch.zeros(
+        len(batch_spec.seq_lens),
+        num_kv_cache_blocks,
+        dtype=torch.int32,
+        device=device,
+    )
+
+    kv_cache = create_and_prepopulate_kv_cache_mla(
+        kv_c_contexts=all_kv_c_vllm,
+        k_pe_contexts=all_k_pe_vllm,
+        block_size=block_size,
+        head_size=head_dim,
+        dtype=dtype,
+        device=device,
+        num_blocks=num_kv_cache_blocks,
+        common_attn_metadata=common_attn_metadata,
+        randomize_blocks=True,
+        kv_cache_dtype=None,
+    )
+
+    layer_names = ["placeholder"]
+    builder = builder_cls(kv_cache_spec, layer_names, vllm_config, torch.device(device))
+    attn_metadata = builder.build(
+        common_prefix_len=0,
+        common_attn_metadata=common_attn_metadata,
+    )
+
+    from vllm.model_executor.layers.linear import ColumnParallelLinear
+
+    mock_kv_b_proj = ColumnParallelLinear(
+        input_size=kv_lora_rank,
+        output_size=num_heads * (qk_nope_head_dim + v_head_dim),
+        bias=False,
+    ).to(device=device, dtype=dtype)
+
+    impl = impl_cls(
+        num_heads=num_heads,
+        head_size=head_dim,
+        scale=1.0 / (head_dim**0.5),
+        num_kv_heads=num_kv_heads,
+        alibi_slopes=None,
+        sliding_window=vllm_config.model_config.get_sliding_window(),
+        kv_cache_dtype="auto",
+        logits_soft_cap=None,
+        attn_type="decoder",
+        kv_sharing_target_layer_name=None,
+        q_lora_rank=q_lora_rank,
+        kv_lora_rank=kv_lora_rank,
+        qk_nope_head_dim=qk_nope_head_dim,
+        qk_rope_head_dim=qk_rope_head_dim,
+        qk_head_dim=qk_head_dim,
+        v_head_dim=v_head_dim,
+        kv_b_proj=mock_kv_b_proj,
+    )
+    impl.process_weights_after_loading(dtype)
+    impl.dcp_world_size = 1
+    impl.dcp_rank = 0
+
+    if attn_metadata.prefill is not None:
+        kernel_entrypoint = "forward_mha"
+        query_for_kernel = query_vllm
+        mock_layer = None
+    elif attn_metadata.decode is not None:
+        kernel_entrypoint = "forward_mqa"
+        query_for_kernel = torch.randn(
+            query_vllm.shape[0],
+            num_heads,
+            head_dim,
+            dtype=dtype,
+            device=device,
+        )
+        mock_layer = MockAttentionLayer(torch.device(device))
+    else:
+        raise SystemExit("MLA state-smoke metadata has neither prefill nor decode path")
+
+    return {
+        "impl": impl,
+        "query": query_for_kernel,
+        "kv_c": kv_c_vllm,
+        "k_pe": k_pe_vllm,
+        "kv_cache": kv_cache,
+        "attn_metadata": attn_metadata,
+        "mock_layer": mock_layer,
+        "kernel_entrypoint": kernel_entrypoint,
+        "dtype": dtype,
+        "device": device,
+        "num_heads": num_heads,
+        "v_head_dim": v_head_dim,
+        "target_backend": type(impl).__name__,
+        "phase": phase,
+        "topology_key": topology_key,
+        "attention_actual_tokens": attention_actual_tokens,
+        "attention_max_query_len": attention_max_query_len,
+        "num_tokens_padded": num_tokens_padded,
+        "local_num_heads": num_heads,
+        "local_num_kv_heads": num_kv_heads,
+        "q_lora_rank": q_lora_rank,
+        "kv_lora_rank": kv_lora_rank,
+        "qk_head_dim": qk_head_dim,
+        "mla_head_size": head_dim,
+        "v_head_dim": v_head_dim,
+        "query_shape": _shape(query_for_kernel),
+        "kv_c_shape": _shape(kv_c_vllm),
+        "k_pe_shape": _shape(k_pe_vllm),
+        "block_table_shape": _shape(common_attn_metadata.block_table_tensor),
+        "kv_cache_shape": _shape(kv_cache),
+        "metadata_type": type(attn_metadata).__name__,
+        "metadata_num_actual_tokens": int(attn_metadata.num_actual_tokens),
+        "metadata_max_query_len": int(attn_metadata.max_query_len),
+    }
+
+
+def _run_mla_kernel_once(state):
+    if state["kernel_entrypoint"] == "forward_mha":
+        output = torch.empty(
+            state["query"].shape[0],
+            state["num_heads"] * state["v_head_dim"],
+            dtype=state["query"].dtype,
+            device=state["query"].device,
+        )
+        state["impl"].forward_mha(
+            state["query"],
+            state["kv_c"],
+            state["k_pe"],
+            state["kv_cache"],
+            state["attn_metadata"],
+            torch.ones((), dtype=torch.float32, device=state["device"]),
+            output,
+        )
+        return output
+    if state["kernel_entrypoint"] == "forward_mqa":
+        output, _ = state["impl"].forward_mqa(
+            state["query"],
+            state["kv_cache"],
+            state["attn_metadata"],
+            state["mock_layer"],
+        )
+        return output
+    raise SystemExit(f"unsupported MLA kernel entrypoint: {state['kernel_entrypoint']}")
+
+
+def _build_mla_smoke_result(state, output):
+    return {
+        "target_backend": state["target_backend"],
+        "kernel_entrypoint": state["kernel_entrypoint"],
+        "phase": state["phase"],
+        "topology_key": state["topology_key"],
+        "attention_actual_tokens": state["attention_actual_tokens"],
+        "attention_max_query_len": state["attention_max_query_len"],
+        "num_tokens_padded": state["num_tokens_padded"],
+        "local_num_heads": state["local_num_heads"],
+        "local_num_kv_heads": state["local_num_kv_heads"],
+        "q_lora_rank": state["q_lora_rank"],
+        "kv_lora_rank": state["kv_lora_rank"],
+        "qk_head_dim": state["qk_head_dim"],
+        "mla_head_size": state["mla_head_size"],
+        "v_head_dim": state["v_head_dim"],
+        "query_shape": state["query_shape"],
+        "kv_c_shape": state["kv_c_shape"],
+        "k_pe_shape": state["k_pe_shape"],
+        "block_table_shape": state["block_table_shape"],
+        "kv_cache_shape": state["kv_cache_shape"],
+        "metadata_type": state["metadata_type"],
+        "metadata_num_actual_tokens": state["metadata_num_actual_tokens"],
+        "metadata_max_query_len": state["metadata_max_query_len"],
+        "output_shape": _shape(output),
+        "called_attention_kernel": True,
+        "called_model_forward": False,
+    }
+
+
+@with_exit_stack
+def run_mla_state_smoke(
+    exit_stack,
+    phase="mixed",
+    topology_key="tp4dp2moetp1ep8",
+    attention_actual_tokens=241,
+    attention_max_query_len=16,
+    num_tokens_padded=248,
+    device="cuda:0",
+):
+    state = _prepare_mla_smoke_state(
+        exit_stack,
+        phase=phase,
+        topology_key=topology_key,
+        attention_actual_tokens=attention_actual_tokens,
+        attention_max_query_len=attention_max_query_len,
+        num_tokens_padded=num_tokens_padded,
+        device=device,
+    )
+    output = _run_mla_kernel_once(state)
+    torch.cuda.synchronize()
+    return _build_mla_smoke_result(state, output)
+
+
+@with_exit_stack
+def run_mla_timing_smoke(
+    exit_stack,
+    phase="mixed",
+    topology_key="tp4dp2moetp1ep8",
+    attention_actual_tokens=241,
+    attention_max_query_len=16,
+    num_tokens_padded=248,
+    device="cuda:0",
+    warmup_iters=20,
+    measure_iters=200,
+):
+    if warmup_iters < 0:
+        raise SystemExit("MLA timing-smoke warmup_iters must be non-negative")
+    if measure_iters <= 0:
+        raise SystemExit("MLA timing-smoke measure_iters must be positive")
+    state = _prepare_mla_smoke_state(
+        exit_stack,
+        phase=phase,
+        topology_key=topology_key,
+        attention_actual_tokens=attention_actual_tokens,
+        attention_max_query_len=attention_max_query_len,
+        num_tokens_padded=num_tokens_padded,
+        device=device,
+    )
+    if state["kernel_entrypoint"] != "forward_mqa":
+        raise SystemExit("MLA timing-smoke only supports forward_mqa")
+
+    output = None
+    for _ in range(warmup_iters):
+        output = _run_mla_kernel_once(state)
+    torch.cuda.synchronize()
+
+    wall_samples = []
+    cuda_event_samples = []
+    for _ in range(measure_iters):
+        torch.cuda.synchronize()
+        start_event = torch.cuda.Event(enable_timing=True)
+        end_event = torch.cuda.Event(enable_timing=True)
+        start_wall = time.perf_counter()
+        start_event.record()
+        output = _run_mla_kernel_once(state)
+        end_event.record()
+        torch.cuda.synchronize()
+        wall_samples.append((time.perf_counter() - start_wall) * 1000.0)
+        cuda_event_samples.append(start_event.elapsed_time(end_event))
+
+    wall = _summarize_ms(wall_samples)
+    cuda_event = _summarize_ms(cuda_event_samples)
+    result = _build_mla_smoke_result(state, output)
+    return {
+        "target_backend": result["target_backend"],
+        "kernel_entrypoint": result["kernel_entrypoint"],
+        "phase": result["phase"],
+        "topology_key": result["topology_key"],
+        "attention_actual_tokens": result["attention_actual_tokens"],
+        "attention_max_query_len": result["attention_max_query_len"],
+        "num_tokens_padded": result["num_tokens_padded"],
+        "query_shape": result["query_shape"],
+        "kv_cache_shape": result["kv_cache_shape"],
+        "metadata_type": result["metadata_type"],
+        "output_shape": result["output_shape"],
+        "warmup_iters": warmup_iters,
+        "measure_iters": measure_iters,
+        "wall_ms_mean": wall["mean"],
+        "wall_ms_p50": wall["p50"],
+        "wall_ms_p99": wall["p99"],
+        "cuda_event_ms_mean": cuda_event["mean"],
+        "cuda_event_ms_p50": cuda_event["p50"],
+        "cuda_event_ms_p99": cuda_event["p99"],
+        "called_attention_kernel": True,
+        "called_model_forward": False,
+    }
 
 
 def _get_mla_test_cases(is_context: bool):
