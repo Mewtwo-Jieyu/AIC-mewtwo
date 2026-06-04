@@ -7,9 +7,11 @@ from .forward_descriptor import (
     SchedulerAlignedCompareRow,
     VLLMCompiledBodyRuntimeKey,
     VLLMForwardDescriptor,
+    VLLMMoESourceRuntimeKey,
     VLLMRuntimeShapeKey,
     VLLMSchedulerAlignedDescriptor,
     VLLMSchedulerRuntimeDescriptor,
+    moe_source_runtime_key_from_loaded_weight_boundary_row,
     vllm_like_scheduler_aligned_descriptors,
 )
 from .simulator import CBSimulator
@@ -26,8 +28,10 @@ __all__ = [
     "SchedulerAlignedCompareRow",
     "VLLMCompiledBodyRuntimeKey",
     "VLLMForwardDescriptor",
+    "VLLMMoESourceRuntimeKey",
     "VLLMRuntimeShapeKey",
     "VLLMSchedulerAlignedDescriptor",
     "VLLMSchedulerRuntimeDescriptor",
+    "moe_source_runtime_key_from_loaded_weight_boundary_row",
     "vllm_like_scheduler_aligned_descriptors",
 ]
