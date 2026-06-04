@@ -349,6 +349,50 @@ class VLLMCompiledBodyRuntimeKey:
     diagnostic_only: bool
 
 
+@dataclass(frozen=True)
+class VLLMMoESourceRuntimeKey:
+    """Loaded-weight MoE source key for experimental vLLM diagnostics.
+
+    This is a structure descriptor only. It must not contain latency,
+    residual, profiler, trace, sync, or throughput fields.
+    """
+
+    source: str
+    scenario: str
+    runtime_backend: str
+    vllm_version: str
+    model_family: str
+    module_class: str
+    experts_class: str
+    hidden_size: int
+    moe_intermediate_size: int
+    n_routed_experts: int
+    local_experts: int
+    global_experts: int
+    topk: int
+    n_shared_experts: int
+    moe_method: str
+    kernel_backend: str
+    group_size: int
+    num_bits: int
+    dtype: str
+    tp_size: int
+    dp_size: int
+    ep_size: int
+    world_size: int
+    rank: int
+    device: str
+    tuning_config_loaded: bool
+    moe_config_fallback: bool
+    moe_tuning_config_file: str
+    loaded_weight: bool
+    random_weight: bool
+    timing: bool
+    valid_for_default: bool
+    perf_database: bool
+    diagnostic_only: bool
+
+
 def make_forward_regime(cudagraph_runtime_mode: str, forward_token_count: int) -> str:
     if not cudagraph_runtime_mode:
         raise ValueError("cudagraph_runtime_mode must be non-empty")
@@ -957,7 +1001,7 @@ def descriptor_from_scheduled(
     )
 
 
-def _required_int(raw: dict[str, str], field: str) -> int:
+def _required_int(raw: dict[str, object], field: str) -> int:
     value = raw.get(field, "")
     if value == "":
         raise ValueError(f"missing {field}")
@@ -974,34 +1018,46 @@ def _single_value(raw: dict[str, str], field: str) -> str:
     return values[0]
 
 
-def _required_non_empty(raw: dict[str, str], field: str) -> str:
+def _required_non_empty(raw: dict[str, object], field: str) -> str:
     value = raw.get(field, "")
-    if value == "":
+    if value is None or value == "":
         raise ValueError(f"missing {field}")
-    return value
+    return str(value)
 
 
-def _required_false(raw: dict[str, str], field: str) -> None:
+def _required_bool(raw: dict[str, object], field: str) -> bool:
+    value = _required_non_empty(raw, field).strip().lower()
+    if value in {"true", "1"}:
+        return True
+    if value in {"false", "0"}:
+        return False
+    raise ValueError(f"{field} must be boolean")
+
+
+def _required_false(raw: dict[str, object], field: str) -> None:
     value = _required_non_empty(raw, field).strip().lower()
     if value not in {"false", "0"}:
         raise ValueError(f"{field} must be false")
 
 
-def _required_true(raw: dict[str, str], field: str) -> None:
+def _required_true(raw: dict[str, object], field: str) -> None:
     value = _required_non_empty(raw, field).strip().lower()
     if value not in {"true", "1"}:
         raise ValueError(f"{field} must be true")
 
 
-def _reject_forbidden_descriptor_fields(raw: dict[str, str]) -> None:
+def _reject_forbidden_descriptor_fields(raw: dict[str, object]) -> None:
     forbidden = (
+        "_ms",
         "latency_ms",
         "duration_ms",
         "residual_ms",
         "profiled_cuda",
         "profiler",
+        "trace",
         "nccl",
         "NCCL",
+        "sync",
         "sync_wait",
         "throughput",
     )
@@ -1157,6 +1213,88 @@ def compiled_body_runtime_key_from_nccl_summary_csv(
     with path.open(newline="") as f:
         rows = list(csv.DictReader(f))
     return compiled_body_runtime_key_from_nccl_summary_rows(rows, **kwargs)
+
+
+def moe_source_runtime_key_from_loaded_weight_boundary_row(
+    raw: dict[str, object],
+) -> VLLMMoESourceRuntimeKey:
+    """Build a MoE source key from a loaded-weight boundary row.
+
+    Fallback config status is represented because it is part of the runtime
+    source key, but this function keeps the descriptor explicitly invalid for
+    default latency modeling.
+    """
+    _reject_forbidden_descriptor_fields(raw)
+    _required_true(raw, "loaded_weight")
+    _required_false(raw, "random_weight")
+    _required_false(raw, "timing")
+    _required_false(raw, "valid_for_default")
+    _required_false(raw, "perf_database")
+    _required_true(raw, "diagnostic_only")
+
+    positive_fields = (
+        "hidden_size",
+        "moe_intermediate_size",
+        "n_routed_experts",
+        "local_experts",
+        "global_experts",
+        "topk",
+        "n_shared_experts",
+        "group_size",
+        "num_bits",
+        "tp_size",
+        "dp_size",
+        "ep_size",
+        "world_size",
+    )
+    values = {field: _required_int(raw, field) for field in positive_fields}
+    for field, value in values.items():
+        _validate_positive(value, field)
+    rank = _required_int(raw, "rank")
+    _validate_non_negative(rank, "rank")
+    if values["world_size"] != values["tp_size"] * values["dp_size"]:
+        raise ValueError("world_size must equal tp_size * dp_size")
+    if values["local_experts"] > values["global_experts"]:
+        raise ValueError("local_experts must not exceed global_experts")
+    if values["topk"] > values["global_experts"]:
+        raise ValueError("topk must not exceed global_experts")
+
+    return VLLMMoESourceRuntimeKey(
+        source=_required_non_empty(raw, "source"),
+        scenario=_required_non_empty(raw, "scenario"),
+        runtime_backend=_required_non_empty(raw, "runtime_backend"),
+        vllm_version=_required_non_empty(raw, "vllm_version"),
+        model_family=_required_non_empty(raw, "model_family"),
+        module_class=_required_non_empty(raw, "module_class"),
+        experts_class=_required_non_empty(raw, "experts_class"),
+        hidden_size=values["hidden_size"],
+        moe_intermediate_size=values["moe_intermediate_size"],
+        n_routed_experts=values["n_routed_experts"],
+        local_experts=values["local_experts"],
+        global_experts=values["global_experts"],
+        topk=values["topk"],
+        n_shared_experts=values["n_shared_experts"],
+        moe_method=_required_non_empty(raw, "moe_method"),
+        kernel_backend=_required_non_empty(raw, "kernel_backend"),
+        group_size=values["group_size"],
+        num_bits=values["num_bits"],
+        dtype=_required_non_empty(raw, "dtype"),
+        tp_size=values["tp_size"],
+        dp_size=values["dp_size"],
+        ep_size=values["ep_size"],
+        world_size=values["world_size"],
+        rank=rank,
+        device=_required_non_empty(raw, "device"),
+        tuning_config_loaded=_required_bool(raw, "tuning_config_loaded"),
+        moe_config_fallback=_required_bool(raw, "moe_config_fallback"),
+        moe_tuning_config_file=str(raw.get("moe_tuning_config_file", "")),
+        loaded_weight=True,
+        random_weight=False,
+        timing=False,
+        valid_for_default=False,
+        perf_database=False,
+        diagnostic_only=True,
+    )
 
 
 def descriptor_from_runtime_shape_summary(

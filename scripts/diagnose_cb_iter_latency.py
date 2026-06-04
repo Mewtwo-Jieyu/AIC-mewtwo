@@ -35,6 +35,7 @@ from aiconfigurator.sdk.backends.cb_simulator.forward_descriptor import (
     forward_wrapper_subkey_from_runtime_shape_key,
     kv_subkey_from_runtime_shape_key,
     make_topology_key,
+    moe_source_runtime_key_from_loaded_weight_boundary_row,
     runtime_shape_key_from_rank_row,
     runtime_shape_key_from_scheduled,
     scheduler_aligned_descriptor_from_scheduled,
@@ -1063,6 +1064,53 @@ def build_compiled_body_runtime_key(
     )
 
 
+def build_moe_source_runtime_key(args: argparse.Namespace):
+    moe_tp = args.moe_tp if args.moe_tp is not None else args.tp
+    if (args.tp, args.dp, moe_tp, args.moe_ep) != (4, 2, 1, 8):
+        raise ValueError(
+            "--experimental-moe-source-key currently requires "
+            "tp=4, dp=2, moe_tp=1, moe_ep=8 to match Phase 82 evidence"
+        )
+    return moe_source_runtime_key_from_loaded_weight_boundary_row(
+        {
+            "source": "phase82_loaded_weight_boundary",
+            "scenario": _scenario_name(args),
+            "runtime_backend": "vllm",
+            "vllm_version": "0.19.0",
+            "model_family": "kimi_k25",
+            "module_class": "DeepseekV2MoE",
+            "experts_class": "SharedFusedMoE",
+            "hidden_size": 7168,
+            "moe_intermediate_size": 2048,
+            "n_routed_experts": 384,
+            "local_experts": 48,
+            "global_experts": 384,
+            "topk": 8,
+            "n_shared_experts": 1,
+            "moe_method": "CompressedTensorsWNA16MarlinMoEMethod",
+            "kernel_backend": "wna16_marlin",
+            "group_size": 32,
+            "num_bits": 4,
+            "dtype": "bfloat16",
+            "tp_size": args.tp,
+            "dp_size": args.dp,
+            "ep_size": args.moe_ep,
+            "world_size": args.tp * args.dp,
+            "rank": 0,
+            "device": "cuda:0",
+            "tuning_config_loaded": False,
+            "moe_config_fallback": True,
+            "moe_tuning_config_file": "",
+            "loaded_weight": True,
+            "random_weight": False,
+            "timing": False,
+            "valid_for_default": False,
+            "perf_database": False,
+            "diagnostic_only": True,
+        }
+    )
+
+
 def _make_cb_config(args: argparse.Namespace) -> CBSimConfig:
     num_requests = args.num_requests
     if num_requests <= 0:
@@ -1530,6 +1578,15 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Phase 39 NCCL trace summary CSV used only for candidate flags.",
     )
     parser.add_argument(
+        "--experimental-moe-source-key",
+        action="store_true",
+        help=(
+            "Emit vLLM loaded-weight MoE source key diagnostics only. "
+            "This does not change cb_sim latency."
+        ),
+    )
+    parser.add_argument("--moe-source-key-out", type=Path)
+    parser.add_argument(
         "--sweep-alpha-overhead",
         action="store_true",
         help="Run validate_cb_simulator.py across alpha/overhead candidates.",
@@ -1701,6 +1758,16 @@ def main() -> None:
         key = build_compiled_body_runtime_key(args)
         _write_rows(args.compiled_body_key_out, [key])
         print(f"wrote compiled-body runtime key: {args.compiled_body_key_out}")
+        return
+
+    if args.experimental_moe_source_key:
+        if args.moe_source_key_out is None:
+            raise ValueError(
+                "--experimental-moe-source-key requires --moe-source-key-out"
+            )
+        key = build_moe_source_runtime_key(args)
+        _write_rows(args.moe_source_key_out, [key])
+        print(f"wrote MoE source runtime key: {args.moe_source_key_out}")
         return
 
     if (

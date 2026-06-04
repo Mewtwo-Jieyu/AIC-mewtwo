@@ -29,6 +29,7 @@ from aiconfigurator.sdk.backends.cb_simulator.forward_descriptor import (
     compiled_body_runtime_key_from_nccl_summary_csv,
     descriptor_from_scheduled,
     make_topology_key,
+    moe_source_runtime_key_from_loaded_weight_boundary_row,
     runtime_shape_key_from_scheduled,
     scheduler_aligned_descriptor_from_scheduled,
     scheduler_runtime_descriptor_from_scheduled,
@@ -403,6 +404,49 @@ def run_experimental_compiled_body_key(out_csv: Path, nccl_summary_csv: Path) ->
     )
     _write_rows(out_csv, [key])
     print(f"wrote experimental compiled-body runtime key: {out_csv}")
+
+
+def run_experimental_moe_source_key(out_csv: Path) -> None:
+    key = moe_source_runtime_key_from_loaded_weight_boundary_row(
+        {
+            "source": "phase82_loaded_weight_boundary",
+            "scenario": "kimi_k25_h200_tp4dp2ep8",
+            "runtime_backend": "vllm",
+            "vllm_version": "0.19.0",
+            "model_family": "kimi_k25",
+            "module_class": "DeepseekV2MoE",
+            "experts_class": "SharedFusedMoE",
+            "hidden_size": 7168,
+            "moe_intermediate_size": 2048,
+            "n_routed_experts": 384,
+            "local_experts": 48,
+            "global_experts": 384,
+            "topk": 8,
+            "n_shared_experts": 1,
+            "moe_method": "CompressedTensorsWNA16MarlinMoEMethod",
+            "kernel_backend": "wna16_marlin",
+            "group_size": 32,
+            "num_bits": 4,
+            "dtype": "bfloat16",
+            "tp_size": 4,
+            "dp_size": 2,
+            "ep_size": 8,
+            "world_size": 8,
+            "rank": 0,
+            "device": "cuda:0",
+            "tuning_config_loaded": False,
+            "moe_config_fallback": True,
+            "moe_tuning_config_file": "",
+            "loaded_weight": True,
+            "random_weight": False,
+            "timing": False,
+            "valid_for_default": False,
+            "perf_database": False,
+            "diagnostic_only": True,
+        }
+    )
+    _write_rows(out_csv, [key])
+    print(f"wrote experimental MoE source runtime key: {out_csv}")
 
 
 def _abs_error(predicted: float, real: float) -> float:
@@ -801,6 +845,22 @@ def main() -> None:
         ),
         help="Phase 39 NCCL trace summary CSV used only for candidate flags.",
     )
+    parser.add_argument(
+        "--experimental-moe-source-key",
+        action="store_true",
+        help=(
+            "Emit vLLM loaded-weight MoE source key diagnostics only. "
+            "This does not change the default cb_sim validation path."
+        ),
+    )
+    parser.add_argument(
+        "--experimental-moe-source-key-out",
+        type=Path,
+        default=Path(
+            "docs/iter_gap_investigation/phase83_moe_source_runtime_key/"
+            "validate_moe_source_runtime_key.csv"
+        ),
+    )
     args = parser.parse_args()
 
     if args.experimental_forward_descriptor:
@@ -828,6 +888,10 @@ def main() -> None:
             args.experimental_compiled_body_key_out,
             args.experimental_compiled_body_key_nccl_summary,
         )
+        return
+
+    if args.experimental_moe_source_key:
+        run_experimental_moe_source_key(args.experimental_moe_source_key_out)
         return
 
     run_validation(
