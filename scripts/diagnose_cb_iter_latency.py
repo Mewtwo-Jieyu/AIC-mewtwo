@@ -363,9 +363,9 @@ def run_alpha_overhead_sweep(args: argparse.Namespace) -> list[SweepResult]:
                 verbose=False,
             )
             passed = (
-                result.throughput_max <= 1.5
-                and result.multi_config_max <= 1.5
-                and result.ttft_max <= 2.0
+                result.throughput_max <= validate.THROUGHPUT_MAX_ACCEPTANCE
+                and result.multi_config_max <= validate.MULTI_CONFIG_MAX_ACCEPTANCE
+                and result.ttft_max <= validate.TTFT_MAX_ACCEPTANCE
             )
             rows.append(
                 SweepResult(
@@ -378,9 +378,9 @@ def run_alpha_overhead_sweep(args: argparse.Namespace) -> list[SweepResult]:
                     ttft_max=result.ttft_max,
                     ttft_mean=result.ttft_mean,
                     acceptance_score=max(
-                        result.throughput_max / 1.5,
-                        result.multi_config_max / 1.5,
-                        result.ttft_max / 2.0,
+                        result.throughput_max / validate.THROUGHPUT_MAX_ACCEPTANCE,
+                        result.multi_config_max / validate.MULTI_CONFIG_MAX_ACCEPTANCE,
+                        result.ttft_max / validate.TTFT_MAX_ACCEPTANCE,
                     ),
                     passed=int(passed),
                 )

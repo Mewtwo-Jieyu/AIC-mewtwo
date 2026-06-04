@@ -928,6 +928,21 @@ class TestVLLMCBSimBoundary:
         assert per_ops["cb_sim_scheduling"]["per_iteration_overhead_ms"] == pytest.approx(
             90.0
         )
+        assert (
+            per_ops["cb_sim_scheduling"]["per_iteration_overhead_source_key"]
+            == "phase148_h200_vllm_ep8_all2all_decode_candidate"
+        )
+        assert (
+            per_ops["cb_sim_scheduling"]["per_iteration_overhead_topology_key"]
+            == "tp8dp1moetp1ep8"
+        )
+        assert (
+            per_ops["cb_sim_scheduling"]["per_iteration_overhead_shape_key"]
+            == "decode_present:isl8000:osl2000:bs128:ctx8000:max_bt8000:max_seqs256"
+        )
+        assert per_ops["cb_sim_scheduling"]["per_iteration_overhead_diagnostic_only"] is True
+        assert per_ops["cb_sim_scheduling"]["per_iteration_overhead_valid_for_default"] is False
+        assert per_ops["cb_sim_scheduling"]["per_iteration_overhead_perf_database"] is False
         assert per_ops["cb_sim_boundary"]["throughput_source"] == "cb_sim"
         assert "cb_sim_calibration_applied" not in per_ops["cb_sim_scheduling"]
 
@@ -1167,3 +1182,33 @@ class TestDiagnoseCBIterLatencyScript:
         )
         assert mixed_summary.aligned_pairs == 2
         assert mixed_summary.overhead_mean_ms == pytest.approx(3.0)
+
+    def test_alpha_overhead_sweep_uses_phase148_validation_gates(self, monkeypatch) -> None:
+        module = _load_diagnose_cb_iter_latency_module()
+
+        fake_result = SimpleNamespace(
+            throughput_max=1.50,
+            throughput_mean=1.10,
+            multi_config_max=1.48,
+            multi_config_mean=1.20,
+            ttft_max=1.79,
+            ttft_mean=1.30,
+        )
+        fake_validate = SimpleNamespace(
+            THROUGHPUT_MAX_ACCEPTANCE=1.50,
+            MULTI_CONFIG_MAX_ACCEPTANCE=1.47,
+            TTFT_MAX_ACCEPTANCE=1.79,
+            run_validation=lambda **kwargs: fake_result,
+        )
+        monkeypatch.setattr(module, "_load_validate_module", lambda: fake_validate)
+
+        rows = module.run_alpha_overhead_sweep(
+            SimpleNamespace(
+                alpha_values="0.0",
+                overhead_values="0.0",
+                ep8_per_iteration_overhead_ms=90.0,
+            )
+        )
+
+        assert rows[0].passed == 0
+        assert rows[0].acceptance_score == pytest.approx(1.48 / 1.47)

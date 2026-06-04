@@ -36,6 +36,9 @@ class VLLMBackend(BaseBackend):
     _CB_SIM_DEFAULT_OVERLAP_FACTOR: float = 0.0
     _CB_SIM_DEFAULT_DECODE_OVERHEAD_MS: float = 0.0
     _CB_SIM_8GPU_EP_DECODE_OVERHEAD_MS: float = 90.0
+    _CB_SIM_EP8_DECODE_OVERHEAD_SOURCE_KEY = (
+        "phase148_h200_vllm_ep8_all2all_decode_candidate"
+    )
 
     @staticmethod
     def _get_cb_efficiency_factor(b: int, isl: int, osl: int) -> float:
@@ -129,24 +132,58 @@ class VLLMBackend(BaseBackend):
         return int(kwargs.get("chunked_prefill_tokens") or cls._VLLM_MAX_CHUNK_TOKENS)
 
     @classmethod
-    def _get_cb_sim_decode_overhead_ms(
+    def _uses_cb_sim_ep8_decode_overhead(
         cls,
         model: BaseModel,
         database: PerfDatabase,
-    ) -> float:
+    ) -> bool:
         total_gpus = (
             model.config.tp_size
             * model.config.pp_size
             * model.config.attention_dp_size
         )
-        if (
+        return (
             database.system == "h200_sxm"
             and database.backend == common.BackendName.vllm.value
             and total_gpus == 8
             and model.config.moe_ep_size == 8
-        ):
+        )
+
+    @classmethod
+    def _get_cb_sim_decode_overhead_ms(
+        cls,
+        model: BaseModel,
+        database: PerfDatabase,
+    ) -> float:
+        if cls._uses_cb_sim_ep8_decode_overhead(model, database):
             return cls._CB_SIM_8GPU_EP_DECODE_OVERHEAD_MS
         return cls._CB_SIM_DEFAULT_DECODE_OVERHEAD_MS
+
+    @classmethod
+    def _get_cb_sim_decode_overhead_source_key(
+        cls,
+        model: BaseModel,
+        database: PerfDatabase,
+        overhead_ms: float,
+    ) -> str:
+        if overhead_ms <= 0.0:
+            return "none"
+        if cls._uses_cb_sim_ep8_decode_overhead(model, database):
+            return cls._CB_SIM_EP8_DECODE_OVERHEAD_SOURCE_KEY
+        return "manual_cb_sim_decode_overhead_candidate"
+
+    @staticmethod
+    def _make_cb_sim_decode_overhead_shape_key(
+        runtime_config: RuntimeConfig,
+        ctx_tokens: int,
+        cb_config,
+    ) -> str:
+        phase = "decode_present" if runtime_config.osl > 0 else "prefill_only"
+        return (
+            f"{phase}:isl{runtime_config.isl}:osl{runtime_config.osl}:"
+            f"bs{runtime_config.batch_size}:ctx{ctx_tokens}:"
+            f"max_bt{cb_config.max_num_batched_tokens}:max_seqs{cb_config.max_num_seqs}"
+        )
 
     def run_agg(
         self, model: BaseModel, database: PerfDatabase, runtime_config: RuntimeConfig, **kwargs
@@ -636,6 +673,7 @@ class VLLMBackend(BaseBackend):
         CLI/webapp/pareto/InferenceSession consumers.
         """
         from aiconfigurator.sdk.backends.cb_simulator import CBSimConfig, CBSimulator
+        from aiconfigurator.sdk.backends.cb_simulator.forward_descriptor import make_topology_key
 
         isl, osl, prefix, b = (
             runtime_config.isl, runtime_config.osl,
@@ -705,6 +743,17 @@ class VLLMBackend(BaseBackend):
 
         moe_tp = model.config.moe_tp_size
         moe_ep = model.config.moe_ep_size
+        overhead_topology_key = make_topology_key(tp, dp, moe_tp, moe_ep)
+        overhead_shape_key = self._make_cb_sim_decode_overhead_shape_key(
+            runtime_config,
+            ctx_tokens,
+            cb_config,
+        )
+        overhead_source_key = self._get_cb_sim_decode_overhead_source_key(
+            model,
+            database,
+            float(cb_config.per_iteration_overhead_ms),
+        )
 
         avg_ctx_reqs = result.avg_prefill_reqs_per_iter
         avg_gen_reqs = result.avg_decode_reqs_per_iter
@@ -764,6 +813,12 @@ class VLLMBackend(BaseBackend):
                 "total_iterations": result.total_iterations,
                 "overlap_factor": float(cb_config.overlap_factor),
                 "per_iteration_overhead_ms": float(cb_config.per_iteration_overhead_ms),
+                "per_iteration_overhead_source_key": overhead_source_key,
+                "per_iteration_overhead_topology_key": overhead_topology_key,
+                "per_iteration_overhead_shape_key": overhead_shape_key,
+                "per_iteration_overhead_diagnostic_only": True,
+                "per_iteration_overhead_valid_for_default": False,
+                "per_iteration_overhead_perf_database": False,
             },
             "cb_sim_boundary": {
                 "ttft_source": "cb_sim",
