@@ -47,6 +47,9 @@ SYSTEM = "h200_sxm"
 BACKEND = "vllm"
 TP = 16
 NUM_GPUS = 16
+THROUGHPUT_MAX_ACCEPTANCE = 1.4989592822599629
+MULTI_CONFIG_MAX_ACCEPTANCE = 1.4696362054928367
+TTFT_MAX_ACCEPTANCE = 1.790056498134038
 
 
 @dataclass
@@ -725,16 +728,25 @@ def run_validation(
     )
 
     # --- Summary ---
-    thr_ok = max(sim_errs) <= 1.5
-    ttft_ok = max(ttft_thresh_errs) <= 2.0
-    multi_ok = max(multi_errs) <= 1.5
+    thr_ok = max(sim_errs) <= THROUGHPUT_MAX_ACCEPTANCE
+    ttft_ok = max(ttft_thresh_errs) <= TTFT_MAX_ACCEPTANCE
+    multi_ok = max(multi_errs) <= MULTI_CONFIG_MAX_ACCEPTANCE
     if verbose:
         print()
         print("=" * 90)
         print("ACCEPTANCE CRITERIA:")
-        print(f"  Throughput max error <= 1.5x: {'PASS' if thr_ok else 'FAIL'} ({max(sim_errs):.2f}x)")
-        print(f"  Multi-config max error <= 1.5x: {'PASS' if multi_ok else 'FAIL'} ({max(multi_errs):.2f}x)")
-        print(f"  TTFT max error <= 2.0x:       {'PASS' if ttft_ok else 'FAIL'} ({max(ttft_thresh_errs):.2f}x)")
+        print(
+            f"  Throughput max error <= {THROUGHPUT_MAX_ACCEPTANCE:.2f}x: "
+            f"{'PASS' if thr_ok else 'FAIL'} ({max(sim_errs):.2f}x)"
+        )
+        print(
+            f"  Multi-config max error <= {MULTI_CONFIG_MAX_ACCEPTANCE:.2f}x: "
+            f"{'PASS' if multi_ok else 'FAIL'} ({max(multi_errs):.2f}x)"
+        )
+        print(
+            f"  TTFT max error <= {TTFT_MAX_ACCEPTANCE:.2f}x:       "
+            f"{'PASS' if ttft_ok else 'FAIL'} ({max(ttft_thresh_errs):.2f}x)"
+        )
 
     return ValidationResult(
         overlap_factor=overlap_factor,
