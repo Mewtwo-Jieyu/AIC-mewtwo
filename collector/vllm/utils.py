@@ -5,6 +5,7 @@
 # Modified from https://github.com/vllm-project/vllm/blob/v0.11.0/tests/v1/attention/utils.py
 
 import functools
+import inspect
 import os
 from contextlib import ExitStack
 from dataclasses import dataclass
@@ -236,11 +237,13 @@ def create_vllm_config(
         max_model_len=max_model_len,
     )
 
-    cache_config = CacheConfig(
-        block_size=block_size,
-        cache_dtype="fp8" if use_fp8_kv_cache else "auto",
-        swap_space=0,
-    )
+    cache_config_kwargs = {
+        "block_size": block_size,
+        "cache_dtype": "fp8" if use_fp8_kv_cache else "auto",
+    }
+    if "swap_space" in inspect.signature(CacheConfig).parameters:
+        cache_config_kwargs["swap_space"] = 0
+    cache_config = CacheConfig(**cache_config_kwargs)
     # Set cache blocks for testing
     #   (these may be set during initialization normally)
     cache_config.num_gpu_blocks = num_gpu_blocks
