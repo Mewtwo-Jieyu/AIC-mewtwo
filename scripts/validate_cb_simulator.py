@@ -100,6 +100,41 @@ class MultiConfigTopKRow:
 
 
 @dataclass(frozen=True)
+class MultiConfigBudgetBreakdownRow:
+    name: str
+    tp: int
+    dp: int
+    ep: int
+    max_bt: int
+    real_output_tok_s_gpu: float
+    sim_output_tok_s_gpu: float
+    error_ratio: float
+    rank: int
+    real_rank: int
+    avg_prefill_reqs_per_iter: float
+    avg_decode_reqs_per_iter: float
+    avg_tokens_per_iter: float
+    peak_prefill_reqs_per_iter: float
+    peak_decode_reqs_per_iter: float
+    peak_tokens_per_iter: float
+    steady_state_iterations: int
+    steady_state_time_ms: float
+    paired_baseline_name: str
+    paired_baseline_max_bt: int
+    paired_baseline_sim_output_tok_s_gpu: float
+    paired_baseline_error_ratio: float
+    paired_baseline_rank: int
+    paired_baseline_avg_tokens_per_iter: float
+    max_bt_vs_paired_baseline: float
+    sim_vs_paired_baseline_ratio: float
+    avg_tokens_vs_paired_baseline_ratio: float
+    steady_state_time_vs_paired_baseline_ratio: float
+    diagnostic_only: bool
+    valid_for_default: bool
+    perf_database: bool
+
+
+@dataclass(frozen=True)
 class ValidationResult:
     overlap_factor: float
     per_iteration_overhead_ms: float
@@ -541,15 +576,13 @@ def _rank_by_output(values: dict[str, float]) -> dict[str, int]:
     return {name: rank for rank, (name, _) in enumerate(ordered, start=1)}
 
 
-def run_diagnostic_multi_config_topk(
-    overlap_factor: float = 0.0,
-    ep8_per_iteration_overhead_ms: float = 90.0,
-    verbose: bool = True,
-) -> list[MultiConfigTopKRow]:
-    """Run budget-aware diagnostic Top-K rows without changing validation gates."""
+def _run_multi_config_diagnostic_raw(
+    overlap_factor: float,
+    ep8_per_iteration_overhead_ms: float,
+) -> list[tuple[MultiConfigPoint, float, float, dict]]:
     backend = VLLMBackend()
     loaded: dict[tuple[int, int, int, int], tuple] = {}
-    raw_rows: list[tuple[MultiConfigPoint, float, float]] = []
+    raw_rows: list[tuple[MultiConfigPoint, float, float, dict]] = []
     for pt in MULTI_CONFIG_DATA:
         key = (pt.tp, pt.dp, pt.moe_tp, pt.moe_ep)
         if key not in loaded:
@@ -580,10 +613,22 @@ def run_diagnostic_multi_config_topk(
         )
         cb_dict = cb_summary.get_result_dict()
         sim_gpu = cb_dict["tokens/s/gpu"] if cb_dict else 0.0
-        raw_rows.append((pt, pt.real_output_tok_s_gpu, sim_gpu))
+        raw_rows.append((pt, pt.real_output_tok_s_gpu, sim_gpu, cb_summary.get_per_ops_data()))
+    return raw_rows
 
-    real_ranks = _rank_by_output({pt.name: real for pt, real, _ in raw_rows})
-    sim_ranks = _rank_by_output({pt.name: sim for pt, _, sim in raw_rows})
+
+def run_diagnostic_multi_config_topk(
+    overlap_factor: float = 0.0,
+    ep8_per_iteration_overhead_ms: float = 90.0,
+    verbose: bool = True,
+) -> list[MultiConfigTopKRow]:
+    """Run budget-aware diagnostic Top-K rows without changing validation gates."""
+    raw_rows = _run_multi_config_diagnostic_raw(
+        overlap_factor,
+        ep8_per_iteration_overhead_ms,
+    )
+    real_ranks = _rank_by_output({pt.name: real for pt, real, _, _ in raw_rows})
+    sim_ranks = _rank_by_output({pt.name: sim for pt, _, sim, _ in raw_rows})
     rows = [
         MultiConfigTopKRow(
             name=pt.name,
@@ -601,7 +646,7 @@ def run_diagnostic_multi_config_topk(
             valid_for_default=False,
             perf_database=False,
         )
-        for pt, real, sim in raw_rows
+        for pt, real, sim, _ in raw_rows
     ]
     rows.sort(key=lambda row: (row.rank, row.real_rank, row.name))
 
@@ -623,6 +668,170 @@ def run_diagnostic_multi_config_topk(
                 f"{row.sim_output_tok_s_gpu:>8.1f} {row.error_ratio:>7.2f}x"
             )
         print("-" * 116)
+        print("diagnostic_only=true valid_for_default=false perf_database=false")
+    return rows
+
+
+def _require_metric(mapping: dict, key: str, scenario: str) -> float:
+    if key not in mapping:
+        raise ValueError(f"missing cb_sim_scheduling.{key} for {scenario}")
+    return float(mapping[key])
+
+
+def _safe_ratio(numerator: float, denominator: float) -> float:
+    if denominator == 0:
+        return float("inf")
+    return numerator / denominator
+
+
+def run_diagnostic_multi_config_budget_breakdown(
+    overlap_factor: float = 0.0,
+    ep8_per_iteration_overhead_ms: float = 90.0,
+    verbose: bool = True,
+) -> list[MultiConfigBudgetBreakdownRow]:
+    """Emit budget/scheduler root-cause rows without changing validation gates."""
+    raw_rows = _run_multi_config_diagnostic_raw(
+        overlap_factor,
+        ep8_per_iteration_overhead_ms,
+    )
+    real_ranks = _rank_by_output({pt.name: real for pt, real, _, _ in raw_rows})
+    sim_ranks = _rank_by_output({pt.name: sim for pt, _, sim, _ in raw_rows})
+
+    interim: list[dict] = []
+    baseline_by_shape: dict[tuple[int, int, int, int, int, int, int], dict] = {}
+    for pt, real, sim, per_ops in raw_rows:
+        scheduling = per_ops.get("cb_sim_scheduling")
+        if not isinstance(scheduling, dict):
+            raise ValueError(f"missing cb_sim_scheduling for {pt.name}")
+        row = {
+            "shape_key": (pt.isl, pt.osl, pt.batch_size, pt.tp, pt.dp, pt.moe_tp, pt.moe_ep),
+            "name": pt.name,
+            "tp": pt.tp,
+            "dp": pt.dp,
+            "ep": pt.moe_ep,
+            "max_bt": pt.max_num_batched_tokens,
+            "isl": pt.isl,
+            "real_output_tok_s_gpu": real,
+            "sim_output_tok_s_gpu": sim,
+            "error_ratio": _abs_error(sim, real),
+            "rank": sim_ranks[pt.name],
+            "real_rank": real_ranks[pt.name],
+            "avg_prefill_reqs_per_iter": _require_metric(
+                scheduling,
+                "avg_prefill_reqs_per_iter",
+                pt.name,
+            ),
+            "avg_decode_reqs_per_iter": _require_metric(
+                scheduling,
+                "avg_decode_reqs_per_iter",
+                pt.name,
+            ),
+            "avg_tokens_per_iter": _require_metric(
+                scheduling,
+                "avg_tokens_per_iter",
+                pt.name,
+            ),
+            "peak_prefill_reqs_per_iter": _require_metric(
+                scheduling,
+                "peak_prefill_reqs_per_iter",
+                pt.name,
+            ),
+            "peak_decode_reqs_per_iter": _require_metric(
+                scheduling,
+                "peak_decode_reqs_per_iter",
+                pt.name,
+            ),
+            "peak_tokens_per_iter": _require_metric(
+                scheduling,
+                "peak_tokens_per_iter",
+                pt.name,
+            ),
+            "steady_state_iterations": int(
+                _require_metric(scheduling, "steady_state_iterations", pt.name)
+            ),
+            "steady_state_time_ms": _require_metric(
+                scheduling,
+                "steady_state_time_ms",
+                pt.name,
+            ),
+        }
+        interim.append(row)
+        if pt.max_num_batched_tokens == pt.isl:
+            baseline_by_shape[row["shape_key"]] = row
+
+    rows: list[MultiConfigBudgetBreakdownRow] = []
+    for row in interim:
+        baseline = baseline_by_shape.get(row["shape_key"])
+        if baseline is None:
+            raise ValueError(f"missing max_bt=isl paired baseline for {row['name']}")
+        rows.append(
+            MultiConfigBudgetBreakdownRow(
+                name=row["name"],
+                tp=row["tp"],
+                dp=row["dp"],
+                ep=row["ep"],
+                max_bt=row["max_bt"],
+                real_output_tok_s_gpu=row["real_output_tok_s_gpu"],
+                sim_output_tok_s_gpu=row["sim_output_tok_s_gpu"],
+                error_ratio=row["error_ratio"],
+                rank=row["rank"],
+                real_rank=row["real_rank"],
+                avg_prefill_reqs_per_iter=row["avg_prefill_reqs_per_iter"],
+                avg_decode_reqs_per_iter=row["avg_decode_reqs_per_iter"],
+                avg_tokens_per_iter=row["avg_tokens_per_iter"],
+                peak_prefill_reqs_per_iter=row["peak_prefill_reqs_per_iter"],
+                peak_decode_reqs_per_iter=row["peak_decode_reqs_per_iter"],
+                peak_tokens_per_iter=row["peak_tokens_per_iter"],
+                steady_state_iterations=row["steady_state_iterations"],
+                steady_state_time_ms=row["steady_state_time_ms"],
+                paired_baseline_name=baseline["name"],
+                paired_baseline_max_bt=baseline["max_bt"],
+                paired_baseline_sim_output_tok_s_gpu=baseline["sim_output_tok_s_gpu"],
+                paired_baseline_error_ratio=baseline["error_ratio"],
+                paired_baseline_rank=baseline["rank"],
+                paired_baseline_avg_tokens_per_iter=baseline["avg_tokens_per_iter"],
+                max_bt_vs_paired_baseline=_safe_ratio(row["max_bt"], baseline["max_bt"]),
+                sim_vs_paired_baseline_ratio=_safe_ratio(
+                    row["sim_output_tok_s_gpu"],
+                    baseline["sim_output_tok_s_gpu"],
+                ),
+                avg_tokens_vs_paired_baseline_ratio=_safe_ratio(
+                    row["avg_tokens_per_iter"],
+                    baseline["avg_tokens_per_iter"],
+                ),
+                steady_state_time_vs_paired_baseline_ratio=_safe_ratio(
+                    row["steady_state_time_ms"],
+                    baseline["steady_state_time_ms"],
+                ),
+                diagnostic_only=True,
+                valid_for_default=False,
+                perf_database=False,
+            )
+        )
+    rows.sort(key=lambda item: (item.rank, item.real_rank, item.name))
+
+    if verbose:
+        print()
+        print("=" * 132)
+        print("DIAGNOSTIC MULTI-CONFIG BUDGET BREAKDOWN (not default AIC)")
+        print(
+            f"{'Rank':>4} {'RealR':>5} {'Scenario':<34} {'tp':>3} {'dp':>3} "
+            f"{'ep':>3} {'max_bt':>7} {'PairBT':>7} {'RealOut':>8} "
+            f"{'CB-Sim':>8} {'Error':>8} {'AvgTok':>8} {'PeakTok':>8} "
+            f"{'SteadyI':>8} {'SteadyMs':>9}"
+        )
+        print("-" * 132)
+        for row in rows:
+            print(
+                f"{row.rank:>4} {row.real_rank:>5} {row.name:<34} "
+                f"{row.tp:>3} {row.dp:>3} {row.ep:>3} {row.max_bt:>7} "
+                f"{row.paired_baseline_max_bt:>7} "
+                f"{row.real_output_tok_s_gpu:>8.1f} "
+                f"{row.sim_output_tok_s_gpu:>8.1f} {row.error_ratio:>7.2f}x "
+                f"{row.avg_tokens_per_iter:>8.1f} {row.peak_tokens_per_iter:>8.1f} "
+                f"{row.steady_state_iterations:>8} {row.steady_state_time_ms:>9.1f}"
+            )
+        print("-" * 132)
         print("diagnostic_only=true valid_for_default=false perf_database=false")
     return rows
 
@@ -900,6 +1109,20 @@ def main() -> None:
         help="Optional CSV path for budget-aware Top-K diagnostic rows.",
     )
     parser.add_argument(
+        "--diagnostic-multi-config-budget-breakdown",
+        action="store_true",
+        help=(
+            "Emit budget/scheduler breakdown diagnostics only. "
+            "This does not change acceptance gates or default cb_sim behavior."
+        ),
+    )
+    parser.add_argument(
+        "--diagnostic-multi-config-budget-breakdown-out",
+        type=Path,
+        default=None,
+        help="Optional CSV path for budget/scheduler breakdown diagnostic rows.",
+    )
+    parser.add_argument(
         "--experimental-forward-descriptor",
         action="store_true",
         help=(
@@ -1013,6 +1236,15 @@ def main() -> None:
         )
         if args.diagnostic_multi_config_topk_out is not None:
             _write_rows(args.diagnostic_multi_config_topk_out, rows)
+        return
+
+    if args.diagnostic_multi_config_budget_breakdown:
+        rows = run_diagnostic_multi_config_budget_breakdown(
+            overlap_factor=args.overlap_factor,
+            ep8_per_iteration_overhead_ms=args.ep8_per_iteration_overhead_ms,
+        )
+        if args.diagnostic_multi_config_budget_breakdown_out is not None:
+            _write_rows(args.diagnostic_multi_config_budget_breakdown_out, rows)
         return
 
     if args.experimental_forward_descriptor:
