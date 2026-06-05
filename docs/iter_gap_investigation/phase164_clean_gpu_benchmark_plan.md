@@ -26,9 +26,13 @@ The runner exports CUDA compatibility environment:
 
 ```bash
 export PATH=/usr/local/nvidia/bin:$PATH
-export LD_LIBRARY_PATH=/usr/local/nvidia/lib64:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=/usr/local/nvidia/lib64:/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 export VLLM_ENABLE_CUDA_COMPATIBILITY=1
 ```
+
+Phase164e proved service init can reach `/v1/models` after container cleanup when
+the CUDA library path includes `/usr/local/cuda/lib64`. The runner uses that
+stable CUDA symlink instead of a versioned CUDA directory.
 
 ## Runner Modes
 
@@ -66,6 +70,9 @@ Each `run-one` scenario writes:
 | File | Content |
 |---|---|
 | `serve.log` | raw vLLM serve log |
+| `run_one_<scenario>.log` | runner stdout/stderr for that one scenario |
+| `ready_probe_<port>.log` | `/v1/models` readiness probe log |
+| `cleanup_<scenario>.log` | service stop and cleanup log |
 | `bench_result.json` | raw `run_openai_fixed_shape_benchmark.py` summary |
 | `bench_records.jsonl` | per-request records |
 | `gpu_compute_apps_before.txt` | GPU process state before run |

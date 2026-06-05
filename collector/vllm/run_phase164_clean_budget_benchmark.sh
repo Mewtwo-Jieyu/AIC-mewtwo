@@ -25,10 +25,11 @@ BENCH_TIMEOUT_S="${BENCH_TIMEOUT_S:-7200}"
 ALLOW_EXISTING_GPU_APPS="${ALLOW_EXISTING_GPU_APPS:-0}"
 
 export PATH="/usr/local/nvidia/bin:${PATH}"
-export LD_LIBRARY_PATH="/usr/local/nvidia/lib64:${LD_LIBRARY_PATH:-}"
+export LD_LIBRARY_PATH="/usr/local/nvidia/lib64:/usr/local/cuda/lib64:${LD_LIBRARY_PATH:-}"
 export VLLM_ENABLE_CUDA_COMPATIBILITY="${VLLM_ENABLE_CUDA_COMPATIBILITY:-1}"
 
 SERVICE_PID=""
+CLEANUP_LOG=""
 
 usage() {
   cat <<'EOF'
@@ -181,6 +182,9 @@ print_commands_for_scenario() {
 }
 
 stop_service() {
+  if [[ -n "${CLEANUP_LOG}" ]]; then
+    echo "stop_service_start=$(date -Is)" >> "${CLEANUP_LOG}"
+  fi
   if [[ -n "${SERVICE_PID}" ]]; then
     kill -TERM "${SERVICE_PID}" 2>/dev/null || true
     sleep 5
@@ -190,27 +194,45 @@ stop_service() {
   pkill -f "vllm serve ${MODEL_PATH}" 2>/dev/null || true
   pkill -f "VLLM::DPCoordinator" 2>/dev/null || true
   ray stop --force >/dev/null 2>&1 || true
+  if [[ -n "${CLEANUP_LOG}" ]]; then
+    echo "stop_service_done=$(date -Is)" >> "${CLEANUP_LOG}"
+  fi
 }
 
 cleanup() {
   set +e
+  if [[ -n "${CLEANUP_LOG}" ]]; then
+    echo "cleanup_trap_start=$(date -Is)" >> "${CLEANUP_LOG}"
+  fi
   stop_service
+  if [[ -n "${CLEANUP_LOG}" ]]; then
+    echo "cleanup_trap_done=$(date -Is)" >> "${CLEANUP_LOG}"
+  fi
 }
 trap cleanup EXIT
 
 wait_for_service() {
   local port="$1"
   local serve_log="$2"
-  for _ in $(seq 1 180); do
-    curl -fsS "http://127.0.0.1:${port}/v1/models" >/dev/null 2>&1 && return
+  local ready_log="$3"
+  local poll response
+  : > "${ready_log}"
+  echo "ready_probe_start=$(date -Is) port=${port}" | tee -a "${ready_log}"
+  for poll in $(seq 1 180); do
+    if response="$(curl -fsS "http://127.0.0.1:${port}/v1/models" 2>&1)"; then
+      echo "service_ready=true poll=${poll}" | tee -a "${ready_log}"
+      printf '%s\n' "${response}" >> "${ready_log}"
+      return
+    fi
+    echo "service_ready=false poll=${poll}" >> "${ready_log}"
     if [[ -n "${SERVICE_PID}" ]] && ! kill -0 "${SERVICE_PID}" 2>/dev/null; then
-      echo "service_exited_before_ready=true" >&2
+      echo "service_exited_before_ready=true" | tee -a "${ready_log}" >&2
       tail -n 200 "${serve_log}" >&2 || true
       exit 1
     fi
     sleep 5
   done
-  echo "service_ready_timeout=true" >&2
+  echo "service_ready_timeout=true" | tee -a "${ready_log}" >&2
   tail -n 200 "${serve_log}" >&2 || true
   exit 1
 }
@@ -330,7 +352,7 @@ run_preflight() {
 
 run_one() {
   local scenario="$1"
-  local out_dir serve_log bench_json serve_command benchmark_command port
+  local out_dir serve_log bench_json serve_command benchmark_command port ready_log run_log
   [[ -n "${scenario}" ]] || { usage >&2; exit 2; }
   scenario_index "${scenario}" >/dev/null
 
@@ -341,23 +363,45 @@ run_one() {
   }
   out_dir="$(scenario_dir "${scenario}")"
   mkdir -p "${out_dir}"
+
+  port="$(scenario_port "${scenario}")"
+  serve_log="${out_dir}/serve.log"
+  ready_log="${out_dir}/ready_probe_${port}.log"
+  CLEANUP_LOG="${out_dir}/cleanup_${scenario}.log"
+  run_log="${out_dir}/run_one_${scenario}.log"
+  if [[ "${PHASE164_RUN_ONE_TEE_ACTIVE:-0}" != "1" ]]; then
+    echo "service_log=${serve_log}"
+    echo "runner_log=${run_log}"
+    echo "ready_probe_log=${ready_log}"
+    echo "cleanup_log=${CLEANUP_LOG}"
+    echo "realtime_tail_command=tail -f ${serve_log} ${run_log} ${ready_log} ${CLEANUP_LOG}"
+    set +e
+    PHASE164_RUN_ONE_TEE_ACTIVE=1 bash "$0" run-one "${scenario}" 2>&1 | tee "${run_log}"
+    local status="${PIPESTATUS[0]}"
+    set -e
+    exit "${status}"
+  fi
+
   check_gpu_state "${out_dir}/gpu_compute_apps_before.txt"
 
   build_serve_cmd "${scenario}"
   build_benchmark_cmd "${scenario}"
   serve_command="$(quote_cmd "${SERVE_CMD[@]}")"
   benchmark_command="$(quote_cmd "${BENCH_CMD[@]}")"
-  port="$(scenario_port "${scenario}")"
-  serve_log="${out_dir}/serve.log"
   bench_json="${out_dir}/bench_result.json"
 
   echo "scenario=${scenario}"
+  echo "service_log=${serve_log}"
+  echo "runner_log=${run_log}"
+  echo "ready_probe_log=${ready_log}"
+  echo "cleanup_log=${CLEANUP_LOG}"
+  echo "realtime_tail_command=tail -f ${serve_log} ${run_log} ${ready_log} ${CLEANUP_LOG}"
   echo "serve_command=${serve_command}"
   echo "benchmark_command=${benchmark_command}"
   nohup "${SERVE_CMD[@]}" > "${serve_log}" 2>&1 &
   SERVICE_PID=$!
   echo "service_pid=${SERVICE_PID}"
-  wait_for_service "${port}" "${serve_log}"
+  wait_for_service "${port}" "${serve_log}" "${ready_log}"
 
   "${BENCH_CMD[@]}"
   write_result_json "${scenario}" "${out_dir}" "${serve_command}" "${benchmark_command}"
