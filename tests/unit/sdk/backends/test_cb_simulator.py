@@ -1293,3 +1293,80 @@ class TestValidateCBSimulatorBudgetAwareTopK:
         assert not any(row.valid_for_default for row in rows)
         assert not any(row.perf_database for row in rows)
         assert before_gates == after_gates
+
+
+class TestValidateCBSimulatorBudgetBreakdown:
+    def test_budget_breakdown_captures_scheduling_fields_and_pairs_baseline(
+        self,
+        monkeypatch,
+    ) -> None:
+        module = _load_validate_cb_simulator_module()
+        captured: list[tuple[int, int]] = []
+
+        class _FakeSummary:
+            def __init__(self, max_bt: int) -> None:
+                self._max_bt = max_bt
+
+            def get_result_dict(self):
+                return {"tokens/s/gpu": 100.0 + self._max_bt / 1024.0}
+
+            def get_per_ops_data(self):
+                return {
+                    "cb_sim_scheduling": {
+                        "avg_prefill_reqs_per_iter": self._max_bt / 8192.0,
+                        "avg_decode_reqs_per_iter": 128.0,
+                        "avg_tokens_per_iter": float(self._max_bt),
+                        "peak_prefill_reqs_per_iter": self._max_bt / 4096.0,
+                        "peak_decode_reqs_per_iter": 128.0,
+                        "peak_tokens_per_iter": float(self._max_bt + 128),
+                        "steady_state_iterations": self._max_bt // 1024,
+                        "steady_state_time_ms": float(self._max_bt * 2),
+                    },
+                    "cb_sim_boundary": {"throughput_source": "cb_sim"},
+                }
+
+        class _FakeBackend:
+            def run_agg(self, model, db, runtime_config, **kwargs):
+                cb_config = kwargs["cb_config"]
+                captured.append((kwargs["ctx_tokens"], cb_config.max_num_batched_tokens))
+                return _FakeSummary(cb_config.max_num_batched_tokens)
+
+        def fake_load_model_and_db(*, tp, dp, moe_tp, moe_ep):
+            model = SimpleNamespace(model_path="fake", config=SimpleNamespace())
+            db = SimpleNamespace(system="h200_sxm", backend="vllm")
+            return model, db, None
+
+        monkeypatch.setattr(module, "VLLMBackend", _FakeBackend)
+        monkeypatch.setattr(module, "_load_model_and_db", fake_load_model_and_db)
+
+        before_gates = (
+            module.THROUGHPUT_MAX_ACCEPTANCE,
+            module.MULTI_CONFIG_MAX_ACCEPTANCE,
+            module.TTFT_MAX_ACCEPTANCE,
+        )
+        rows = module.run_diagnostic_multi_config_budget_breakdown(verbose=False)
+        after_gates = (
+            module.THROUGHPUT_MAX_ACCEPTANCE,
+            module.MULTI_CONFIG_MAX_ACCEPTANCE,
+            module.TTFT_MAX_ACCEPTANCE,
+        )
+        by_name = {row.name: row for row in rows}
+        bt_row = by_name["K2.5-tp8ep8-8k2k-bt65536"]
+
+        assert captured.count((65536, 65536)) == 2
+        assert bt_row.max_bt == 65536
+        assert bt_row.avg_prefill_reqs_per_iter == pytest.approx(8.0)
+        assert bt_row.avg_decode_reqs_per_iter == pytest.approx(128.0)
+        assert bt_row.avg_tokens_per_iter == pytest.approx(65536.0)
+        assert bt_row.peak_prefill_reqs_per_iter == pytest.approx(16.0)
+        assert bt_row.peak_decode_reqs_per_iter == pytest.approx(128.0)
+        assert bt_row.peak_tokens_per_iter == pytest.approx(65664.0)
+        assert bt_row.steady_state_iterations == 64
+        assert bt_row.steady_state_time_ms == pytest.approx(131072.0)
+        assert bt_row.paired_baseline_name == "K2.5-tp8ep8-8k2k"
+        assert bt_row.paired_baseline_max_bt == 8000
+        assert bt_row.max_bt_vs_paired_baseline == pytest.approx(8.192)
+        assert bt_row.diagnostic_only is True
+        assert bt_row.valid_for_default is False
+        assert bt_row.perf_database is False
+        assert before_gates == after_gates
