@@ -23,6 +23,9 @@ BENCH_OUTPUT_LEN="${BENCH_OUTPUT_LEN:-2000}"
 BENCH_WARMUP_REQUESTS="${BENCH_WARMUP_REQUESTS:-0}"
 BENCH_TIMEOUT_S="${BENCH_TIMEOUT_S:-7200}"
 ALLOW_EXISTING_GPU_APPS="${ALLOW_EXISTING_GPU_APPS:-0}"
+GPU_DRAIN_POLL_SECONDS="${GPU_DRAIN_POLL_SECONDS:-5}"
+GPU_DRAIN_STABLE_POLLS="${GPU_DRAIN_STABLE_POLLS:-3}"
+GPU_DRAIN_TIMEOUT_SECONDS="${GPU_DRAIN_TIMEOUT_SECONDS:-300}"
 
 export PATH="/usr/local/nvidia/bin:${PATH}"
 export LD_LIBRARY_PATH="/usr/local/nvidia/lib64:/usr/local/cuda/lib64:${LD_LIBRARY_PATH:-}"
@@ -115,6 +118,60 @@ check_gpu_state() {
     cat "${out_file}" >&2
     exit 1
   fi
+}
+
+wait_for_gpu_drain() {
+  local out_dir="$1"
+  local final_file="${out_dir}/gpu_compute_apps_after.txt"
+  local timeout_file="${out_dir}/gpu_compute_apps_after_timeout.txt"
+  local sample_file="${out_dir}/gpu_compute_apps_after.poll"
+  local drain_log="${out_dir}/gpu_compute_apps_drain.log"
+  local stable=0
+  local elapsed=0
+  local poll=0
+  local query_exit=0
+  local bytes=0
+
+  : > "${drain_log}"
+  rm -f "${final_file}" "${timeout_file}" "${sample_file}"
+  echo "gpu_drain_start=$(date -Is)" >> "${drain_log}"
+  echo "gpu_drain_poll_seconds=${GPU_DRAIN_POLL_SECONDS}" >> "${drain_log}"
+  echo "gpu_drain_stable_polls=${GPU_DRAIN_STABLE_POLLS}" >> "${drain_log}"
+  echo "gpu_drain_timeout_seconds=${GPU_DRAIN_TIMEOUT_SECONDS}" >> "${drain_log}"
+
+  while (( elapsed <= GPU_DRAIN_TIMEOUT_SECONDS )); do
+    poll=$((poll + 1))
+    if gpu_apps > "${sample_file}"; then
+      query_exit=0
+    else
+      query_exit="$?"
+      echo "gpu_apps_query_failed_exit=${query_exit}" > "${sample_file}"
+    fi
+    bytes="$(wc -c < "${sample_file}" | tr -d ' ')"
+    if [[ ! -s "${sample_file}" ]]; then
+      stable=$((stable + 1))
+    else
+      stable=0
+    fi
+    echo "poll=${poll} elapsed_seconds=${elapsed} query_exit=${query_exit} bytes=${bytes} stable_empty_polls=${stable}" >> "${drain_log}"
+    if [[ -s "${sample_file}" ]]; then
+      sed 's/^/gpu_app: /' "${sample_file}" >> "${drain_log}"
+    fi
+    if (( stable >= GPU_DRAIN_STABLE_POLLS )); then
+      : > "${final_file}"
+      rm -f "${sample_file}"
+      echo "gpu_drain_close_reason=stable" >> "${drain_log}"
+      echo "gpu_drain_done=$(date -Is)" >> "${drain_log}"
+      return 0
+    fi
+    sleep "${GPU_DRAIN_POLL_SECONDS}"
+    elapsed=$((elapsed + GPU_DRAIN_POLL_SECONDS))
+  done
+
+  cp "${sample_file}" "${timeout_file}" 2>/dev/null || true
+  echo "gpu_drain_close_reason=timeout" >> "${drain_log}"
+  echo "gpu_drain_done=$(date -Is)" >> "${drain_log}"
+  return 1
 }
 
 build_serve_cmd() {
@@ -420,10 +477,9 @@ run_one() {
 
   stop_service
   SERVICE_PID=""
-  gpu_apps > "${out_dir}/gpu_compute_apps_after.txt" || true
-  if [[ -s "${out_dir}/gpu_compute_apps_after.txt" ]]; then
-    echo "gpu_residue_after_run=true" >&2
-    cat "${out_dir}/gpu_compute_apps_after.txt" >&2
+  if ! wait_for_gpu_drain "${out_dir}"; then
+    echo "gpu_drain_timeout=true" >&2
+    cat "${out_dir}/gpu_compute_apps_drain.log" >&2
     exit 1
   fi
   if [[ "${write_result_exit_code}" != "0" ]]; then

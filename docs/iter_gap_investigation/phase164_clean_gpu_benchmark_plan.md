@@ -77,6 +77,7 @@ Each `run-one` scenario writes:
 | `bench_records.jsonl` | per-request records |
 | `gpu_compute_apps_before.txt` | GPU process state before run |
 | `gpu_compute_apps_after.txt` | GPU process state after cleanup |
+| `gpu_compute_apps_drain.log` | post-cleanup GPU drain polling log |
 | `phase164_result.json` | clean benchmark metadata consumed by the manifest builder |
 
 Phase164h exposed a runner logging bug: raw benchmark traffic completed, but the
@@ -91,6 +92,15 @@ for `tp4dp2ep8-bt8000`, but clean evidence was still rejected because
 now captures `benchmark_exit_code`, writes clean metadata when
 `bench_result.json` exists, stops the service, records post-cleanup GPU state,
 and only then exits with the benchmark status.
+
+Phase164i-fix exposed a cleanup sampling boundary bug: clean metadata was
+written, but `gpu_compute_apps_after.txt` captured short-lived `[Not Found]`
+GPU process entries immediately after service stop. These transient entries are
+not accepted as clean evidence. The runner now waits for a hard GPU drain
+boundary before writing the final after file: `GPU_DRAIN_STABLE_POLLS=3`
+consecutive empty polls, sampled every `GPU_DRAIN_POLL_SECONDS=5`, with
+`GPU_DRAIN_TIMEOUT_SECONDS=300`. Timeout writes
+`gpu_compute_apps_after_timeout.txt` and fails the run.
 
 The manifest builder reads four `phase164_result.json` files:
 
