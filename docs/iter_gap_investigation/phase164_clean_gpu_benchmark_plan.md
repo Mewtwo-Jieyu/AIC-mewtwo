@@ -85,6 +85,13 @@ and `gpu_compute_apps_after.txt`. Raw `bench_result.json` alone is not accepted
 as clean evidence. The fixed runner writes stdout/stderr directly to
 `run_one_<scenario>.log` after printing the log paths and `tail -f` command.
 
+Phase164i exposed a second closeout-order bug: raw benchmark traffic completed
+for `tp4dp2ep8-bt8000`, but clean evidence was still rejected because
+`phase164_result.json` and `gpu_compute_apps_after.txt` were missing. The runner
+now captures `benchmark_exit_code`, writes clean metadata when
+`bench_result.json` exists, stops the service, records post-cleanup GPU state,
+and only then exits with the benchmark status.
+
 The manifest builder reads four `phase164_result.json` files:
 
 ```bash
