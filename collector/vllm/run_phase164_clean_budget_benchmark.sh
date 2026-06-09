@@ -369,18 +369,13 @@ run_one() {
   ready_log="${out_dir}/ready_probe_${port}.log"
   CLEANUP_LOG="${out_dir}/cleanup_${scenario}.log"
   run_log="${out_dir}/run_one_${scenario}.log"
-  if [[ "${PHASE164_RUN_ONE_TEE_ACTIVE:-0}" != "1" ]]; then
-    echo "service_log=${serve_log}"
-    echo "runner_log=${run_log}"
-    echo "ready_probe_log=${ready_log}"
-    echo "cleanup_log=${CLEANUP_LOG}"
-    echo "realtime_tail_command=tail -f ${serve_log} ${run_log} ${ready_log} ${CLEANUP_LOG}"
-    set +e
-    PHASE164_RUN_ONE_TEE_ACTIVE=1 bash "$0" run-one "${scenario}" 2>&1 | tee "${run_log}"
-    local status="${PIPESTATUS[0]}"
-    set -e
-    exit "${status}"
-  fi
+  : > "${run_log}"
+  echo "service_log=${serve_log}"
+  echo "runner_log=${run_log}"
+  echo "ready_probe_log=${ready_log}"
+  echo "cleanup_log=${CLEANUP_LOG}"
+  echo "realtime_tail_command=tail -f ${serve_log} ${run_log} ${ready_log} ${CLEANUP_LOG}"
+  exec >> "${run_log}" 2>&1
 
   check_gpu_state "${out_dir}/gpu_compute_apps_before.txt"
 
@@ -391,6 +386,7 @@ run_one() {
   bench_json="${out_dir}/bench_result.json"
 
   echo "scenario=${scenario}"
+  echo "runner_log_start=$(date -Is)"
   echo "service_log=${serve_log}"
   echo "runner_log=${run_log}"
   echo "ready_probe_log=${ready_log}"
