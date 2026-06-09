@@ -79,6 +79,12 @@ Each `run-one` scenario writes:
 | `gpu_compute_apps_after.txt` | GPU process state after cleanup |
 | `phase164_result.json` | clean benchmark metadata consumed by the manifest builder |
 
+Phase164h exposed a runner logging bug: raw benchmark traffic completed, but the
+run-one self-recursive `tee` wrapper exited before writing `phase164_result.json`
+and `gpu_compute_apps_after.txt`. Raw `bench_result.json` alone is not accepted
+as clean evidence. The fixed runner writes stdout/stderr directly to
+`run_one_<scenario>.log` after printing the log paths and `tail -f` command.
+
 The manifest builder reads four `phase164_result.json` files:
 
 ```bash
