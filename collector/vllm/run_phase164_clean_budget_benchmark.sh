@@ -399,8 +399,25 @@ run_one() {
   echo "service_pid=${SERVICE_PID}"
   wait_for_service "${port}" "${serve_log}" "${ready_log}"
 
+  local benchmark_exit_code=0
+  local write_result_exit_code=0
+  set +e
   "${BENCH_CMD[@]}"
-  write_result_json "${scenario}" "${out_dir}" "${serve_command}" "${benchmark_command}"
+  benchmark_exit_code="$?"
+  set -e
+  echo "benchmark_exit_code=${benchmark_exit_code}"
+
+  if [[ -f "${bench_json}" ]]; then
+    set +e
+    write_result_json "${scenario}" "${out_dir}" "${serve_command}" "${benchmark_command}"
+    write_result_exit_code="$?"
+    set -e
+    echo "write_result_exit_code=${write_result_exit_code}"
+  else
+    echo "missing_bench_json=${bench_json}" >&2
+    write_result_exit_code=1
+  fi
+
   stop_service
   SERVICE_PID=""
   gpu_apps > "${out_dir}/gpu_compute_apps_after.txt" || true
@@ -409,7 +426,12 @@ run_one() {
     cat "${out_dir}/gpu_compute_apps_after.txt" >&2
     exit 1
   fi
-  [[ -f "${bench_json}" ]] || { echo "missing_bench_json=${bench_json}" >&2; exit 1; }
+  if [[ "${write_result_exit_code}" != "0" ]]; then
+    exit "${write_result_exit_code}"
+  fi
+  if [[ "${benchmark_exit_code}" != "0" ]]; then
+    exit "${benchmark_exit_code}"
+  fi
   echo "phase164_result_json=${out_dir}/phase164_result.json"
 }
 
