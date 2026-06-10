@@ -5,6 +5,11 @@ from .budget_candidate import (
     get_clean_budget_gap_candidate,
     load_clean_budget_gap_candidates,
 )
+from .budget_mechanism_candidate import (
+    VLLMBudgetMechanismCandidate,
+    get_budget_mechanism_candidate,
+    load_budget_mechanism_candidates,
+)
 from .datatypes import CBSimConfig, CBSimResult, Request, ScheduleResult
 from .forward_descriptor import (
     AttentionRuntimeShapeKey,
@@ -44,4 +49,7 @@ __all__ = [
     "get_clean_budget_gap_candidate",
     "clean_budget_gap_candidate_from_row",
     "VLLMCleanBudgetGapCandidate",
+    "load_budget_mechanism_candidates",
+    "get_budget_mechanism_candidate",
+    "VLLMBudgetMechanismCandidate",
 ]
