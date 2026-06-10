@@ -1,4 +1,10 @@
 """vLLM Continuous Batching Simulator."""
+from .budget_candidate import (
+    VLLMCleanBudgetGapCandidate,
+    clean_budget_gap_candidate_from_row,
+    get_clean_budget_gap_candidate,
+    load_clean_budget_gap_candidates,
+)
 from .datatypes import CBSimConfig, CBSimResult, Request, ScheduleResult
 from .forward_descriptor import (
     AttentionRuntimeShapeKey,
@@ -34,4 +40,8 @@ __all__ = [
     "VLLMSchedulerRuntimeDescriptor",
     "moe_source_runtime_key_from_loaded_weight_boundary_row",
     "vllm_like_scheduler_aligned_descriptors",
+    "load_clean_budget_gap_candidates",
+    "get_clean_budget_gap_candidate",
+    "clean_budget_gap_candidate_from_row",
+    "VLLMCleanBudgetGapCandidate",
 ]

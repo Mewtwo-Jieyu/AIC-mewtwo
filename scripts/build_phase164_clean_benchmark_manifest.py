@@ -262,7 +262,7 @@ def write_manifest(path: Path, rows: list[dict[str, str]]) -> None:
         raise ValueError("no manifest rows")
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
+        writer = csv.DictWriter(f, fieldnames=FIELDNAMES, lineterminator="\n")
         writer.writeheader()
         for row in rows:
             writer.writerow(row)
