@@ -10,6 +10,12 @@ from .budget_mechanism_candidate import (
     get_budget_mechanism_candidate,
     load_budget_mechanism_candidates,
 )
+from .holdout_budget_mechanism_candidate import (
+    VLLMHoldoutBudgetMechanismCandidate,
+    get_holdout_budget_mechanism_candidate,
+    holdout_budget_mechanism_candidate_from_row,
+    load_holdout_budget_mechanism_candidates,
+)
 from .datatypes import CBSimConfig, CBSimResult, Request, ScheduleResult
 from .forward_descriptor import (
     AttentionRuntimeShapeKey,
@@ -52,4 +58,8 @@ __all__ = [
     "load_budget_mechanism_candidates",
     "get_budget_mechanism_candidate",
     "VLLMBudgetMechanismCandidate",
+    "load_holdout_budget_mechanism_candidates",
+    "get_holdout_budget_mechanism_candidate",
+    "holdout_budget_mechanism_candidate_from_row",
+    "VLLMHoldoutBudgetMechanismCandidate",
 ]
