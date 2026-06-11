@@ -1,0 +1,2 @@
+source,evidence_rows,topology_count,shape_count_per_topology,max_clean_effect_spread,min_clean_effect,max_clean_effect,default_readiness,recommended_boundary,reason,diagnostic_only,valid_for_default,perf_database
+phase228_default_readiness_final,6,2,3,1.174770,0.987382,1.167497,No-Go,diagnostic_only_exact_key,no_default_due_to_shape_topology_spread,true,false,false
