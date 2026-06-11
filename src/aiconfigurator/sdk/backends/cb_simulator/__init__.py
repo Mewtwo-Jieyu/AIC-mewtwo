@@ -10,6 +10,12 @@ from .budget_mechanism_candidate import (
     get_budget_mechanism_candidate,
     load_budget_mechanism_candidates,
 )
+from .budget_penalty_mechanism_candidate import (
+    VLLMBudgetPenaltyMechanismCandidate,
+    budget_penalty_mechanism_candidate_from_row,
+    get_budget_penalty_mechanism_candidate,
+    load_budget_penalty_mechanism_candidates,
+)
 from .holdout_budget_mechanism_candidate import (
     VLLMHoldoutBudgetMechanismCandidate,
     get_holdout_budget_mechanism_candidate,
@@ -58,6 +64,10 @@ __all__ = [
     "load_budget_mechanism_candidates",
     "get_budget_mechanism_candidate",
     "VLLMBudgetMechanismCandidate",
+    "load_budget_penalty_mechanism_candidates",
+    "get_budget_penalty_mechanism_candidate",
+    "budget_penalty_mechanism_candidate_from_row",
+    "VLLMBudgetPenaltyMechanismCandidate",
     "load_holdout_budget_mechanism_candidates",
     "get_holdout_budget_mechanism_candidate",
     "holdout_budget_mechanism_candidate_from_row",
