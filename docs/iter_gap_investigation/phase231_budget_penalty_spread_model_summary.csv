@@ -1,0 +1,5 @@
+source,model_name,parameter_count,mean_abs_error,max_abs_error,max_relative_error,loocv_mean_abs_error,loocv_max_abs_error,best_in_sample_form,best_loocv_form,default_readiness,diagnostic_only,valid_for_default,perf_database
+phase231_budget_penalty_spread_model_summary,global_mean,1,0.063593,0.106103,0.090881,0.076312,0.127323,topology_plus_shape,global_mean,No-Go,true,false,false
+phase231_budget_penalty_spread_model_summary,topology_mean,2,0.051337,0.104355,0.105005,0.077005,0.156533,topology_plus_shape,global_mean,No-Go,true,false,false
+phase231_budget_penalty_spread_model_summary,shape_mean,3,0.063594,0.090058,0.091209,0.127187,0.180115,topology_plus_shape,global_mean,No-Go,true,false,false
+phase231_budget_penalty_spread_model_summary,topology_plus_shape,4,0.051337,0.077005,0.077485,0.127880,0.156791,topology_plus_shape,global_mean,No-Go,true,false,false

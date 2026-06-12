@@ -1,0 +1,7 @@
+source,topology_key,shape_key,control_bt,holdout_bt,clean_budget_effect,global_mean_prediction,topology_mean_prediction,shape_mean_prediction,topology_plus_shape_prediction,global_mean_abs_error,topology_mean_abs_error,shape_mean_abs_error,topology_plus_shape_abs_error,diagnostic_only,valid_for_default,perf_database
+phase231_budget_penalty_spread_model,tp8_dp1_ep8,isl4000_osl2000_batch128,4000,65536,1.012212,1.061394,1.024624,1.072699,1.035929,0.049182,0.012412,0.060488,0.023718,true,false,false
+phase231_budget_penalty_spread_model,tp8_dp1_ep8,isl8000_osl2000_batch128,8000,65536,0.987382,1.061394,1.024624,1.077440,1.040669,0.074012,0.037242,0.090058,0.053287,true,false,false
+phase231_budget_penalty_spread_model,tp8_dp1_ep8,isl12000_osl2000_batch128,12000,65536,1.074279,1.061394,1.024624,1.034044,0.997274,0.012885,0.049655,0.040235,0.077005,true,false,false
+phase231_budget_penalty_spread_model,tp4_dp2_ep8,isl4000_osl2000_batch128,4000,65536,1.133187,1.061394,1.098164,1.072699,1.109469,0.071793,0.035023,0.060488,0.023718,true,false,false
+phase231_budget_penalty_spread_model,tp4_dp2_ep8,isl8000_osl2000_batch128,8000,65536,1.167497,1.061394,1.098164,1.077440,1.114210,0.106103,0.069333,0.090057,0.053287,true,false,false
+phase231_budget_penalty_spread_model,tp4_dp2_ep8,isl12000_osl2000_batch128,12000,65536,0.993809,1.061394,1.098164,1.034044,1.070814,0.067585,0.104355,0.040235,0.077005,true,false,false
