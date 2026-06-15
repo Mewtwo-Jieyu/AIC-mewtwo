@@ -22,6 +22,12 @@ from .budget_penalty_evidence_family_candidate import (
     get_budget_penalty_evidence_family_candidate,
     load_budget_penalty_evidence_family_candidates,
 )
+from .actual_scheduled_token_family_candidate import (
+    VLLMActualScheduledTokenFamilyCandidate,
+    actual_scheduled_token_family_candidate_from_pair,
+    get_actual_scheduled_token_family_candidate,
+    load_actual_scheduled_token_family_candidates,
+)
 from .holdout_budget_mechanism_candidate import (
     VLLMHoldoutBudgetMechanismCandidate,
     get_holdout_budget_mechanism_candidate,
@@ -78,6 +84,10 @@ __all__ = [
     "get_budget_penalty_evidence_family_candidate",
     "budget_penalty_evidence_family_candidate_from_row",
     "VLLMBudgetPenaltyEvidenceFamilyCandidate",
+    "load_actual_scheduled_token_family_candidates",
+    "get_actual_scheduled_token_family_candidate",
+    "actual_scheduled_token_family_candidate_from_pair",
+    "VLLMActualScheduledTokenFamilyCandidate",
     "load_holdout_budget_mechanism_candidates",
     "get_holdout_budget_mechanism_candidate",
     "holdout_budget_mechanism_candidate_from_row",
