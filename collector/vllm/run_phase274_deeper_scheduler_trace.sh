@@ -37,6 +37,8 @@ RUNNER_BACKUP_PATH=""
 SCENARIOS=(
   tp8ep8-12k2k-bt12000
   tp8ep8-12k2k-bt65536
+  tp4dp2ep8-12k2k-bt12000
+  tp4dp2ep8-12k2k-bt65536
 )
 
 RAW_TRACE_SCHEMA=(
@@ -88,6 +90,8 @@ Usage:
 Scenarios:
   tp8ep8-12k2k-bt12000
   tp8ep8-12k2k-bt65536
+  tp4dp2ep8-12k2k-bt12000
+  tp4dp2ep8-12k2k-bt65536
 EOF
 }
 
@@ -100,18 +104,26 @@ scenario_index() {
   case "$1" in
     tp8ep8-12k2k-bt12000) echo 0 ;;
     tp8ep8-12k2k-bt65536) echo 1 ;;
+    tp4dp2ep8-12k2k-bt12000) echo 2 ;;
+    tp4dp2ep8-12k2k-bt65536) echo 3 ;;
     *) echo "unknown_scenario=$1" >&2; exit 2 ;;
   esac
 }
 
 scenario_tp() {
-  scenario_index "$1" >/dev/null
-  echo 8
+  case "$1" in
+    tp8ep8-*) echo 8 ;;
+    tp4dp2ep8-*) echo 4 ;;
+    *) echo "unknown_scenario=$1" >&2; exit 2 ;;
+  esac
 }
 
 scenario_dp() {
-  scenario_index "$1" >/dev/null
-  echo 1
+  case "$1" in
+    tp8ep8-*) echo 1 ;;
+    tp4dp2ep8-*) echo 2 ;;
+    *) echo "unknown_scenario=$1" >&2; exit 2 ;;
+  esac
 }
 
 scenario_ep() {
@@ -128,13 +140,18 @@ scenario_max_bt() {
   case "$1" in
     tp8ep8-12k2k-bt12000) echo 12000 ;;
     tp8ep8-12k2k-bt65536) echo 65536 ;;
+    tp4dp2ep8-12k2k-bt12000) echo 12000 ;;
+    tp4dp2ep8-12k2k-bt65536) echo 65536 ;;
     *) echo "unknown_scenario=$1" >&2; exit 2 ;;
   esac
 }
 
 scenario_topology_key() {
-  scenario_index "$1" >/dev/null
-  echo tp8_dp1_ep8
+  case "$1" in
+    tp8ep8-*) echo tp8_dp1_ep8 ;;
+    tp4dp2ep8-*) echo tp4_dp2_ep8 ;;
+    *) echo "unknown_scenario=$1" >&2; exit 2 ;;
+  esac
 }
 
 scenario_shape_key() {
@@ -234,9 +251,10 @@ PY
 
 build_serve_cmd() {
   local scenario="$1"
-  local max_bt port
+  local max_bt port dp
   max_bt="$(scenario_max_bt "${scenario}")"
   port="$(scenario_port "${scenario}")"
+  dp="$(scenario_dp "${scenario}")"
   SERVE_CMD=(
     env
     AIC_PHASE274_DEEPER_TRACE_LOG=1
@@ -265,6 +283,9 @@ build_serve_cmd() {
     --reasoning-parser kimi_k2
     --enable-logging-iteration-details
   )
+  if [[ "${dp}" != "1" ]]; then
+    SERVE_CMD+=(--data-parallel-size "${dp}")
+  fi
 }
 
 build_benchmark_cmd() {
@@ -658,7 +679,7 @@ write_result_json() {
   python3 - <<'PY'
 import json
 import os
-from collections import Counter
+from collections import Counter, defaultdict
 from pathlib import Path
 
 bench = json.loads(Path(os.environ["PHASE274_BENCH_JSON"]).read_text(encoding="utf-8"))
@@ -783,14 +804,130 @@ for row_index, row in enumerate(trace_rows):
     if row["iteration_end_ns"] < row["iteration_start_ns"]:
         raise SystemExit(f"trace_row_timing_order_mismatch=row_{row_index}:iteration")
 
-iterations = [int(row["iteration"]) for row in trace_rows]
-mixed_iterations = [int(row["iteration"]) for row in trace_rows if row["phase"] == "mixed"]
-pure_iterations = [int(row["iteration"]) for row in trace_rows if row["phase"] == "pure_decode"]
+tp = int(os.environ["PHASE274_TP"])
+dp = int(os.environ["PHASE274_DP"])
+worker_rows_per_iteration = tp * dp
+timing_fields = {
+    "iteration_start_ns",
+    "forward_start_ns",
+    "forward_end_ns",
+    "iteration_end_ns",
+    "iteration_elapsed_ns",
+    "forward_elapsed_ns",
+}
+payload_signature_fields = tuple(sorted(required_fields - timing_fields))
+rows_by_iteration = defaultdict(list)
+for row in trace_rows:
+    rows_by_iteration[int(row["iteration"])].append(row)
+
+iterations = sorted(rows_by_iteration)
+if iterations != list(range(iterations[0], iterations[-1] + 1)):
+    raise SystemExit("trace_iteration_gap_mismatch=true")
+if iterations[0] != 0:
+    raise SystemExit("trace_iteration_start_mismatch=true")
+
+
+def _payload_signature(row: dict) -> tuple:
+    return tuple(row[field] for field in payload_signature_fields)
+
+
+aggregated_iterations = []
+for iteration in iterations:
+    worker_rows = rows_by_iteration[iteration]
+    if len(worker_rows) != worker_rows_per_iteration:
+        raise SystemExit(
+            f"trace_iteration_worker_count_mismatch=iteration_{iteration}:"
+            f"actual={len(worker_rows)} expected={worker_rows_per_iteration}"
+        )
+    payloads = {}
+    for row in worker_rows:
+        signature = _payload_signature(row)
+        if signature not in payloads:
+            payloads[signature] = {"row": row, "count": 0}
+        payloads[signature]["count"] += 1
+
+    if dp == 1 and len(payloads) != 1:
+        raise SystemExit(
+            f"trace_iteration_payload_count_mismatch=iteration_{iteration}:"
+            f"actual={len(payloads)} expected=1"
+        )
+    if dp > 1 and len(payloads) > dp:
+        raise SystemExit(
+            f"trace_iteration_payload_count_mismatch=iteration_{iteration}:"
+            f"actual={len(payloads)} max={dp}"
+        )
+
+    rank_sum_context_tokens = 0
+    rank_sum_decode_tokens = 0
+    rank_sum_total_tokens = 0
+    rank_sum_context_reqs = 0
+    rank_sum_decode_reqs = 0
+    rank_sum_total_reqs = 0
+    rank_sum_forward_tokens = 0
+    payload_rank_count = 0
+    for payload in payloads.values():
+        count = int(payload["count"])
+        if count % tp != 0:
+            raise SystemExit(
+                f"trace_iteration_payload_worker_count_mismatch=iteration_{iteration}:"
+                f"count={count} tp={tp}"
+            )
+        rank_count = count // tp
+        payload_rank_count += rank_count
+        row = payload["row"]
+        rank_sum_context_tokens += int(row["scheduled_context_tokens"]) * rank_count
+        rank_sum_decode_tokens += int(row["scheduled_decode_tokens"]) * rank_count
+        rank_sum_total_tokens += int(row["scheduled_total_tokens"]) * rank_count
+        rank_sum_context_reqs += int(row["scheduled_context_reqs"]) * rank_count
+        rank_sum_decode_reqs += int(row["scheduled_decode_reqs"]) * rank_count
+        rank_sum_total_reqs += int(row["scheduled_total_reqs"]) * rank_count
+        rank_sum_forward_tokens += int(row["forward_token_count"]) * rank_count
+    if payload_rank_count != dp:
+        raise SystemExit(
+            f"trace_iteration_payload_rank_count_mismatch=iteration_{iteration}:"
+            f"actual={payload_rank_count} expected={dp}"
+        )
+
+    if rank_sum_context_reqs and rank_sum_decode_reqs:
+        phase = "mixed"
+    elif rank_sum_context_reqs:
+        phase = "prefill"
+    elif rank_sum_decode_reqs:
+        phase = "pure_decode"
+    else:
+        phase = "idle"
+    if phase == "idle":
+        raise SystemExit(f"trace_iteration_idle_mismatch=iteration_{iteration}")
+
+    aggregated_iterations.append(
+        {
+            "iteration": iteration,
+            "phase": phase,
+            "payload_count": len(payloads),
+            "rank_sum_context_tokens": rank_sum_context_tokens,
+            "rank_sum_decode_tokens": rank_sum_decode_tokens,
+            "rank_sum_total_tokens": rank_sum_total_tokens,
+            "rank_sum_forward_tokens": rank_sum_forward_tokens,
+            "rank_max_forward_elapsed_ns": max(int(row["forward_elapsed_ns"]) for row in worker_rows),
+            "rank_max_iteration_elapsed_ns": max(int(row["iteration_elapsed_ns"]) for row in worker_rows),
+            "rank_max_overhead_ns": max(
+                int(row["iteration_elapsed_ns"]) - int(row["forward_elapsed_ns"])
+                for row in worker_rows
+            ),
+        }
+    )
+
+mixed_iterations = [
+    item["iteration"] for item in aggregated_iterations if item["phase"] == "mixed"
+]
+pure_iterations = [
+    item["iteration"] for item in aggregated_iterations if item["phase"] == "pure_decode"
+]
 tail_decode_tokens = [
-    int(row["scheduled_decode_tokens"])
-    for row in sorted(
-        (row for row in trace_rows if row["phase"] == "pure_decode"),
-        key=lambda item: int(item["iteration"]),
+    item["rank_sum_decode_tokens"]
+    for item in sorted(
+        (item for item in aggregated_iterations if item["phase"] == "pure_decode"),
+        key=lambda item: item["iteration"],
     )[-5:]
 ]
 payload = {
@@ -807,15 +944,37 @@ payload = {
         "max_num_seqs": int(os.environ["PHASE274_MAX_NUM_SEQS"]),
     },
     "parallelism": {
-        "tp": int(os.environ["PHASE274_TP"]),
-        "dp": int(os.environ["PHASE274_DP"]),
+        "tp": tp,
+        "dp": dp,
         "ep": int(os.environ["PHASE274_EP"]),
     },
     "scheduler_trace": {
         "trace_rows": len(trace_rows),
-        "phase_counts": dict(Counter(row["phase"] for row in trace_rows)),
-        "max_scheduled_total_tokens": max(int(row["scheduled_total_tokens"]) for row in trace_rows),
-        "max_forward_token_count": max(int(row["forward_token_count"]) for row in trace_rows),
+        "unique_iterations": len(aggregated_iterations),
+        "worker_rows_per_iteration": worker_rows_per_iteration,
+        "max_payloads_per_iteration": max(item["payload_count"] for item in aggregated_iterations),
+        "phase_counts": dict(Counter(item["phase"] for item in aggregated_iterations)),
+        "max_scheduled_total_tokens": max(
+            int(item["rank_sum_total_tokens"]) for item in aggregated_iterations
+        ),
+        "max_forward_token_count": max(
+            int(item["rank_sum_forward_tokens"]) for item in aggregated_iterations
+        ),
+        "rank_sum_max_scheduled_total_tokens": max(
+            int(item["rank_sum_total_tokens"]) for item in aggregated_iterations
+        ),
+        "rank_sum_max_forward_token_count": max(
+            int(item["rank_sum_forward_tokens"]) for item in aggregated_iterations
+        ),
+        "rank_max_forward_elapsed_ns": max(
+            int(item["rank_max_forward_elapsed_ns"]) for item in aggregated_iterations
+        ),
+        "rank_max_iteration_elapsed_ns": max(
+            int(item["rank_max_iteration_elapsed_ns"]) for item in aggregated_iterations
+        ),
+        "rank_max_overhead_ns": max(
+            int(item["rank_max_overhead_ns"]) for item in aggregated_iterations
+        ),
     },
     "boundary_timeline": {
         "first_iteration": min(iterations),

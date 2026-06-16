@@ -5,6 +5,8 @@ import os
 import subprocess
 from pathlib import Path
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 RUNNER = REPO_ROOT / "collector" / "vllm" / "run_phase274_deeper_scheduler_trace.sh"
@@ -12,6 +14,8 @@ RUNNER = REPO_ROOT / "collector" / "vllm" / "run_phase274_deeper_scheduler_trace
 EXPECTED_SCENARIOS = {
     "tp8ep8-12k2k-bt12000",
     "tp8ep8-12k2k-bt65536",
+    "tp4dp2ep8-12k2k-bt12000",
+    "tp4dp2ep8-12k2k-bt65536",
 }
 
 RAW_TRACE_FIELDS = {
@@ -215,12 +219,12 @@ def test_patch_source_accepts_h_current_model_forward_anchor(tmp_path: Path) -> 
     assert not Path(f"{source}.phase274.bak").exists()
 
 
-def test_preflight_prints_two_tp8_12k2k_scenarios_and_raw_schema() -> None:
+def test_preflight_prints_four_12k2k_scenarios_and_raw_schema() -> None:
     result = _run_runner("preflight")
 
     assert result.returncode == 0, result.stderr
     assert "phase274_mode=preflight" in result.stdout
-    assert "scenario_count=2" in result.stdout
+    assert "scenario_count=4" in result.stdout
     assert "gpu_benchmark_started=false" in result.stdout
     scenario_lines = [
         line.removeprefix("scenario=")
@@ -228,8 +232,8 @@ def test_preflight_prints_two_tp8_12k2k_scenarios_and_raw_schema() -> None:
         if line.startswith("scenario=")
     ]
     assert set(scenario_lines) == EXPECTED_SCENARIOS
-    assert result.stdout.count("serve_command=") == 2
-    assert result.stdout.count("benchmark_command=") == 2
+    assert result.stdout.count("serve_command=") == 4
+    assert result.stdout.count("benchmark_command=") == 4
     schema_line = next(
         line for line in result.stdout.splitlines() if line.startswith("raw_trace_schema=")
     )
@@ -238,11 +242,35 @@ def test_preflight_prints_two_tp8_12k2k_scenarios_and_raw_schema() -> None:
     assert "result_derived_fields=boundary_timeline,mixed_sequence,tail_decode_tokens" in result.stdout
 
 
+@pytest.mark.parametrize(
+    ("scenario", "topology_key", "max_bt"),
+    [
+        ("tp4dp2ep8-12k2k-bt12000", "tp4_dp2_ep8", 12000),
+        ("tp4dp2ep8-12k2k-bt65536", "tp4_dp2_ep8", 65536),
+    ],
+)
+def test_preflight_prints_tp4dp2_12k2k_scenarios(
+    scenario: str,
+    topology_key: str,
+    max_bt: int,
+) -> None:
+    result = _run_runner("preflight", scenario)
+
+    assert result.returncode == 0, result.stderr
+    assert "scenario_count=1" in result.stdout
+    assert f"scenario={scenario}" in result.stdout
+    assert f"topology_key={topology_key}" in result.stdout
+    assert "tp=4 dp=2 ep=8" in result.stdout
+    assert f"max_num_batched_tokens={max_bt}" in result.stdout
+    assert "--data-parallel-size 2" in result.stdout
+    assert "gpu_benchmark_started=false" in result.stdout
+
+
 def test_unknown_scenario_fails_fast() -> None:
-    result = _run_runner("preflight", "tp4dp2ep8-12k2k-bt65536")
+    result = _run_runner("preflight", "tp8ep8-8k2k-bt65536")
 
     assert result.returncode == 2
-    assert "unknown_scenario=tp4dp2ep8-12k2k-bt65536" in result.stderr
+    assert "unknown_scenario=tp8ep8-8k2k-bt65536" in result.stderr
 
 
 def test_run_one_requires_explicit_gpu_authorization() -> None:
@@ -252,14 +280,23 @@ def test_run_one_requires_explicit_gpu_authorization() -> None:
     assert "phase274_allow_gpu_run_required=true" in result.stderr
 
 
-def _valid_trace_row(iteration: int = 0, phase: str = "mixed") -> dict[str, object]:
+def _valid_trace_row(
+    iteration: int = 0,
+    phase: str = "mixed",
+    *,
+    scenario: str = "tp8ep8-12k2k-bt12000",
+    tp: int = 8,
+    dp: int = 1,
+    max_bt: int = 12000,
+    topology_key: str = "tp8_dp1_ep8",
+) -> dict[str, object]:
     context_tokens = 12000 if phase in {"prefill", "mixed"} else 0
     decode_tokens = 128 if phase in {"mixed", "pure_decode"} else 0
     context_reqs = 1 if context_tokens else 0
     decode_reqs = 128 if decode_tokens else 0
     return {
         "source": "phase274_deeper_scheduler_trace",
-        "scenario": "tp8ep8-12k2k-bt12000",
+        "scenario": scenario,
         "iteration": iteration,
         "phase": phase,
         "scheduled_context_tokens": context_tokens,
@@ -268,13 +305,13 @@ def _valid_trace_row(iteration: int = 0, phase: str = "mixed") -> dict[str, obje
         "scheduled_context_reqs": context_reqs,
         "scheduled_decode_reqs": decode_reqs,
         "scheduled_total_reqs": context_reqs + decode_reqs,
-        "max_num_batched_tokens": 12000,
+        "max_num_batched_tokens": max_bt,
         "max_num_seqs": 256,
         "forward_token_count": context_tokens + decode_tokens,
-        "tp": 8,
-        "dp": 1,
+        "tp": tp,
+        "dp": dp,
         "ep": 8,
-        "topology_key": "tp8_dp1_ep8",
+        "topology_key": topology_key,
         "shape_key": "isl12000_osl2000_batch128",
         "iteration_start_ns": iteration * 1000,
         "forward_start_ns": iteration * 1000 + 100,
@@ -291,6 +328,75 @@ def _valid_trace_row(iteration: int = 0, phase: str = "mixed") -> dict[str, obje
         "valid_for_default": False,
         "perf_database": False,
     }
+
+
+def _worker_rows(row: dict[str, object], count: int) -> list[dict[str, object]]:
+    rows = []
+    for worker in range(count):
+        worker_row = dict(row)
+        worker_row["iteration_start_ns"] = int(worker_row["iteration_start_ns"]) + worker
+        worker_row["forward_start_ns"] = int(worker_row["forward_start_ns"]) + worker
+        worker_row["forward_end_ns"] = int(worker_row["forward_end_ns"]) + worker
+        worker_row["iteration_end_ns"] = int(worker_row["iteration_end_ns"]) + worker
+        worker_row["forward_elapsed_ns"] = int(worker_row["forward_elapsed_ns"]) + worker
+        worker_row["iteration_elapsed_ns"] = int(worker_row["iteration_elapsed_ns"]) + worker
+        rows.append(worker_row)
+    return rows
+
+
+def _tp8_iteration_rows(iteration: int, phase: str) -> list[dict[str, object]]:
+    return _worker_rows(_valid_trace_row(iteration, phase), 8)
+
+
+def _dp2_payload_row(
+    iteration: int,
+    phase: str,
+    *,
+    context_tokens: int,
+    decode_tokens: int,
+) -> dict[str, object]:
+    row = _valid_trace_row(
+        iteration,
+        phase,
+        scenario="tp4dp2ep8-12k2k-bt12000",
+        tp=4,
+        dp=2,
+        max_bt=12000,
+        topology_key="tp4_dp2_ep8",
+    )
+    context_reqs = 1 if context_tokens else 0
+    decode_reqs = 64 if decode_tokens else 0
+    row["scheduled_context_tokens"] = context_tokens
+    row["scheduled_decode_tokens"] = decode_tokens
+    row["scheduled_total_tokens"] = context_tokens + decode_tokens
+    row["scheduled_context_reqs"] = context_reqs
+    row["scheduled_decode_reqs"] = decode_reqs
+    row["scheduled_total_reqs"] = context_reqs + decode_reqs
+    row["forward_token_count"] = context_tokens + decode_tokens
+    row["scheduled_new_req_count"] = context_reqs
+    row["scheduled_cached_req_count"] = decode_reqs
+    return row
+
+
+def _tp4dp2_iteration_rows(
+    iteration: int,
+    phase: str,
+    payloads: list[tuple[int, int]],
+) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for context_tokens, decode_tokens in payloads:
+        rows.extend(
+            _worker_rows(
+                _dp2_payload_row(
+                    iteration,
+                    phase,
+                    context_tokens=context_tokens,
+                    decode_tokens=decode_tokens,
+                ),
+                4,
+            )
+        )
+    return rows
 
 
 def _write_synthetic_artifacts(tmp_path: Path, rows: list[dict[str, object]]) -> None:
@@ -310,7 +416,10 @@ def _write_synthetic_artifacts(tmp_path: Path, rows: list[dict[str, object]]) ->
     )
 
 
-def _run_trace_guard(tmp_path: Path) -> subprocess.CompletedProcess[str]:
+def _run_trace_guard(
+    tmp_path: Path,
+    scenario: str = "tp8ep8-12k2k-bt12000",
+) -> subprocess.CompletedProcess[str]:
     env = dict(os.environ)
     env.update(
         {
@@ -319,15 +428,15 @@ def _run_trace_guard(tmp_path: Path) -> subprocess.CompletedProcess[str]:
             "PHASE274_TEST_OUT_JSON": str(tmp_path / "phase274_result.json"),
         }
     )
-    return _run_runner("__test-validate-trace", "tp8ep8-12k2k-bt12000", env=env)
+    return _run_runner("__test-validate-trace", scenario, env=env)
 
 
 def test_trace_guard_accepts_complete_synthetic_trace(tmp_path: Path) -> None:
     rows = [
-        _valid_trace_row(0, "prefill"),
-        _valid_trace_row(1, "mixed"),
-        _valid_trace_row(2, "pure_decode"),
-        _valid_trace_row(3, "pure_decode"),
+        *_tp8_iteration_rows(0, "prefill"),
+        *_tp8_iteration_rows(1, "mixed"),
+        *_tp8_iteration_rows(2, "pure_decode"),
+        *_tp8_iteration_rows(3, "pure_decode"),
     ]
     _write_synthetic_artifacts(tmp_path, rows)
 
@@ -336,7 +445,9 @@ def test_trace_guard_accepts_complete_synthetic_trace(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     assert "phase274_trace_guard=PASS" in result.stdout
     payload = json.loads((tmp_path / "phase274_result.json").read_text(encoding="utf-8"))
-    assert payload["scheduler_trace"]["trace_rows"] == 4
+    assert payload["scheduler_trace"]["trace_rows"] == 32
+    assert payload["scheduler_trace"]["unique_iterations"] == 4
+    assert payload["scheduler_trace"]["max_payloads_per_iteration"] == 1
     assert payload["boundary_timeline"]["mixed_iterations"] == [1]
     assert payload["boundary_timeline"]["first_pure_decode_iteration"] == 2
     assert payload["boundary_timeline"]["tail_decode_tokens"] == [128, 128]
@@ -346,9 +457,9 @@ def test_trace_guard_accepts_complete_synthetic_trace(tmp_path: Path) -> None:
 
 
 def test_trace_guard_rejects_token_sum_tamper(tmp_path: Path) -> None:
-    row = _valid_trace_row()
-    row["scheduled_total_tokens"] = 9999
-    _write_synthetic_artifacts(tmp_path, [row])
+    rows = _tp8_iteration_rows(0, "mixed")
+    rows[0]["scheduled_total_tokens"] = 9999
+    _write_synthetic_artifacts(tmp_path, rows)
 
     result = _run_trace_guard(tmp_path)
 
@@ -357,9 +468,9 @@ def test_trace_guard_rejects_token_sum_tamper(tmp_path: Path) -> None:
 
 
 def test_trace_guard_rejects_negative_timing(tmp_path: Path) -> None:
-    row = _valid_trace_row()
-    row["forward_elapsed_ns"] = -1
-    _write_synthetic_artifacts(tmp_path, [row])
+    rows = _tp8_iteration_rows(0, "mixed")
+    rows[0]["forward_elapsed_ns"] = -1
+    _write_synthetic_artifacts(tmp_path, rows)
 
     result = _run_trace_guard(tmp_path)
 
@@ -368,9 +479,9 @@ def test_trace_guard_rejects_negative_timing(tmp_path: Path) -> None:
 
 
 def test_trace_guard_rejects_negative_queue_count(tmp_path: Path) -> None:
-    row = _valid_trace_row()
-    row["scheduled_cached_req_count"] = -1
-    _write_synthetic_artifacts(tmp_path, [row])
+    rows = _tp8_iteration_rows(0, "mixed")
+    rows[0]["scheduled_cached_req_count"] = -1
+    _write_synthetic_artifacts(tmp_path, rows)
 
     result = _run_trace_guard(tmp_path)
 
@@ -379,11 +490,57 @@ def test_trace_guard_rejects_negative_queue_count(tmp_path: Path) -> None:
 
 
 def test_trace_guard_rejects_flag_tamper(tmp_path: Path) -> None:
-    row = _valid_trace_row()
-    row["valid_for_default"] = True
-    _write_synthetic_artifacts(tmp_path, [row])
+    rows = _tp8_iteration_rows(0, "mixed")
+    rows[0]["valid_for_default"] = True
+    _write_synthetic_artifacts(tmp_path, rows)
 
     result = _run_trace_guard(tmp_path)
 
     assert result.returncode == 1
     assert "trace_row_flag_mismatch" in result.stderr
+
+
+def test_dp2_trace_guard_accepts_two_payloads_and_rank_sum_aggregation(
+    tmp_path: Path,
+) -> None:
+    rows = [
+        *_tp4dp2_iteration_rows(0, "prefill", [(7000, 0), (5000, 0)]),
+        *_tp4dp2_iteration_rows(1, "mixed", [(6000, 32), (4000, 96)]),
+        *_tp4dp2_iteration_rows(2, "pure_decode", [(0, 64), (0, 64)]),
+    ]
+    _write_synthetic_artifacts(tmp_path, rows)
+
+    result = _run_trace_guard(tmp_path, "tp4dp2ep8-12k2k-bt12000")
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads((tmp_path / "phase274_result.json").read_text(encoding="utf-8"))
+    assert payload["parallelism"] == {"tp": 4, "dp": 2, "ep": 8}
+    assert payload["scheduler_trace"]["trace_rows"] == 24
+    assert payload["scheduler_trace"]["unique_iterations"] == 3
+    assert payload["scheduler_trace"]["max_payloads_per_iteration"] == 2
+    assert payload["scheduler_trace"]["max_scheduled_total_tokens"] == 12000
+    assert payload["scheduler_trace"]["max_forward_token_count"] == 12000
+    assert payload["boundary_timeline"]["mixed_iterations"] == [1]
+    assert payload["boundary_timeline"]["tail_decode_tokens"] == [128]
+
+
+def test_dp2_trace_guard_rejects_three_payloads(tmp_path: Path) -> None:
+    payload_a = _worker_rows(
+        _dp2_payload_row(0, "mixed", context_tokens=6000, decode_tokens=32),
+        3,
+    )
+    payload_b = _worker_rows(
+        _dp2_payload_row(0, "mixed", context_tokens=4000, decode_tokens=96),
+        3,
+    )
+    payload_c = _worker_rows(
+        _dp2_payload_row(0, "mixed", context_tokens=1000, decode_tokens=16),
+        2,
+    )
+    rows = [*payload_a, *payload_b, *payload_c]
+    _write_synthetic_artifacts(tmp_path, rows)
+
+    result = _run_trace_guard(tmp_path, "tp4dp2ep8-12k2k-bt12000")
+
+    assert result.returncode == 1
+    assert "trace_iteration_payload_count_mismatch" in result.stderr
