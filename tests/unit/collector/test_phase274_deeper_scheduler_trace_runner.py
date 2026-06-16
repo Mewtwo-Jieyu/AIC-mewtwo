@@ -104,6 +104,49 @@ def _write_fake_vllm_source(tmp_path: Path) -> None:
     )
 
 
+def _write_h_style_patchable_vllm_source(tmp_path: Path) -> Path:
+    source = tmp_path / "gpu_model_runner.py"
+    source.write_text(
+        "\n".join(
+            [
+                "import functools",
+                "from vllm.v1.worker.utils import is_residual_scattered_for_sp",
+                "",
+                "def execute_model(self):",
+                "        num_scheduled_tokens = scheduler_output.total_num_scheduled_tokens",
+                "        with (",
+                "            context_manager(),",
+                "        ):",
+                "            pass",
+                "",
+                "            num_tokens_padded = batch_desc.num_tokens",
+                "            num_reqs_padded = (",
+                "                batch_desc.num_reqs if batch_desc.num_reqs is not None else num_reqs",
+                "            )",
+                "            ubatch_slices, ubatch_slices_padded = maybe_create_ubatch_slices(",
+                "                batch_desc,",
+                "            )",
+                "",
+                "            model_output = self._model_forward(",
+                "                input_ids=input_ids,",
+                "                positions=positions,",
+                "                intermediate_tensors=intermediate_tensors,",
+                "                inputs_embeds=inputs_embeds,",
+                "                **model_kwargs,",
+                "            )",
+                "",
+                "        if deferred_state_corrections_fn:",
+                "            deferred_state_corrections_fn()",
+                "",
+                "        return None",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return source
+
+
 def test_runner_is_valid_bash() -> None:
     result = subprocess.run(
         ["bash", "-n", str(RUNNER)],
@@ -145,6 +188,31 @@ def test_runner_uses_real_cached_request_data_fields() -> None:
     assert "scheduler_output.scheduled_cached_reqs.resumed_req_ids" in text
     assert "len(scheduler_output.scheduled_cached_reqs)" not in text
     assert "scheduler_output.scheduled_resumed_reqs" not in text
+
+
+def test_runner_uses_h_current_forward_end_anchor() -> None:
+    text = RUNNER.read_text(encoding="utf-8")
+
+    assert '"                inputs_embeds=inputs_embeds,\\n"' in text
+    assert '"                **model_kwargs,\\n"' in text
+    assert (
+        '"                intermediate_tensors=intermediate_tensors,\\n"\n'
+        '    "            )\\n"'
+    ) not in text
+
+
+def test_patch_source_accepts_h_current_model_forward_anchor(tmp_path: Path) -> None:
+    source = _write_h_style_patchable_vllm_source(tmp_path)
+    env = dict(os.environ)
+    env["PHASE274_GPU_MODEL_RUNNER_PATH"] = str(source)
+
+    result = _run_runner("__test-patch-source", env=env)
+
+    assert result.returncode == 0, result.stderr
+    assert "phase274_patch_source=PASS" in result.stdout
+    restored = source.read_text(encoding="utf-8")
+    assert "AIC_PHASE274_DEEPER_TRACE_ROW" not in restored
+    assert not Path(f"{source}.phase274.bak").exists()
 
 
 def test_preflight_prints_two_tp8_12k2k_scenarios_and_raw_schema() -> None:
