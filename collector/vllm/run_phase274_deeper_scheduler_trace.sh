@@ -82,6 +82,7 @@ Usage:
   run_phase274_deeper_scheduler_trace.sh run-one <scenario>
   run_phase274_deeper_scheduler_trace.sh cleanup
   run_phase274_deeper_scheduler_trace.sh __test-validate-trace <scenario>
+  run_phase274_deeper_scheduler_trace.sh __test-patch-source
   run_phase274_deeper_scheduler_trace.sh help
 
 Scenarios:
@@ -439,10 +440,14 @@ text = replace_once(text, old, new)
 
 old = (
     "                intermediate_tensors=intermediate_tensors,\n"
+    "                inputs_embeds=inputs_embeds,\n"
+    "                **model_kwargs,\n"
     "            )\n"
 )
 new = (
     "                intermediate_tensors=intermediate_tensors,\n"
+    "                inputs_embeds=inputs_embeds,\n"
+    "                **model_kwargs,\n"
     "            )\n"
     "            aic_phase274_forward_end_ns = time.perf_counter_ns()\n"
 )
@@ -933,6 +938,26 @@ run_test_validate_trace() {
   echo "phase274_trace_guard=PASS"
 }
 
+run_test_patch_source() {
+  [[ -n "${PHASE274_GPU_MODEL_RUNNER_PATH:-}" ]] || {
+    echo "missing_phase274_gpu_model_runner_path=true" >&2
+    exit 2
+  }
+  trap restore_source EXIT
+  patch_source
+  grep -q "AIC_PHASE274_DEEPER_TRACE_ROW" "${RUNNER_PATH}" || {
+    echo "missing_phase274_trace_marker_after_patch=true" >&2
+    exit 1
+  }
+  grep -q "aic_phase274_forward_end_ns = time.perf_counter_ns()" "${RUNNER_PATH}" || {
+    echo "missing_phase274_forward_end_timing_after_patch=true" >&2
+    exit 1
+  }
+  restore_source
+  trap - EXIT
+  echo "phase274_patch_source=PASS"
+}
+
 case "${MODE}" in
   source-check)
     run_source_check
@@ -948,6 +973,9 @@ case "${MODE}" in
     ;;
   __test-validate-trace)
     run_test_validate_trace "${SCENARIO}"
+    ;;
+  __test-patch-source)
+    run_test_patch_source
     ;;
   -h|--help|help)
     usage
