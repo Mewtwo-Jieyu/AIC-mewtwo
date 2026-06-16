@@ -280,6 +280,110 @@ def test_run_one_requires_explicit_gpu_authorization() -> None:
     assert "phase274_allow_gpu_run_required=true" in result.stderr
 
 
+def _write_fake_ray_logs(ray_root: Path) -> None:
+    logs = ray_root / "session_2026" / "logs"
+    logs.mkdir(parents=True)
+    (logs / "raylet.err").write_text(
+        "\n".join(f"raylet err line {index}" for index in range(5)),
+        encoding="utf-8",
+    )
+    (logs / "worker.out").write_text(
+        "\n".join(f"worker out line {index}" for index in range(5)),
+        encoding="utf-8",
+    )
+
+
+def test_startup_diagnostics_writes_failure_artifacts(tmp_path: Path) -> None:
+    out_dir = tmp_path / "case"
+    ray_root = tmp_path / "ray"
+    _write_fake_ray_logs(ray_root)
+    env = dict(os.environ)
+    env.update(
+        {
+            "PHASE274_TEST_OUT_DIR": str(out_dir),
+            "PHASE274_TEST_RAY_ROOT": str(ray_root),
+            "WORKDIR": str(tmp_path),
+        }
+    )
+
+    result = _run_runner(
+        "__test-capture-startup-diagnostics",
+        "tp8ep8-12k2k-bt12000",
+        env=env,
+    )
+
+    assert result.returncode == 0, result.stderr
+    expected_files = {
+        "startup_failure_summary.txt",
+        "startup_process_snapshot.txt",
+        "startup_gpu_compute_apps.txt",
+        "startup_nvidia_smi.txt",
+        "startup_ray_logs_tail.txt",
+        "startup_serve_tail.txt",
+        "startup_ready_tail.txt",
+    }
+    assert expected_files <= {path.name for path in out_dir.iterdir()}
+    summary = (out_dir / "startup_failure_summary.txt").read_text(encoding="utf-8")
+    assert "scenario=tp8ep8-12k2k-bt12000" in summary
+    assert "reason=test_startup_failure" in summary
+    assert f"workdir={tmp_path}" in summary
+    assert "service_pid=" in summary
+    assert "port=18500" in summary
+    assert "runner_path=" in summary
+    ray_tail = (out_dir / "startup_ray_logs_tail.txt").read_text(encoding="utf-8")
+    assert "ray_logs_found=2" in ray_tail
+    assert "worker out line 4" in ray_tail
+    assert "phase274_startup_diagnostics=PASS" in result.stdout
+
+
+def test_startup_diagnostics_handles_missing_ray_logs(tmp_path: Path) -> None:
+    out_dir = tmp_path / "case"
+    env = dict(os.environ)
+    env.update(
+        {
+            "PHASE274_TEST_OUT_DIR": str(out_dir),
+            "PHASE274_TEST_RAY_ROOT": str(tmp_path / "missing-ray"),
+            "WORKDIR": str(tmp_path),
+        }
+    )
+
+    result = _run_runner(
+        "__test-capture-startup-diagnostics",
+        "tp8ep8-12k2k-bt65536",
+        env=env,
+    )
+
+    assert result.returncode == 0, result.stderr
+    ray_tail = (out_dir / "startup_ray_logs_tail.txt").read_text(encoding="utf-8")
+    assert "ray_logs_found=0" in ray_tail
+
+
+def test_wait_for_service_failure_path_references_startup_diagnostics() -> None:
+    text = RUNNER.read_text(encoding="utf-8")
+
+    assert (
+        'capture_startup_diagnostics "${out_dir}" "${scenario}" '
+        '"service_exited_before_ready"'
+    ) in text
+    assert (
+        'capture_startup_diagnostics "${out_dir}" "${scenario}" '
+        '"service_ready_timeout"'
+    ) in text
+
+
+def test_startup_diagnostics_does_not_mask_primary_failure() -> None:
+    text = RUNNER.read_text(encoding="utf-8")
+
+    assert (
+        'capture_startup_diagnostics "${out_dir}" "${scenario}" '
+        '"service_exited_before_ready" || true'
+    ) in text
+    assert (
+        'capture_startup_diagnostics "${out_dir}" "${scenario}" '
+        '"service_ready_timeout" || true'
+    ) in text
+
+
 def _valid_trace_row(
     iteration: int = 0,
     phase: str = "mixed",
