@@ -85,6 +85,7 @@ Usage:
   run_phase274_deeper_scheduler_trace.sh cleanup
   run_phase274_deeper_scheduler_trace.sh __test-validate-trace <scenario>
   run_phase274_deeper_scheduler_trace.sh __test-patch-source
+  run_phase274_deeper_scheduler_trace.sh __test-capture-startup-diagnostics <scenario>
   run_phase274_deeper_scheduler_trace.sh help
 
 Scenarios:
@@ -564,10 +565,96 @@ cleanup() {
   fi
 }
 
+capture_startup_diagnostics() {
+  local out_dir="$1"
+  local scenario="$2"
+  local reason="$3"
+  local port summary process_snapshot gpu_snapshot nvidia_snapshot ray_tail serve_tail ready_tail
+  local runner_path_value ray_root latest_session ray_logs_found
+  local ray_logs=()
+  local ray_log
+
+  mkdir -p "${out_dir}" 2>/dev/null || true
+  port="$(scenario_port "${scenario}")"
+  summary="${out_dir}/startup_failure_summary.txt"
+  process_snapshot="${out_dir}/startup_process_snapshot.txt"
+  gpu_snapshot="${out_dir}/startup_gpu_compute_apps.txt"
+  nvidia_snapshot="${out_dir}/startup_nvidia_smi.txt"
+  ray_tail="${out_dir}/startup_ray_logs_tail.txt"
+  serve_tail="${out_dir}/startup_serve_tail.txt"
+  ready_tail="${out_dir}/startup_ready_tail.txt"
+
+  runner_path_value="${RUNNER_PATH:-}"
+  if [[ -z "${runner_path_value}" ]]; then
+    runner_path_value="$(locate_runner_path 2>/dev/null || true)"
+  fi
+
+  {
+    echo "scenario=${scenario}"
+    echo "reason=${reason}"
+    echo "timestamp=$(date -Is)"
+    echo "service_pid=${SERVICE_PID:-}"
+    echo "port=${port}"
+    echo "workdir=${WORKDIR}"
+    echo "runner_path=${runner_path_value:-unavailable}"
+  } > "${summary}" 2>&1 || true
+
+  {
+    echo "timestamp=$(date -Is)"
+    ps -eo pid=,ppid=,stat=,args= | awk '/vllm.entrypoints.cli.main serve|VLLM::|raylet|gcs_server|qwen|Kimi|DPCoordinator/ && $0 !~ /awk/ {print}'
+  } > "${process_snapshot}" 2>&1 || true
+
+  if ! gpu_apps > "${gpu_snapshot}" 2>&1; then
+    echo "gpu_compute_apps_unavailable=true" >> "${gpu_snapshot}" 2>/dev/null || true
+  fi
+
+  if command -v nvidia-smi >/dev/null 2>&1; then
+    if ! nvidia-smi > "${nvidia_snapshot}" 2>&1; then
+      echo "nvidia_smi_unavailable=true" >> "${nvidia_snapshot}" 2>/dev/null || true
+    fi
+  else
+    echo "nvidia_smi_unavailable=true" > "${nvidia_snapshot}" 2>/dev/null || true
+  fi
+
+  ray_root="${PHASE274_TEST_RAY_ROOT:-/tmp/ray}"
+  latest_session="$(find "${ray_root}" -maxdepth 1 -type d -name 'session_*' 2>/dev/null | sort | tail -n 1 || true)"
+  if [[ -n "${latest_session}" && -d "${latest_session}/logs" ]]; then
+    while IFS= read -r ray_log; do
+      ray_logs+=("${ray_log}")
+    done < <(find "${latest_session}/logs" -maxdepth 1 -type f 2>/dev/null | sort | tail -n 20)
+  fi
+  ray_logs_found="${#ray_logs[@]}"
+  {
+    echo "ray_root=${ray_root}"
+    echo "ray_latest_session=${latest_session:-}"
+    echo "ray_logs_found=${ray_logs_found}"
+    if (( ray_logs_found > 0 )); then
+      for ray_log in "${ray_logs[@]}"; do
+        echo "== ${ray_log} =="
+        tail -n 120 "${ray_log}" 2>/dev/null || true
+      done
+    fi
+  } > "${ray_tail}" 2>&1 || true
+
+  if [[ -f "${out_dir}/serve.log" ]]; then
+    tail -n 300 "${out_dir}/serve.log" > "${serve_tail}" 2>&1 || true
+  else
+    echo "serve_log_missing=true" > "${serve_tail}" 2>/dev/null || true
+  fi
+
+  if [[ -f "${out_dir}/ready_probe_${port}.log" ]]; then
+    tail -n 300 "${out_dir}/ready_probe_${port}.log" > "${ready_tail}" 2>&1 || true
+  else
+    echo "ready_probe_log_missing=true" > "${ready_tail}" 2>/dev/null || true
+  fi
+}
+
 wait_for_service() {
   local port="$1"
   local serve_log="$2"
   local ready_log="$3"
+  local out_dir="$4"
+  local scenario="$5"
   local poll response
   : > "${ready_log}"
   echo "ready_probe_start=$(date -Is) port=${port}" | tee -a "${ready_log}"
@@ -580,12 +667,14 @@ wait_for_service() {
     echo "service_ready=false poll=${poll}" >> "${ready_log}"
     if [[ -n "${SERVICE_PID}" ]] && ! kill -0 "${SERVICE_PID}" 2>/dev/null; then
       echo "service_exited_before_ready=true" | tee -a "${ready_log}" >&2
+      capture_startup_diagnostics "${out_dir}" "${scenario}" "service_exited_before_ready" || true
       tail -n 200 "${serve_log}" >&2 || true
       exit 1
     fi
     sleep 5
   done
   echo "service_ready_timeout=true" | tee -a "${ready_log}" >&2
+  capture_startup_diagnostics "${out_dir}" "${scenario}" "service_ready_timeout" || true
   tail -n 200 "${serve_log}" >&2 || true
   exit 1
 }
@@ -1050,7 +1139,7 @@ run_one() {
   nohup "${SERVE_CMD[@]}" > "${serve_log}" 2>&1 &
   SERVICE_PID=$!
   echo "service_pid=${SERVICE_PID}"
-  wait_for_service "${port}" "${serve_log}" "${ready_log}"
+  wait_for_service "${port}" "${serve_log}" "${ready_log}" "${out_dir}" "${scenario}"
 
   set +e
   "${BENCH_CMD[@]}"
@@ -1117,6 +1206,17 @@ run_test_patch_source() {
   echo "phase274_patch_source=PASS"
 }
 
+run_test_capture_startup_diagnostics() {
+  local scenario="$1"
+  local out_dir
+  [[ -n "${scenario}" ]] || { usage >&2; exit 2; }
+  scenario_index "${scenario}" >/dev/null
+  out_dir="${PHASE274_TEST_OUT_DIR:-$(mktemp -d)}"
+  capture_startup_diagnostics "${out_dir}" "${scenario}" "test_startup_failure"
+  echo "phase274_startup_diagnostics=PASS"
+  echo "startup_diagnostics_dir=${out_dir}"
+}
+
 case "${MODE}" in
   source-check)
     run_source_check
@@ -1135,6 +1235,9 @@ case "${MODE}" in
     ;;
   __test-patch-source)
     run_test_patch_source
+    ;;
+  __test-capture-startup-diagnostics)
+    run_test_capture_startup_diagnostics "${SCENARIO}"
     ;;
   -h|--help|help)
     usage
