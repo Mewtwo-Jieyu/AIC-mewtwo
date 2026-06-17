@@ -28,6 +28,12 @@ from .actual_scheduled_token_family_candidate import (
     get_actual_scheduled_token_family_candidate,
     load_actual_scheduled_token_family_candidates,
 )
+from .deeper_trace_topology_family_candidate import (
+    VLLMDeeperTraceTopologyFamilyCandidate,
+    deeper_trace_topology_family_candidate_from_row,
+    get_deeper_trace_topology_family_candidate,
+    load_deeper_trace_topology_family_candidates,
+)
 from .holdout_budget_mechanism_candidate import (
     VLLMHoldoutBudgetMechanismCandidate,
     get_holdout_budget_mechanism_candidate,
@@ -88,6 +94,10 @@ __all__ = [
     "get_actual_scheduled_token_family_candidate",
     "actual_scheduled_token_family_candidate_from_pair",
     "VLLMActualScheduledTokenFamilyCandidate",
+    "load_deeper_trace_topology_family_candidates",
+    "get_deeper_trace_topology_family_candidate",
+    "deeper_trace_topology_family_candidate_from_row",
+    "VLLMDeeperTraceTopologyFamilyCandidate",
     "load_holdout_budget_mechanism_candidates",
     "get_holdout_budget_mechanism_candidate",
     "holdout_budget_mechanism_candidate_from_row",
