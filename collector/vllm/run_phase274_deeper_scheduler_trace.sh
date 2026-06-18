@@ -30,9 +30,14 @@ export LD_LIBRARY_PATH="/usr/local/nvidia/lib64:/usr/local/cuda/lib64:${LD_LIBRA
 export VLLM_ENABLE_CUDA_COMPATIBILITY="${VLLM_ENABLE_CUDA_COMPATIBILITY:-1}"
 
 SERVICE_PID=""
+SERVICE_STARTED=0
 CLEANUP_LOG=""
 RUNNER_PATH="${PHASE274_GPU_MODEL_RUNNER_PATH:-}"
 RUNNER_BACKUP_PATH=""
+LOCK_ACQUIRED=0
+RUN_LOCK_DIR=""
+RUN_ID=""
+RUNNER_PID="$$"
 
 SCENARIOS=(
   tp8ep8-12k2k-bt12000
@@ -99,6 +104,10 @@ EOF
 join_by_comma() {
   local IFS=","
   echo "$*"
+}
+
+now_iso() {
+  date -Is 2>/dev/null || date -u +"%Y-%m-%dT%H:%M:%SZ"
 }
 
 scenario_index() {
@@ -170,6 +179,73 @@ scenario_port() {
 
 scenario_dir() {
   echo "${OUT_ROOT}/$1"
+}
+
+check_existing_failure_artifact() {
+  local out_dir="$1"
+  local scenario="$2"
+  local filename
+
+  if [[ -f "${out_dir}/phase274_result.json" ]]; then
+    return 0
+  fi
+  for filename in \
+    bench_result.json \
+    bench_records.jsonl \
+    deeper_scheduler_trace.jsonl \
+    serve.log \
+    "run_one_${scenario}.log" \
+    "cleanup_${scenario}.log"; do
+    if [[ -s "${out_dir}/${filename}" ]]; then
+      echo "phase274_existing_failure_artifact=true" >&2
+      echo "existing_failure_artifact=${out_dir}/${filename}" >&2
+      exit 1
+    fi
+  done
+}
+
+acquire_run_lock() {
+  local out_dir="$1"
+  local scenario="$2"
+  local timestamp hostname_value
+
+  RUN_LOCK_DIR="${out_dir}/.phase274_run.lock"
+  if ! mkdir "${RUN_LOCK_DIR}" 2>/dev/null; then
+    echo "phase274_run_lock_held=true" >&2
+    if [[ -d "${RUN_LOCK_DIR}" ]]; then
+      find "${RUN_LOCK_DIR}" -maxdepth 1 -type f -print -exec sed -n '1,20p' {} \; >&2 || true
+    fi
+    exit 1
+  fi
+  LOCK_ACQUIRED=1
+  timestamp="$(now_iso)"
+  hostname_value="$(hostname 2>/dev/null || echo unknown)"
+  {
+    echo "run_id=${RUN_ID}"
+    echo "runner_pid=$$"
+    echo "scenario=${scenario}"
+    echo "timestamp=${timestamp}"
+    echo "hostname=${hostname_value}"
+  } > "${RUN_LOCK_DIR}/metadata.txt"
+  echo "${RUN_ID}" > "${RUN_LOCK_DIR}/run_id"
+  echo "$$" > "${RUN_LOCK_DIR}/runner_pid"
+  echo "${scenario}" > "${RUN_LOCK_DIR}/scenario"
+  echo "${timestamp}" > "${RUN_LOCK_DIR}/timestamp"
+  echo "${hostname_value}" > "${RUN_LOCK_DIR}/hostname"
+}
+
+release_run_lock() {
+  if [[ "${LOCK_ACQUIRED}" == "1" && -n "${RUN_LOCK_DIR}" && -d "${RUN_LOCK_DIR}" ]]; then
+    rm -f \
+      "${RUN_LOCK_DIR}/metadata.txt" \
+      "${RUN_LOCK_DIR}/run_id" \
+      "${RUN_LOCK_DIR}/runner_pid" \
+      "${RUN_LOCK_DIR}/scenario" \
+      "${RUN_LOCK_DIR}/timestamp" \
+      "${RUN_LOCK_DIR}/hostname" 2>/dev/null || true
+    rmdir "${RUN_LOCK_DIR}" 2>/dev/null || true
+  fi
+  LOCK_ACQUIRED=0
 }
 
 quote_cmd() {
@@ -538,7 +614,17 @@ restore_source() {
 
 stop_service() {
   if [[ -n "${CLEANUP_LOG}" ]]; then
-    echo "stop_service_start=$(date -Is)" >> "${CLEANUP_LOG}"
+    echo "stop_service_start=$(now_iso)" >> "${CLEANUP_LOG}"
+    echo "run_id=${RUN_ID}" >> "${CLEANUP_LOG}"
+  fi
+  if [[ "${SERVICE_STARTED}" == "1" || "${ALLOW_BROAD_CLEANUP:-0}" == "1" ]]; then
+    :
+  else
+    if [[ -n "${CLEANUP_LOG}" ]]; then
+      echo "stop_service_skipped_service_not_started=true" >> "${CLEANUP_LOG}"
+      echo "stop_service_done=$(now_iso)" >> "${CLEANUP_LOG}"
+    fi
+    return 0
   fi
   if [[ -n "${SERVICE_PID}" ]]; then
     kill -TERM "${SERVICE_PID}" 2>/dev/null || true
@@ -548,20 +634,23 @@ stop_service() {
   pkill -f "vllm.entrypoints.cli.main serve" 2>/dev/null || true
   pkill -f "VLLM::DPCoordinator" 2>/dev/null || true
   ray stop --force >/dev/null 2>&1 || true
+  SERVICE_STARTED=0
   if [[ -n "${CLEANUP_LOG}" ]]; then
-    echo "stop_service_done=$(date -Is)" >> "${CLEANUP_LOG}"
+    echo "stop_service_done=$(now_iso)" >> "${CLEANUP_LOG}"
   fi
 }
 
 cleanup() {
   set +e
   if [[ -n "${CLEANUP_LOG}" ]]; then
-    echo "cleanup_trap_start=$(date -Is)" >> "${CLEANUP_LOG}"
+    echo "cleanup_trap_start=$(now_iso)" >> "${CLEANUP_LOG}"
   fi
   stop_service
   restore_source
+  release_run_lock
   if [[ -n "${CLEANUP_LOG}" ]]; then
-    echo "cleanup_trap_done=$(date -Is)" >> "${CLEANUP_LOG}"
+    echo "run_id=${RUN_ID}" >> "${CLEANUP_LOG}"
+    echo "cleanup_trap_done=$(now_iso)" >> "${CLEANUP_LOG}"
   fi
 }
 
@@ -592,7 +681,7 @@ capture_startup_diagnostics() {
   {
     echo "scenario=${scenario}"
     echo "reason=${reason}"
-    echo "timestamp=$(date -Is)"
+    echo "timestamp=$(now_iso)"
     echo "service_pid=${SERVICE_PID:-}"
     echo "port=${port}"
     echo "workdir=${WORKDIR}"
@@ -600,7 +689,7 @@ capture_startup_diagnostics() {
   } > "${summary}" 2>&1 || true
 
   {
-    echo "timestamp=$(date -Is)"
+    echo "timestamp=$(now_iso)"
     ps -eo pid=,ppid=,stat=,args= | awk '/vllm.entrypoints.cli.main serve|VLLM::|raylet|gcs_server|qwen|Kimi|DPCoordinator/ && $0 !~ /awk/ {print}'
   } > "${process_snapshot}" 2>&1 || true
 
@@ -649,6 +738,60 @@ capture_startup_diagnostics() {
   fi
 }
 
+capture_benchmark_failure_diagnostics() {
+  local out_dir="$1"
+  local scenario="$2"
+  local benchmark_exit_code="$3"
+  local summary process_snapshot gpu_snapshot marker_count serve_tail records_head_tail
+
+  mkdir -p "${out_dir}" 2>/dev/null || true
+  summary="${out_dir}/benchmark_failure_summary.txt"
+  process_snapshot="${out_dir}/benchmark_failure_process_snapshot.txt"
+  gpu_snapshot="${out_dir}/benchmark_failure_gpu_compute_apps.txt"
+  marker_count="${out_dir}/benchmark_failure_trace_marker_count.txt"
+  serve_tail="${out_dir}/benchmark_failure_serve_tail.txt"
+  records_head_tail="${out_dir}/benchmark_failure_records_head_tail.txt"
+
+  {
+    echo "scenario=${scenario}"
+    echo "run_id=${RUN_ID}"
+    echo "runner_pid=${RUNNER_PID}"
+    echo "benchmark_exit_code=${benchmark_exit_code}"
+    echo "timestamp=$(now_iso)"
+    echo "service_pid=${SERVICE_PID:-}"
+    echo "service_started=${SERVICE_STARTED}"
+    echo "workdir=${WORKDIR}"
+  } > "${summary}" 2>&1 || true
+
+  {
+    echo "timestamp=$(now_iso)"
+    ps -eo pid=,ppid=,stat=,args= | awk '/vllm.entrypoints.cli.main serve|VLLM::|raylet|gcs_server|qwen|Kimi|DPCoordinator/ && $0 !~ /awk/ {print}'
+  } > "${process_snapshot}" 2>&1 || true
+
+  if ! gpu_apps > "${gpu_snapshot}" 2>&1; then
+    echo "gpu_compute_apps_unavailable=true" >> "${gpu_snapshot}" 2>/dev/null || true
+  fi
+
+  if [[ -f "${out_dir}/serve.log" ]]; then
+    grep -c "AIC_PHASE274_DEEPER_TRACE_ROW" "${out_dir}/serve.log" > "${marker_count}" 2>&1 || true
+    tail -n 300 "${out_dir}/serve.log" > "${serve_tail}" 2>&1 || true
+  else
+    echo "serve_log_missing=true" > "${marker_count}" 2>/dev/null || true
+    echo "serve_log_missing=true" > "${serve_tail}" 2>/dev/null || true
+  fi
+
+  {
+    if [[ -f "${out_dir}/bench_records.jsonl" ]]; then
+      echo "== head =="
+      head -n 20 "${out_dir}/bench_records.jsonl"
+      echo "== tail =="
+      tail -n 20 "${out_dir}/bench_records.jsonl"
+    else
+      echo "bench_records_missing=true"
+    fi
+  } > "${records_head_tail}" 2>&1 || true
+}
+
 wait_for_service() {
   local port="$1"
   local serve_log="$2"
@@ -657,7 +800,7 @@ wait_for_service() {
   local scenario="$5"
   local poll response
   : > "${ready_log}"
-  echo "ready_probe_start=$(date -Is) port=${port}" | tee -a "${ready_log}"
+  echo "ready_probe_start=$(now_iso) port=${port}" | tee -a "${ready_log}"
   for poll in $(seq 1 180); do
     if response="$(curl -fsS "http://127.0.0.1:${port}/v1/models" 2>&1)"; then
       echo "service_ready=true poll=${poll}" | tee -a "${ready_log}"
@@ -692,7 +835,7 @@ wait_for_gpu_drain() {
 
   : > "${drain_log}"
   rm -f "${final_file}" "${timeout_file}" "${sample_file}"
-  echo "gpu_drain_start=$(date -Is)" >> "${drain_log}"
+  echo "gpu_drain_start=$(now_iso)" >> "${drain_log}"
   while (( elapsed <= GPU_DRAIN_TIMEOUT_SECONDS )); do
     poll=$((poll + 1))
     gpu_apps > "${sample_file}" || true
@@ -707,7 +850,7 @@ wait_for_gpu_drain() {
       : > "${final_file}"
       rm -f "${sample_file}"
       echo "gpu_drain_close_reason=stable" >> "${drain_log}"
-      echo "gpu_drain_done=$(date -Is)" >> "${drain_log}"
+      echo "gpu_drain_done=$(now_iso)" >> "${drain_log}"
       return 0
     fi
     sleep "${GPU_DRAIN_POLL_SECONDS}"
@@ -715,7 +858,7 @@ wait_for_gpu_drain() {
   done
   cp "${sample_file}" "${timeout_file}" 2>/dev/null || true
   echo "gpu_drain_close_reason=timeout" >> "${drain_log}"
-  echo "gpu_drain_done=$(date -Is)" >> "${drain_log}"
+  echo "gpu_drain_done=$(now_iso)" >> "${drain_log}"
   return 1
 }
 
@@ -1105,6 +1248,10 @@ run_one() {
   }
   out_dir="$(scenario_dir "${scenario}")"
   mkdir -p "${out_dir}"
+  check_existing_failure_artifact "${out_dir}" "${scenario}"
+  RUN_ID="${scenario}-$(date +%Y%m%dT%H%M%S)-$$"
+  acquire_run_lock "${out_dir}" "${scenario}"
+  trap cleanup EXIT
   port="$(scenario_port "${scenario}")"
   serve_log="${out_dir}/serve.log"
   ready_log="${out_dir}/ready_probe_${port}.log"
@@ -1114,16 +1261,21 @@ run_one() {
   trace_jsonl="${out_dir}/deeper_scheduler_trace.jsonl"
   : > "${run_log}"
   : > "${CLEANUP_LOG}"
-  trap cleanup EXIT
 
   echo "service_log=${serve_log}"
   echo "runner_log=${run_log}"
   echo "ready_probe_log=${ready_log}"
   echo "trace_jsonl=${trace_jsonl}"
   echo "cleanup_log=${CLEANUP_LOG}"
+  echo "run_id=${RUN_ID}"
+  echo "runner_pid=${RUNNER_PID}"
+  echo "run_lock_dir=${RUN_LOCK_DIR}"
   echo "realtime_tail_command=tail -f ${serve_log} ${run_log} ${ready_log} ${CLEANUP_LOG}"
   exec >> "${run_log}" 2>&1
 
+  echo "run_id=${RUN_ID}"
+  echo "runner_pid=${RUNNER_PID}"
+  echo "run_lock_dir=${RUN_LOCK_DIR}"
   check_gpu_state "${out_dir}/gpu_compute_apps_before.txt"
   patch_source
   python3 -m py_compile "${RUNNER_PATH}"
@@ -1133,11 +1285,12 @@ run_one() {
   benchmark_command="$(quote_cmd "${BENCH_CMD[@]}")"
 
   echo "scenario=${scenario}"
-  echo "runner_log_start=$(date -Is)"
+  echo "runner_log_start=$(now_iso)"
   echo "serve_command=${serve_command}"
   echo "benchmark_command=${benchmark_command}"
   nohup "${SERVE_CMD[@]}" > "${serve_log}" 2>&1 &
   SERVICE_PID=$!
+  SERVICE_STARTED=1
   echo "service_pid=${SERVICE_PID}"
   wait_for_service "${port}" "${serve_log}" "${ready_log}" "${out_dir}" "${scenario}"
 
@@ -1146,6 +1299,9 @@ run_one() {
   benchmark_exit_code="$?"
   set -e
   echo "benchmark_exit_code=${benchmark_exit_code}"
+  if [[ "${benchmark_exit_code}" != "0" ]]; then
+    capture_benchmark_failure_diagnostics "${out_dir}" "${scenario}" "${benchmark_exit_code}" || true
+  fi
 
   stop_service
   SERVICE_PID=""
@@ -1228,6 +1384,7 @@ case "${MODE}" in
     run_one "${SCENARIO}"
     ;;
   cleanup)
+    ALLOW_BROAD_CLEANUP=1
     cleanup
     ;;
   __test-validate-trace)
