@@ -280,6 +280,164 @@ def test_run_one_requires_explicit_gpu_authorization() -> None:
     assert "phase274_allow_gpu_run_required=true" in result.stderr
 
 
+def test_run_one_rejects_existing_lock_before_gpu_or_cleanup(tmp_path: Path) -> None:
+    workdir = tmp_path / "work"
+    out_root = tmp_path / "out"
+    scenario_dir = out_root / "tp8ep8-12k2k-bt12000"
+    lock_dir = scenario_dir / ".phase274_run.lock"
+    scripts_dir = workdir / "scripts"
+    scripts_dir.mkdir(parents=True)
+    scenario_dir.mkdir(parents=True)
+    lock_dir.mkdir()
+    (lock_dir / "run_id").write_text("old-run\n", encoding="utf-8")
+    (scripts_dir / "run_openai_fixed_shape_benchmark.py").write_text(
+        "raise SystemExit('must not run benchmark')\n",
+        encoding="utf-8",
+    )
+    env = dict(os.environ)
+    env.update(
+        {
+            "WORKDIR": str(workdir),
+            "OUT_ROOT": str(out_root),
+            "PHASE274_ALLOW_GPU_RUN": "1",
+        }
+    )
+
+    result = _run_runner("run-one", "tp8ep8-12k2k-bt12000", env=env)
+
+    assert result.returncode == 1
+    assert "phase274_run_lock_held=true" in result.stderr
+    combined = result.stdout + result.stderr
+    assert "source_patch_started=true" not in combined
+    assert "service_pid=" not in combined
+    assert "stop_service_start=" not in combined
+
+
+def test_run_one_rejects_existing_failure_artifact_before_gpu(
+    tmp_path: Path,
+) -> None:
+    workdir = tmp_path / "work"
+    out_root = tmp_path / "out"
+    scenario_dir = out_root / "tp8ep8-12k2k-bt65536"
+    scripts_dir = workdir / "scripts"
+    scripts_dir.mkdir(parents=True)
+    scenario_dir.mkdir(parents=True)
+    (scripts_dir / "run_openai_fixed_shape_benchmark.py").write_text(
+        "raise SystemExit('must not run benchmark')\n",
+        encoding="utf-8",
+    )
+    (scenario_dir / "bench_result.json").write_text(
+        json.dumps({"ok_requests": 0, "failed_requests": 128}),
+        encoding="utf-8",
+    )
+    env = dict(os.environ)
+    env.update(
+        {
+            "WORKDIR": str(workdir),
+            "OUT_ROOT": str(out_root),
+            "PHASE274_ALLOW_GPU_RUN": "1",
+        }
+    )
+
+    result = _run_runner("run-one", "tp8ep8-12k2k-bt65536", env=env)
+
+    assert result.returncode == 1
+    assert "phase274_existing_failure_artifact=true" in result.stderr
+    assert "bench_result.json" in result.stderr
+    assert "phase274_run_lock_held=true" not in result.stderr
+    assert not (scenario_dir / ".phase274_run.lock").exists()
+
+
+def test_runner_has_run_identity_and_lock_contract() -> None:
+    text = RUNNER.read_text(encoding="utf-8")
+
+    assert "RUN_ID=" in text
+    assert "RUNNER_PID=" in text
+    assert ".phase274_run.lock" in text
+    assert "runner_pid=$$" in text
+
+
+def test_run_lock_is_protected_by_trap_before_log_truncation() -> None:
+    text = RUNNER.read_text(encoding="utf-8")
+    run_one = text[text.index("run_one() {") : text.index("run_test_validate_trace() {")]
+
+    acquire_index = run_one.index('acquire_run_lock "${out_dir}" "${scenario}"')
+    trap_index = run_one.index("trap cleanup EXIT")
+    truncate_index = run_one.index(': > "${run_log}"')
+
+    assert acquire_index < trap_index < truncate_index
+    cleanup = text[text.index("cleanup() {") : text.index("capture_startup_diagnostics() {")]
+    assert "release_run_lock" in cleanup
+
+
+def test_cleanup_skips_broad_kill_before_service_started() -> None:
+    text = RUNNER.read_text(encoding="utf-8")
+
+    stop_service = text[text.index("stop_service() {") : text.index("cleanup() {")]
+    assert '[[ "${SERVICE_STARTED}" == "1"' in stop_service
+    assert 'pkill -f "vllm.entrypoints.cli.main serve"' in stop_service
+    assert "ray stop --force" in stop_service
+
+
+def test_gpu_busy_before_service_releases_lock_without_broad_cleanup(
+    tmp_path: Path,
+) -> None:
+    workdir = tmp_path / "work"
+    out_root = tmp_path / "out"
+    bin_dir = tmp_path / "bin"
+    scenario_dir = out_root / "tp8ep8-12k2k-bt12000"
+    scripts_dir = workdir / "scripts"
+    scripts_dir.mkdir(parents=True)
+    bin_dir.mkdir()
+    (scripts_dir / "run_openai_fixed_shape_benchmark.py").write_text(
+        "raise SystemExit('must not run benchmark')\n",
+        encoding="utf-8",
+    )
+    fake_nvidia_smi = bin_dir / "nvidia-smi"
+    fake_nvidia_smi.write_text(
+        "#!/usr/bin/env bash\n"
+        "echo '1234, fake-vllm, 1024 MiB'\n",
+        encoding="utf-8",
+    )
+    fake_nvidia_smi.chmod(0o755)
+    env = dict(os.environ)
+    env.update(
+        {
+            "WORKDIR": str(workdir),
+            "OUT_ROOT": str(out_root),
+            "PHASE274_ALLOW_GPU_RUN": "1",
+            "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        }
+    )
+
+    result = _run_runner("run-one", "tp8ep8-12k2k-bt12000", env=env)
+
+    assert result.returncode == 1
+    run_log = scenario_dir / "run_one_tp8ep8-12k2k-bt12000.log"
+    cleanup_log = scenario_dir / "cleanup_tp8ep8-12k2k-bt12000.log"
+    assert "gpu_busy=true" in run_log.read_text(encoding="utf-8")
+    cleanup = cleanup_log.read_text(encoding="utf-8")
+    assert "stop_service_skipped_service_not_started=true" in cleanup
+    assert "stop_service_done=" in cleanup
+    assert not (scenario_dir / ".phase274_run.lock").exists()
+
+
+def test_benchmark_failure_diagnostics_contract_is_present() -> None:
+    text = RUNNER.read_text(encoding="utf-8")
+
+    assert "capture_benchmark_failure_diagnostics()" in text
+    for filename in [
+        "benchmark_failure_summary.txt",
+        "benchmark_failure_process_snapshot.txt",
+        "benchmark_failure_gpu_compute_apps.txt",
+        "benchmark_failure_trace_marker_count.txt",
+        "benchmark_failure_serve_tail.txt",
+        "benchmark_failure_records_head_tail.txt",
+    ]:
+        assert filename in text
+    assert 'capture_benchmark_failure_diagnostics "${out_dir}" "${scenario}" "${benchmark_exit_code}" || true' in text
+
+
 def _write_fake_ray_logs(ray_root: Path) -> None:
     logs = ray_root / "session_2026" / "logs"
     logs.mkdir(parents=True)
