@@ -55,6 +55,7 @@ def test_model_output_threshold_contract_outputs_three_rows() -> None:
     assert direction["pass_rule"] == "all_4_matrix_pairs_have_reproducible_direction_explanation"
     assert direction["fail_rule"] == "any_pair_direction_conflict_unresolved"
     assert direction["threshold_status"] == "direction_only_contract_registered"
+    assert direction["threshold_type"] == "active_contract"
 
     feature = rows[1]
     assert feature["required_inputs"] == (
@@ -64,12 +65,14 @@ def test_model_output_threshold_contract_outputs_three_rows() -> None:
     assert feature["pass_rule"] == "uses_only_phase333_registered_features"
     assert feature["fail_rule"] == "posthoc_feature_introduced"
     assert feature["threshold_status"] == "feature_set_registered_no_posthoc_features"
+    assert feature["threshold_type"] == "active_contract"
 
     numeric = rows[2]
     assert numeric["model_output"] == "numeric_error_threshold"
     assert numeric["pass_rule"] == "numeric_formula_defined_before_gpu_run"
     assert numeric["fail_rule"] == "no_numeric_formula_or_threshold_changed_after_gpu_run"
     assert numeric["threshold_status"] == "blocked_until_numeric_model_form_exists"
+    assert numeric["threshold_type"] == "blocking_precondition"
 
 
 def test_writers_emit_csv_and_doc(tmp_path: Path) -> None:
@@ -85,6 +88,7 @@ def test_writers_emit_csv_and_doc(tmp_path: Path) -> None:
     assert len(written) == 3
     assert {row["gpu_run_allowed"] for row in written} == {"false"}
     assert written[2]["threshold_status"] == "blocked_until_numeric_model_form_exists"
+    assert written[2]["threshold_type"] == "blocking_precondition"
 
     doc = doc_path.read_text(encoding="utf-8")
     assert "Default AIC | No-Go" in doc
@@ -92,6 +96,7 @@ def test_writers_emit_csv_and_doc(tmp_path: Path) -> None:
     assert "holdout_faster / holdout_slower / inconclusive" in doc
     assert "No posthoc feature is allowed" in doc
     assert "blocked_until_numeric_model_form_exists" in doc
+    assert "blocking_precondition" in doc
     assert "default-ready" not in doc
 
 

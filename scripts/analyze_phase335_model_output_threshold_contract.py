@@ -28,6 +28,7 @@ FIELDNAMES = [
     "pass_rule",
     "fail_rule",
     "threshold_status",
+    "threshold_type",
     "gpu_run_allowed",
     "default_readiness",
     "diagnostic_only",
@@ -62,13 +63,13 @@ EXPECTED_PHASE333_PAIRS = [
     (
         "tp8_dp1_ep8",
         "isl4000_osl2000_batch128",
-        "tp8ep8-4k2k-bt12000",
+        "tp8ep8-4k2k-bt4000",
         "tp8ep8-4k2k-bt65536",
     ),
     (
         "tp4_dp2_ep8",
         "isl4000_osl2000_batch128",
-        "tp4dp2ep8-4k2k-bt12000",
+        "tp4dp2ep8-4k2k-bt4000",
         "tp4dp2ep8-4k2k-bt65536",
     ),
 ]
@@ -93,6 +94,7 @@ CONTRACT_ROWS = [
         "pass_rule": "all_4_matrix_pairs_have_reproducible_direction_explanation",
         "fail_rule": "any_pair_direction_conflict_unresolved",
         "threshold_status": "direction_only_contract_registered",
+        "threshold_type": "active_contract",
         **COMMON_FLAGS,
     },
     {
@@ -106,6 +108,7 @@ CONTRACT_ROWS = [
         "pass_rule": "uses_only_phase333_registered_features",
         "fail_rule": "posthoc_feature_introduced",
         "threshold_status": "feature_set_registered_no_posthoc_features",
+        "threshold_type": "active_contract",
         **COMMON_FLAGS,
     },
     {
@@ -116,6 +119,7 @@ CONTRACT_ROWS = [
         "pass_rule": "numeric_formula_defined_before_gpu_run",
         "fail_rule": "no_numeric_formula_or_threshold_changed_after_gpu_run",
         "threshold_status": "blocked_until_numeric_model_form_exists",
+        "threshold_type": "blocking_precondition",
         **COMMON_FLAGS,
     },
 ]
@@ -199,14 +203,14 @@ def write_model_output_threshold_contract_doc(
         "",
         "No posthoc feature is allowed. The feature set is limited to Phase333 registered inputs: actual_scheduled_tokens, phase_mix, boundary_cadence, trace_integrity, and worker_payload_alignment.",
         "",
-        "The numeric threshold remains blocked_until_numeric_model_form_exists because there is no numeric prediction formula yet.",
+        "The numeric threshold remains blocked_until_numeric_model_form_exists because there is no numeric prediction formula yet. The threshold_type is explicitly `blocking_precondition` — this is not a pass threshold and must not be consumed as validation success by downstream parsers.",
         "",
-        "| Contract | Model output | Threshold status |",
-        "|---|---|---|",
+        "| Contract | Model output | Threshold status | Threshold type |",
+        "|---|---|---|---|",
     ]
     for row in rows:
         lines.append(
-            f"| {row['contract']} | {row['model_output']} | {row['threshold_status']} |"
+            f"| {row['contract']} | {row['model_output']} | {row['threshold_status']} | {row['threshold_type']} |"
         )
     lines.extend(
         [
