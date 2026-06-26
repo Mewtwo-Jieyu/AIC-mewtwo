@@ -19,12 +19,18 @@ _VLLM_MODULE_QUANT_RUNTIME = "CompressedTensorsWNA16MarlinMoEMethod"
 _VLLM_MODULE_BUCKETS = frozenset({1, 15, 16, 241, 1808, 2048, 8192})
 
 
-def _is_vllm_module_scope(database: PerfDatabase, model_name: str) -> bool:
+def _validate_vllm_module_bucket(bucket_tokens: int) -> None:
+    if bucket_tokens not in _VLLM_MODULE_BUCKETS:
+        raise ValueError(f"bucket_tokens must be one of {sorted(_VLLM_MODULE_BUCKETS)}, got {bucket_tokens}")
+
+
+def _is_vllm_module_scope(database: PerfDatabase, model_name: str, topology: str) -> bool:
     return (
         getattr(database, "backend", None) == common.BackendName.vllm.value
         and getattr(database, "system", None) == _VLLM_MODULE_HARDWARE
         and getattr(database, "version", None) == _VLLM_MODULE_VERSION
         and model_name == _VLLM_MODULE_RUNTIME_MODEL
+        and topology == _VLLM_MODULE_TOPOLOGY
     )
 
 
@@ -45,8 +51,7 @@ def _query_vllm_module(
             f"vLLM module perf runtime binding requires version={_VLLM_MODULE_VERSION!r}, "
             f"got {getattr(database, 'version', None)!r}"
         )
-    if bucket_tokens not in _VLLM_MODULE_BUCKETS:
-        raise ValueError(f"bucket_tokens must be one of {sorted(_VLLM_MODULE_BUCKETS)}, got {bucket_tokens}")
+    _validate_vllm_module_bucket(bucket_tokens)
 
     result = database.query_vllm_module(
         model=_VLLM_MODULE_PERFDB_MODEL,
@@ -558,8 +563,9 @@ class MoE(Operation):
         overwrite_quant_mode = kwargs.get("quant_mode")
         quant_mode = self._quant_mode if overwrite_quant_mode is None else overwrite_quant_mode
         model_name = str(kwargs.get("model_name", ""))
+        vllm_module_topology = str(kwargs.get("vllm_module_topology", ""))
 
-        if _is_vllm_module_scope(database, model_name):
+        if _is_vllm_module_scope(database, model_name, vllm_module_topology):
             return _query_vllm_module(
                 database,
                 bucket_tokens=x,
@@ -755,7 +761,9 @@ class MoEDispatch(Operation):
             )
             scaled_num_tokens = max(1, num_tokens // self._scale_num_tokens)
             model_name = str(kwargs.get("model_name", ""))
-            if _is_vllm_module_scope(database, model_name):
+            vllm_module_topology = str(kwargs.get("vllm_module_topology", ""))
+            if _is_vllm_module_scope(database, model_name, vllm_module_topology):
+                _validate_vllm_module_bucket(scaled_num_tokens)
                 if not self._pre_dispatch:
                     return PerformanceResult(0.0, energy=0.0)
                 return _query_vllm_module(

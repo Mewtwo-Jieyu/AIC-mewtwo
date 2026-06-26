@@ -57,6 +57,9 @@ class BaseBackend(ABC):
                 default is 1.0.
                 corrected latency = latency * latency_correction_scale
         """
+        vllm_module_topology = (
+            f"tp{model.config.tp_size}dp{model.config.attention_dp_size}ep{model.config.moe_ep_size}"
+        )
 
         def _run_context(batch_size: int, isl: int, prefix) -> tuple[dict[str, float], dict[str, float]]:
             """
@@ -92,6 +95,7 @@ class BaseBackend(ABC):
                     s=s_val,
                     prefix=prefix,
                     model_name=getattr(model, "model_name", getattr(model, "model_path", "")),
+                    vllm_module_topology=vllm_module_topology,
                 )
 
                 # ✅ IMMEDIATELY extract values - do NOT use PerformanceResult arithmetic!
@@ -132,6 +136,7 @@ class BaseBackend(ABC):
                         beam_width=beam_width,
                         s=isl + i + 1,
                         model_name=getattr(model, "model_name", getattr(model, "model_path", "")),
+                        vllm_module_topology=vllm_module_topology,
                     )
 
                     # ✅ IMMEDIATELY extract values - do NOT accumulate PerformanceResult objects!
