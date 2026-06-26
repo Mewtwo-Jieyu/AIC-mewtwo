@@ -656,7 +656,12 @@ class TestMoEDispatchScaling:
         )
         db = _FakePerfDbForMoEDispatch()
 
-        latency = op.query(db, x=8192, model_name="moonshotai/Kimi-K2.5")
+        latency = op.query(
+            db,
+            x=8192,
+            model_name="moonshotai/Kimi-K2.5",
+            vllm_module_topology="tp4dp2ep8",
+        )
 
         assert float(latency) == pytest.approx(3.0)
         assert db.custom_allreduce_volumes == []
@@ -689,7 +694,12 @@ class TestMoEDispatchScaling:
         db = _FakePerfDbForMoEDispatch()
 
         with pytest.raises(ValueError, match="bucket_tokens"):
-            op.query(db, x=128, model_name="moonshotai/Kimi-K2.5")
+            op.query(
+                db,
+                x=128,
+                model_name="moonshotai/Kimi-K2.5",
+                vllm_module_topology="tp4dp2ep8",
+            )
 
         assert db.vllm_module_calls == []
 
@@ -708,11 +718,68 @@ class TestMoEDispatchScaling:
         )
         db = _FakePerfDbForMoEDispatch()
 
-        latency = op.query(db, x=8192, model_name="moonshotai/Kimi-K2.5")
+        latency = op.query(
+            db,
+            x=8192,
+            model_name="moonshotai/Kimi-K2.5",
+            vllm_module_topology="tp4dp2ep8",
+        )
 
         assert float(latency) == pytest.approx(0.0)
         assert db.custom_allreduce_volumes == []
         assert db.nccl_volumes == []
+        assert db.vllm_module_calls == []
+
+    def test_vllm_dispatch_post_scope_rejects_non_whitelisted_bucket(self) -> None:
+        op = MoEDispatch(
+            "dispatch",
+            1.0,
+            hidden_size=1024,
+            topk=8,
+            num_experts=256,
+            moe_tp_size=1,
+            moe_ep_size=1,
+            attention_dp_size=4,
+            pre_dispatch=False,
+            scale_num_tokens=1,
+        )
+        db = _FakePerfDbForMoEDispatch()
+
+        with pytest.raises(ValueError, match="bucket_tokens"):
+            op.query(
+                db,
+                x=128,
+                model_name="moonshotai/Kimi-K2.5",
+                vllm_module_topology="tp4dp2ep8",
+            )
+
+        assert db.vllm_module_calls == []
+
+    def test_vllm_dispatch_non_topology_scope_keeps_existing_comm_path(self) -> None:
+        op = MoEDispatch(
+            "dispatch",
+            1.0,
+            hidden_size=1024,
+            topk=8,
+            num_experts=256,
+            moe_tp_size=1,
+            moe_ep_size=1,
+            attention_dp_size=4,
+            pre_dispatch=True,
+            scale_num_tokens=8,
+        )
+        db = _FakePerfDbForMoEDispatch()
+
+        latency = op.query(
+            db,
+            x=8192,
+            model_name="moonshotai/Kimi-K2.5",
+            vllm_module_topology="tp8dp1ep8",
+        )
+
+        assert float(latency) == pytest.approx(2.0)
+        assert db.custom_allreduce_volumes == []
+        assert db.nccl_volumes == [("all_gather", 1024 * 1024 * 4)]
         assert db.vllm_module_calls == []
 
     def test_vllm_dispatch_non_kimi_scope_keeps_existing_comm_path(self) -> None:
@@ -865,7 +932,12 @@ class TestMoEScaling:
         )
         db = _FakeVLLMModulePerfDbForMoE()
 
-        latency = op.query(db, x=241, model_name="moonshotai/Kimi-K2.5")
+        latency = op.query(
+            db,
+            x=241,
+            model_name="moonshotai/Kimi-K2.5",
+            vllm_module_topology="tp4dp2ep8",
+        )
 
         assert float(latency) == pytest.approx(8.0)
         assert db.query_moe_calls == []
@@ -900,8 +972,42 @@ class TestMoEScaling:
         db = _FakeVLLMModulePerfDbForMoE()
 
         with pytest.raises(ValueError, match="bucket_tokens"):
-            op.query(db, x=128, model_name="moonshotai/Kimi-K2.5")
+            op.query(
+                db,
+                x=128,
+                model_name="moonshotai/Kimi-K2.5",
+                vllm_module_topology="tp4dp2ep8",
+            )
 
+        assert db.vllm_module_calls == []
+
+    def test_vllm_moe_non_topology_scope_keeps_existing_query_moe_path(self) -> None:
+        op = MoE(
+            "moe",
+            1.0,
+            hidden_size=1024,
+            inter_size=2048,
+            topk=8,
+            num_experts=256,
+            moe_tp_size=1,
+            moe_ep_size=8,
+            quant_mode=common.MoEQuantMode.float16,
+            workload_distribution="uniform",
+            attention_dp_size=1,
+            is_context=True,
+            scale_num_tokens=1,
+        )
+        db = _FakeVLLMModulePerfDbForMoE()
+
+        latency = op.query(
+            db,
+            x=241,
+            model_name="moonshotai/Kimi-K2.5",
+            vllm_module_topology="tp8dp1ep8",
+        )
+
+        assert float(latency) == pytest.approx(99.0)
+        assert db.query_moe_calls[0]["num_tokens"] == 241
         assert db.vllm_module_calls == []
 
     def test_vllm_moe_non_kimi_scope_keeps_existing_query_moe_path(self) -> None:
@@ -959,25 +1065,29 @@ class _CaptureModelNameOp:
 
     def __init__(self) -> None:
         self.model_names = []
+        self.topologies = []
 
     def query(self, database, **kwargs):
         self.model_names.append(kwargs["model_name"])
+        self.topologies.append(kwargs["vllm_module_topology"])
         return PerformanceResult(0.0, energy=0.0)
 
 
 class TestBaseBackendModelNamePropagation:
-    def test_run_static_uses_model_path_when_model_name_is_absent(self, monkeypatch) -> None:
-        op = _CaptureModelNameOp()
+    def test_run_static_passes_model_path_and_topology_when_model_name_is_absent(self, monkeypatch) -> None:
+        context_op = _CaptureModelNameOp()
+        generation_op = _CaptureModelNameOp()
         model = SimpleNamespace(
             model_path="moonshotai/Kimi-K2.5",
-            context_ops=[op],
-            generation_ops=[],
+            _nextn=0,
+            context_ops=[context_op],
+            generation_ops=[generation_op],
             config=SimpleNamespace(
-                attention_dp_size=1,
+                attention_dp_size=2,
                 pp_size=1,
-                tp_size=1,
+                tp_size=4,
                 moe_tp_size=1,
-                moe_ep_size=1,
+                moe_ep_size=8,
                 gemm_quant_mode=SimpleNamespace(name="fp16"),
                 kvcache_quant_mode=SimpleNamespace(name="fp16"),
                 fmha_quant_mode=SimpleNamespace(name="fp16"),
@@ -997,11 +1107,14 @@ class TestBaseBackendModelNamePropagation:
         backend.run_static(
             model,
             database,
-            RuntimeConfig(batch_size=1, isl=2, osl=1),
-            mode="static_ctx",
+            RuntimeConfig(batch_size=1, isl=2, osl=2),
+            mode="static",
         )
 
-        assert op.model_names == ["moonshotai/Kimi-K2.5"]
+        assert context_op.model_names == ["moonshotai/Kimi-K2.5"]
+        assert context_op.topologies == ["tp4dp2ep8"]
+        assert generation_op.model_names == ["moonshotai/Kimi-K2.5"]
+        assert generation_op.topologies == ["tp4dp2ep8"]
 
 
 class _FakeCBResult:
