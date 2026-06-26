@@ -19,6 +19,7 @@ from aiconfigurator.sdk.config import RuntimeConfig
 from aiconfigurator.sdk.inference_summary import InferenceSummary
 from aiconfigurator.sdk.operations import MoEDispatch
 from aiconfigurator.sdk.operations import MoE
+from aiconfigurator.sdk.performance_result import PerformanceResult
 
 
 def _load_diagnose_cb_iter_latency_module():
@@ -595,6 +596,8 @@ class TestIterationLatencyCalculator:
 
 class _FakePerfDbForMoEDispatch:
     backend = common.BackendName.vllm.value
+    system = "h200_sxm"
+    version = "0.19.0"
     system_spec = {
         "gpu": {"sm_version": 90},
         "node": {"num_gpus_per_node": 8},
@@ -603,6 +606,7 @@ class _FakePerfDbForMoEDispatch:
     def __init__(self) -> None:
         self.custom_allreduce_volumes = []
         self.nccl_volumes = []
+        self.vllm_module_calls = []
 
     def query_custom_allreduce(self, quant_mode, num_gpus, volume):
         self.custom_allreduce_volumes.append(volume)
@@ -612,9 +616,106 @@ class _FakePerfDbForMoEDispatch:
         self.nccl_volumes.append((op, volume))
         return 2.0
 
+    def query_vllm_module(
+        self,
+        model,
+        hardware,
+        vllm_version,
+        topology,
+        bucket_tokens,
+        module_boundary,
+        quant_runtime,
+    ):
+        self.vllm_module_calls.append(
+            (
+                model,
+                hardware,
+                vllm_version,
+                topology,
+                bucket_tokens,
+                module_boundary,
+                quant_runtime,
+            )
+        )
+        return PerformanceResult(3.0, energy=0.0)
+
 
 class TestMoEDispatchScaling:
-    def test_vllm_dispatch_scales_num_tokens(self) -> None:
+    def test_vllm_dispatch_uses_module_perf_exact_bucket(self) -> None:
+        op = MoEDispatch(
+            "dispatch",
+            1.0,
+            hidden_size=1024,
+            topk=8,
+            num_experts=256,
+            moe_tp_size=1,
+            moe_ep_size=1,
+            attention_dp_size=4,
+            pre_dispatch=True,
+            scale_num_tokens=1,
+        )
+        db = _FakePerfDbForMoEDispatch()
+
+        latency = op.query(db, x=8192, model_name="moonshotai/Kimi-K2.5")
+
+        assert float(latency) == pytest.approx(3.0)
+        assert db.custom_allreduce_volumes == []
+        assert db.nccl_volumes == []
+        assert db.vllm_module_calls == [
+            (
+                "kimi-k2.5",
+                "h200_sxm",
+                "0.19.0",
+                "tp4dp2ep8",
+                8192,
+                "ep8_comm_dispatch_combine",
+                "CompressedTensorsWNA16MarlinMoEMethod",
+            )
+        ]
+
+    def test_vllm_dispatch_rejects_non_whitelisted_bucket(self) -> None:
+        op = MoEDispatch(
+            "dispatch",
+            1.0,
+            hidden_size=1024,
+            topk=8,
+            num_experts=256,
+            moe_tp_size=1,
+            moe_ep_size=1,
+            attention_dp_size=4,
+            pre_dispatch=True,
+            scale_num_tokens=1,
+        )
+        db = _FakePerfDbForMoEDispatch()
+
+        with pytest.raises(ValueError, match="bucket_tokens"):
+            op.query(db, x=128, model_name="moonshotai/Kimi-K2.5")
+
+        assert db.vllm_module_calls == []
+
+    def test_vllm_dispatch_post_scope_is_zero_to_avoid_double_count(self) -> None:
+        op = MoEDispatch(
+            "dispatch",
+            1.0,
+            hidden_size=1024,
+            topk=8,
+            num_experts=256,
+            moe_tp_size=1,
+            moe_ep_size=1,
+            attention_dp_size=4,
+            pre_dispatch=False,
+            scale_num_tokens=1,
+        )
+        db = _FakePerfDbForMoEDispatch()
+
+        latency = op.query(db, x=8192, model_name="moonshotai/Kimi-K2.5")
+
+        assert float(latency) == pytest.approx(0.0)
+        assert db.custom_allreduce_volumes == []
+        assert db.nccl_volumes == []
+        assert db.vllm_module_calls == []
+
+    def test_vllm_dispatch_non_kimi_scope_keeps_existing_comm_path(self) -> None:
         op = MoEDispatch(
             "dispatch",
             1.0,
@@ -629,11 +730,35 @@ class TestMoEDispatchScaling:
         )
         db = _FakePerfDbForMoEDispatch()
 
-        latency = op.query(db, x=8192)
+        latency = op.query(db, x=8192, model_name="meta-llama/Llama-3.1-70B")
 
         assert float(latency) == pytest.approx(2.0)
         assert db.custom_allreduce_volumes == []
         assert db.nccl_volumes == [("all_gather", 1024 * 1024 * 4)]
+        assert db.vllm_module_calls == []
+
+    def test_vllm_dispatch_legacy_scope_keeps_existing_comm_path(self) -> None:
+        op = MoEDispatch(
+            "dispatch",
+            1.0,
+            hidden_size=1024,
+            topk=8,
+            num_experts=256,
+            moe_tp_size=1,
+            moe_ep_size=1,
+            attention_dp_size=4,
+            pre_dispatch=True,
+            scale_num_tokens=8,
+        )
+        db = _FakePerfDbForMoEDispatch()
+        db.version = "0.12.0"
+
+        latency = op.query(db, x=8192, model_name="moonshotai/Kimi-K2.5")
+
+        assert float(latency) == pytest.approx(2.0)
+        assert db.custom_allreduce_volumes == []
+        assert db.nccl_volumes == [("all_gather", 1024 * 1024 * 4)]
+        assert db.vllm_module_calls == []
 
 
 class _FakePerfDbForMoE:
@@ -661,6 +786,43 @@ class _FakePerfDbForMoE:
         return type("PerfResult", (), {"energy": 0.0, "__float__": lambda self: 1.0})()
 
 
+class _FakeVLLMModulePerfDbForMoE:
+    backend = common.BackendName.vllm.value
+    system = "h200_sxm"
+    version = "0.19.0"
+
+    def __init__(self) -> None:
+        self.query_moe_calls = []
+        self.vllm_module_calls = []
+
+    def query_moe(self, **kwargs):
+        self.query_moe_calls.append(kwargs)
+        return PerformanceResult(99.0, energy=0.0)
+
+    def query_vllm_module(
+        self,
+        model,
+        hardware,
+        vllm_version,
+        topology,
+        bucket_tokens,
+        module_boundary,
+        quant_runtime,
+    ):
+        self.vllm_module_calls.append(
+            (
+                model,
+                hardware,
+                vllm_version,
+                topology,
+                bucket_tokens,
+                module_boundary,
+                quant_runtime,
+            )
+        )
+        return PerformanceResult(4.0, energy=0.0)
+
+
 class TestMoEScaling:
     def test_context_moe_scales_num_tokens(self) -> None:
         op = MoE(
@@ -684,6 +846,162 @@ class TestMoEScaling:
 
         assert float(latency) == pytest.approx(1.0)
         assert db.calls == [30]
+
+    def test_vllm_moe_uses_module_perf_exact_bucket(self) -> None:
+        op = MoE(
+            "moe",
+            2.0,
+            hidden_size=1024,
+            inter_size=2048,
+            topk=8,
+            num_experts=256,
+            moe_tp_size=1,
+            moe_ep_size=8,
+            quant_mode=common.MoEQuantMode.float16,
+            workload_distribution="uniform",
+            attention_dp_size=1,
+            is_context=True,
+            scale_num_tokens=1,
+        )
+        db = _FakeVLLMModulePerfDbForMoE()
+
+        latency = op.query(db, x=241, model_name="moonshotai/Kimi-K2.5")
+
+        assert float(latency) == pytest.approx(8.0)
+        assert db.query_moe_calls == []
+        assert db.vllm_module_calls == [
+            (
+                "kimi-k2.5",
+                "h200_sxm",
+                "0.19.0",
+                "tp4dp2ep8",
+                241,
+                "fusedmoe_runner_compute",
+                "CompressedTensorsWNA16MarlinMoEMethod",
+            )
+        ]
+
+    def test_vllm_moe_rejects_non_whitelisted_bucket(self) -> None:
+        op = MoE(
+            "moe",
+            1.0,
+            hidden_size=1024,
+            inter_size=2048,
+            topk=8,
+            num_experts=256,
+            moe_tp_size=1,
+            moe_ep_size=8,
+            quant_mode=common.MoEQuantMode.float16,
+            workload_distribution="uniform",
+            attention_dp_size=1,
+            is_context=True,
+            scale_num_tokens=1,
+        )
+        db = _FakeVLLMModulePerfDbForMoE()
+
+        with pytest.raises(ValueError, match="bucket_tokens"):
+            op.query(db, x=128, model_name="moonshotai/Kimi-K2.5")
+
+        assert db.vllm_module_calls == []
+
+    def test_vllm_moe_non_kimi_scope_keeps_existing_query_moe_path(self) -> None:
+        op = MoE(
+            "moe",
+            1.0,
+            hidden_size=1024,
+            inter_size=2048,
+            topk=8,
+            num_experts=256,
+            moe_tp_size=1,
+            moe_ep_size=8,
+            quant_mode=common.MoEQuantMode.float16,
+            workload_distribution="uniform",
+            attention_dp_size=1,
+            is_context=True,
+            scale_num_tokens=1,
+        )
+        db = _FakeVLLMModulePerfDbForMoE()
+
+        latency = op.query(db, x=241, model_name="meta-llama/Llama-3.1-70B")
+
+        assert float(latency) == pytest.approx(99.0)
+        assert db.query_moe_calls[0]["num_tokens"] == 241
+        assert db.vllm_module_calls == []
+
+    def test_vllm_moe_legacy_scope_keeps_existing_query_moe_path(self) -> None:
+        op = MoE(
+            "moe",
+            1.0,
+            hidden_size=1024,
+            inter_size=2048,
+            topk=8,
+            num_experts=256,
+            moe_tp_size=1,
+            moe_ep_size=8,
+            quant_mode=common.MoEQuantMode.float16,
+            workload_distribution="uniform",
+            attention_dp_size=1,
+            is_context=True,
+            scale_num_tokens=1,
+        )
+        db = _FakeVLLMModulePerfDbForMoE()
+        db.version = "0.12.0"
+
+        latency = op.query(db, x=241, model_name="moonshotai/Kimi-K2.5")
+
+        assert float(latency) == pytest.approx(99.0)
+        assert db.query_moe_calls[0]["num_tokens"] == 241
+        assert db.vllm_module_calls == []
+
+
+class _CaptureModelNameOp:
+    _name = "capture_model_name"
+
+    def __init__(self) -> None:
+        self.model_names = []
+
+    def query(self, database, **kwargs):
+        self.model_names.append(kwargs["model_name"])
+        return PerformanceResult(0.0, energy=0.0)
+
+
+class TestBaseBackendModelNamePropagation:
+    def test_run_static_uses_model_path_when_model_name_is_absent(self, monkeypatch) -> None:
+        op = _CaptureModelNameOp()
+        model = SimpleNamespace(
+            model_path="moonshotai/Kimi-K2.5",
+            context_ops=[op],
+            generation_ops=[],
+            config=SimpleNamespace(
+                attention_dp_size=1,
+                pp_size=1,
+                tp_size=1,
+                moe_tp_size=1,
+                moe_ep_size=1,
+                gemm_quant_mode=SimpleNamespace(name="fp16"),
+                kvcache_quant_mode=SimpleNamespace(name="fp16"),
+                fmha_quant_mode=SimpleNamespace(name="fp16"),
+                moe_quant_mode=SimpleNamespace(name="fp16"),
+                comm_quant_mode=SimpleNamespace(name="fp16"),
+            ),
+        )
+        database = SimpleNamespace(
+            backend="vllm",
+            version="0.19.0",
+            system="h200_sxm",
+            system_spec={"gpu": {"mem_capacity": 80 << 30}},
+        )
+        backend = VLLMBackend()
+        monkeypatch.setattr(backend, "_get_memory_usage", lambda *args, **kwargs: {"total": 0.0})
+
+        backend.run_static(
+            model,
+            database,
+            RuntimeConfig(batch_size=1, isl=2, osl=1),
+            mode="static_ctx",
+        )
+
+        assert op.model_names == ["moonshotai/Kimi-K2.5"]
 
 
 class _FakeCBResult:

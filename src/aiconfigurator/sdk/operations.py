@@ -10,6 +10,55 @@ from aiconfigurator.sdk.performance_result import PerformanceResult
 
 logger = logging.getLogger(__name__)
 
+_VLLM_MODULE_RUNTIME_MODEL = "moonshotai/Kimi-K2.5"
+_VLLM_MODULE_PERFDB_MODEL = "kimi-k2.5"
+_VLLM_MODULE_HARDWARE = "h200_sxm"
+_VLLM_MODULE_VERSION = "0.19.0"
+_VLLM_MODULE_TOPOLOGY = "tp4dp2ep8"
+_VLLM_MODULE_QUANT_RUNTIME = "CompressedTensorsWNA16MarlinMoEMethod"
+_VLLM_MODULE_BUCKETS = frozenset({1, 15, 16, 241, 1808, 2048, 8192})
+
+
+def _is_vllm_module_scope(database: PerfDatabase, model_name: str) -> bool:
+    return (
+        getattr(database, "backend", None) == common.BackendName.vllm.value
+        and getattr(database, "system", None) == _VLLM_MODULE_HARDWARE
+        and getattr(database, "version", None) == _VLLM_MODULE_VERSION
+        and model_name == _VLLM_MODULE_RUNTIME_MODEL
+    )
+
+
+def _query_vllm_module(
+    database: PerfDatabase,
+    *,
+    bucket_tokens: int,
+    module_boundary: str,
+    scale_factor: float,
+) -> PerformanceResult:
+    if getattr(database, "system", None) != _VLLM_MODULE_HARDWARE:
+        raise ValueError(
+            f"vLLM module perf runtime binding requires system={_VLLM_MODULE_HARDWARE!r}, "
+            f"got {getattr(database, 'system', None)!r}"
+        )
+    if getattr(database, "version", None) != _VLLM_MODULE_VERSION:
+        raise ValueError(
+            f"vLLM module perf runtime binding requires version={_VLLM_MODULE_VERSION!r}, "
+            f"got {getattr(database, 'version', None)!r}"
+        )
+    if bucket_tokens not in _VLLM_MODULE_BUCKETS:
+        raise ValueError(f"bucket_tokens must be one of {sorted(_VLLM_MODULE_BUCKETS)}, got {bucket_tokens}")
+
+    result = database.query_vllm_module(
+        model=_VLLM_MODULE_PERFDB_MODEL,
+        hardware=database.system,
+        vllm_version=database.version,
+        topology=_VLLM_MODULE_TOPOLOGY,
+        bucket_tokens=bucket_tokens,
+        module_boundary=module_boundary,
+        quant_runtime=_VLLM_MODULE_QUANT_RUNTIME,
+    )
+    return PerformanceResult(float(result) * scale_factor, energy=result.energy * scale_factor)
+
 
 class Operation:
     """
@@ -508,6 +557,15 @@ class MoE(Operation):
         x *= self._attention_dp_size
         overwrite_quant_mode = kwargs.get("quant_mode")
         quant_mode = self._quant_mode if overwrite_quant_mode is None else overwrite_quant_mode
+        model_name = str(kwargs.get("model_name", ""))
+
+        if _is_vllm_module_scope(database, model_name):
+            return _query_vllm_module(
+                database,
+                bucket_tokens=x,
+                module_boundary="fusedmoe_runner_compute",
+                scale_factor=self._scale_factor,
+            )
 
         result = database.query_moe(
             num_tokens=x,
@@ -696,11 +754,20 @@ class MoEDispatch(Operation):
                 "vllm does not support MoE TP and MoE EP at the same time"
             )
             scaled_num_tokens = max(1, num_tokens // self._scale_num_tokens)
-            volume = scaled_num_tokens * self._hidden_size
+            model_name = str(kwargs.get("model_name", ""))
+            if _is_vllm_module_scope(database, model_name):
+                if not self._pre_dispatch:
+                    return PerformanceResult(0.0, energy=0.0)
+                return _query_vllm_module(
+                    database,
+                    bucket_tokens=scaled_num_tokens,
+                    module_boundary="ep8_comm_dispatch_combine",
+                    scale_factor=self._scale_factor,
+                )
 
+            volume = scaled_num_tokens * self._hidden_size
             comm_latency = 0
 
-            # Add allreduce latency when TP > 1
             if self._attention_tp_size > 1:
                 comm_latency += database.query_custom_allreduce(common.CommQuantMode.half, self.num_gpus, volume)
 
