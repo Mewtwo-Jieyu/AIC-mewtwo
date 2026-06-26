@@ -91,7 +91,7 @@ class BaseBackend(ABC):
                     beam_width=1,
                     s=s_val,
                     prefix=prefix,
-                    model_name=getattr(model, "model_name", ""),
+                    model_name=getattr(model, "model_name", getattr(model, "model_path", "")),
                 )
 
                 # ✅ IMMEDIATELY extract values - do NOT use PerformanceResult arithmetic!
@@ -131,7 +131,7 @@ class BaseBackend(ABC):
                         batch_size=batch_size,
                         beam_width=beam_width,
                         s=isl + i + 1,
-                        model_name=getattr(model, "model_name", ""),
+                        model_name=getattr(model, "model_name", getattr(model, "model_path", "")),
                     )
 
                     # ✅ IMMEDIATELY extract values - do NOT accumulate PerformanceResult objects!
