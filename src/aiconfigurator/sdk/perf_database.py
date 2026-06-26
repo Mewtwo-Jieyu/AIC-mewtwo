@@ -24,6 +24,13 @@ databases_cache = defaultdict(lambda: defaultdict(lambda: defaultdict()))
 logger = logging.getLogger(__name__)
 
 _SYSTEMS_PATHS: list[str] = [os.fspath(pkg_resources.files("aiconfigurator") / "systems")]
+_VLLM_MODULE_BOUNDARIES = frozenset(
+    {
+        "fusedmoe_runner_compute",
+        "ep8_comm_dispatch_combine",
+    }
+)
+_VLLM_MODULE_BUCKETS = frozenset({1, 15, 16, 241, 1808, 2048, 8192})
 
 
 def _normalize_systems_paths(raw_paths: str | Iterable[str] | None) -> list[str]:
@@ -750,6 +757,75 @@ def load_moe_data(moe_file):
             }
 
     return moe_default_data, moe_low_latency_data
+
+
+def load_vllm_module_data(vllm_module_file):
+    """
+    Load vLLM module-level performance rows for exact-key lookup only.
+
+    Required key columns:
+      model, hardware, vllm_version, topology, bucket_tokens, module_boundary,
+      quant_runtime
+
+    Value columns:
+      latency, optional power, optional kernel_source metadata
+    """
+    if not os.path.exists(vllm_module_file):
+        raise FileNotFoundError(vllm_module_file)
+
+    required_columns = {
+        "model",
+        "hardware",
+        "vllm_version",
+        "topology",
+        "bucket_tokens",
+        "module_boundary",
+        "quant_runtime",
+        "latency",
+    }
+    vllm_module_data = {}
+
+    with open(vllm_module_file, encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        fieldnames = set(reader.fieldnames or [])
+        missing = required_columns - fieldnames
+        if missing:
+            raise ValueError(f"vLLM module perf table missing required columns: {sorted(missing)}")
+
+        for row in reader:
+            bucket_tokens = int(row["bucket_tokens"])
+            module_boundary = row["module_boundary"]
+            if bucket_tokens not in _VLLM_MODULE_BUCKETS:
+                raise ValueError(
+                    f"bucket_tokens must be one of {sorted(_VLLM_MODULE_BUCKETS)}, got {bucket_tokens}"
+                )
+            if module_boundary not in _VLLM_MODULE_BOUNDARIES:
+                raise ValueError(
+                    f"module_boundary must be one of {sorted(_VLLM_MODULE_BOUNDARIES)}, got {module_boundary!r}"
+                )
+
+            key = (
+                row["model"],
+                row["hardware"],
+                row["vllm_version"],
+                row["topology"],
+                bucket_tokens,
+                module_boundary,
+                row["quant_runtime"],
+            )
+            if key in vllm_module_data:
+                raise ValueError(f"duplicate vllm module perf exact key: {key}")
+
+            latency = float(row["latency"])
+            power = float(row.get("power") or 0.0)
+            vllm_module_data[key] = {
+                "latency": latency,
+                "power": power,
+                "energy": power * latency,
+                "kernel_source": row.get("kernel_source", ""),
+            }
+
+    return vllm_module_data
 
 
 def load_context_attention_data(context_attention_file):
@@ -1834,6 +1910,7 @@ class PerfDatabase:
         self._extracted_metrics_cache = {}
 
         data_dir = os.path.join(systems_root, self.system_spec["data_dir"], backend, version)
+        self._vllm_module_data = None
         nccl_data_dir = os.path.join(
             systems_root,
             self.system_spec["data_dir"],
@@ -1908,6 +1985,9 @@ class PerfDatabase:
             self._generation_mla_data = load_generation_mla_data(
                 os.path.join(data_dir, common.PerfDataFilename.generation_mla.value)
             )
+            vllm_module_path = os.path.join(data_dir, common.PerfDataFilename.vllm_module.value)
+            if os.path.exists(vllm_module_path):
+                self._vllm_module_data = load_vllm_module_data(vllm_module_path)
             self._compute_scale_data = None
             self._scale_matrix_data = None
         else:  # TRTLLM
@@ -4430,6 +4510,49 @@ class PerfDatabase:
                         {operation=}, {message_size=}, {database_mode=}. Please consider Hybrid mode."
                     )
                     raise
+
+    @functools.lru_cache(maxsize=32768)
+    def query_vllm_module(
+        self,
+        model: str,
+        hardware: str,
+        vllm_version: str,
+        topology: str,
+        bucket_tokens: int,
+        module_boundary: str,
+        quant_runtime: str,
+    ) -> PerformanceResult:
+        """
+        Query vLLM module-level latency by exact key only.
+        """
+        if self.backend != common.BackendName.vllm.value:
+            raise ValueError(f"query_vllm_module requires backend='vllm', got {self.backend!r}")
+        if bucket_tokens not in _VLLM_MODULE_BUCKETS:
+            raise ValueError(f"bucket_tokens must be one of {sorted(_VLLM_MODULE_BUCKETS)}, got {bucket_tokens}")
+        if module_boundary not in _VLLM_MODULE_BOUNDARIES:
+            raise ValueError(
+                f"module_boundary must be one of {sorted(_VLLM_MODULE_BOUNDARIES)}, got {module_boundary!r}"
+            )
+        if self._vllm_module_data is None:
+            raise PerfDataNotAvailableError(
+                f"vLLM module perf table is missing for system='{self.system}', "
+                f"backend='{self.backend}', version='{self.version}'."
+            )
+
+        key = (
+            model,
+            hardware,
+            vllm_version,
+            topology,
+            bucket_tokens,
+            module_boundary,
+            quant_runtime,
+        )
+        try:
+            row = self._vllm_module_data[key]
+        except KeyError as exc:
+            raise PerfDataNotAvailableError(f"Missing exact vLLM module perf key: {key}") from exc
+        return PerformanceResult(row["latency"], energy=row.get("energy", 0.0))
 
     @functools.lru_cache(maxsize=32768)
     def query_moe(
