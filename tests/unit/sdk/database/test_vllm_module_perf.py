@@ -20,6 +20,7 @@ REAL_VLLM_MODULE_PERF = (
     REAL_SYSTEMS_ROOT / "data/h200_sxm/vllm/0.19.0/vllm_module_perf.txt"
 )
 REAL_BUCKETS = [1, 15, 16, 241, 1808, 2048, 8192]
+PAIRED_FUSEDMOE_BUCKETS = [2, 30, 32, 482, 3616, 4096, 16384]
 
 
 def _write_system(tmp_path):
@@ -235,10 +236,10 @@ def test_query_vllm_module_missing_table_fails_fast(tmp_path) -> None:
         )
 
 
-def test_real_vllm_module_perf_file_loads_14_exact_keys() -> None:
+def test_real_vllm_module_perf_file_loads_21_exact_keys() -> None:
     data = load_vllm_module_data(REAL_VLLM_MODULE_PERF)
 
-    assert len(data) == 14
+    assert len(data) == 21
     expected_keys = {
         (
             "kimi-k2.5",
@@ -255,6 +256,20 @@ def test_real_vllm_module_perf_file_loads_14_exact_keys() -> None:
             "ep8_comm_dispatch_combine",
         )
     }
+    expected_keys.update(
+        {
+            (
+                "kimi-k2.5",
+                "h200_sxm",
+                "0.19.0",
+                "tp4dp2ep8",
+                bucket,
+                "fusedmoe_runner_compute",
+                "CompressedTensorsWNA16MarlinMoEMethod",
+            )
+            for bucket in PAIRED_FUSEDMOE_BUCKETS
+        }
+    )
     assert set(data) == expected_keys
 
     fused_key = (
@@ -313,6 +328,24 @@ def test_real_perf_database_queries_two_vllm_module_boundaries() -> None:
     assert ep8.energy == pytest.approx(0.0)
 
 
+def test_real_perf_database_queries_fusedmoe_paired_bucket_rows() -> None:
+    database = PerfDatabase("h200_sxm", "vllm", "0.19.0", str(REAL_SYSTEMS_ROOT))
+
+    paired = database.query_vllm_module(
+        "kimi-k2.5",
+        "h200_sxm",
+        "0.19.0",
+        "tp4dp2ep8",
+        30,
+        "fusedmoe_runner_compute",
+        "CompressedTensorsWNA16MarlinMoEMethod",
+    )
+
+    assert isinstance(paired, PerformanceResult)
+    assert float(paired) == pytest.approx(0.355168)
+    assert paired.energy == pytest.approx(0.0)
+
+
 def test_real_perf_database_vllm_module_exact_lookup_fail_fast() -> None:
     database = PerfDatabase("h200_sxm", "vllm", "0.19.0", str(REAL_SYSTEMS_ROOT))
 
@@ -346,5 +379,16 @@ def test_real_perf_database_vllm_module_exact_lookup_fail_fast() -> None:
             "tp4dp2ep8",
             1,
             "bare_fused_experts",
+            "CompressedTensorsWNA16MarlinMoEMethod",
+        )
+
+    with pytest.raises(PerfDataNotAvailableError, match="exact vLLM module perf key"):
+        database.query_vllm_module(
+            "kimi-k2.5",
+            "h200_sxm",
+            "0.19.0",
+            "tp4dp2ep8",
+            30,
+            "ep8_comm_dispatch_combine",
             "CompressedTensorsWNA16MarlinMoEMethod",
         )

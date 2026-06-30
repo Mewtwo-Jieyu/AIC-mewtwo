@@ -953,6 +953,45 @@ class TestMoEScaling:
             )
         ]
 
+    def test_vllm_moe_uses_module_perf_paired_bucket(self) -> None:
+        op = MoE(
+            "moe",
+            1.0,
+            hidden_size=1024,
+            inter_size=2048,
+            topk=8,
+            num_experts=256,
+            moe_tp_size=1,
+            moe_ep_size=8,
+            quant_mode=common.MoEQuantMode.float16,
+            workload_distribution="uniform",
+            attention_dp_size=1,
+            is_context=True,
+            scale_num_tokens=1,
+        )
+        db = _FakeVLLMModulePerfDbForMoE()
+
+        latency = op.query(
+            db,
+            x=30,
+            model_name="moonshotai/Kimi-K2.5",
+            vllm_module_topology="tp4dp2ep8",
+        )
+
+        assert float(latency) == pytest.approx(4.0)
+        assert db.query_moe_calls == []
+        assert db.vllm_module_calls == [
+            (
+                "kimi-k2.5",
+                "h200_sxm",
+                "0.19.0",
+                "tp4dp2ep8",
+                30,
+                "fusedmoe_runner_compute",
+                "CompressedTensorsWNA16MarlinMoEMethod",
+            )
+        ]
+
     def test_vllm_moe_rejects_non_whitelisted_bucket(self) -> None:
         op = MoE(
             "moe",

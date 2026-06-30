@@ -30,7 +30,7 @@ _VLLM_MODULE_BOUNDARIES = frozenset(
         "ep8_comm_dispatch_combine",
     }
 )
-_VLLM_MODULE_BUCKETS = frozenset({1, 15, 16, 241, 1808, 2048, 8192})
+_VLLM_MODULE_BUCKETS = frozenset({1, 2, 15, 16, 30, 32, 241, 482, 1808, 2048, 3616, 4096, 8192, 16384})
 
 
 def _normalize_systems_paths(raw_paths: str | Iterable[str] | None) -> list[str]:

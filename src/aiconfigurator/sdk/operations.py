@@ -16,7 +16,7 @@ _VLLM_MODULE_HARDWARE = "h200_sxm"
 _VLLM_MODULE_VERSION = "0.19.0"
 _VLLM_MODULE_TOPOLOGY = "tp4dp2ep8"
 _VLLM_MODULE_QUANT_RUNTIME = "CompressedTensorsWNA16MarlinMoEMethod"
-_VLLM_MODULE_BUCKETS = frozenset({1, 15, 16, 241, 1808, 2048, 8192})
+_VLLM_MODULE_BUCKETS = frozenset({1, 2, 15, 16, 30, 32, 241, 482, 1808, 2048, 3616, 4096, 8192, 16384})
 
 
 def _validate_vllm_module_bucket(bucket_tokens: int) -> None:
