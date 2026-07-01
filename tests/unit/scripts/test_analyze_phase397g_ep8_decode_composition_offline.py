@@ -32,6 +32,9 @@ OVERHEAD_RAW = (
 ATTRIBUTION_RAW = (
     REPO_ROOT / "docs/iter_gap_investigation/phase397g_residual_attribution_raw.csv"
 )
+TP_SCALING_RAW = (
+    REPO_ROOT / "docs/iter_gap_investigation/phase397g_tp_scaling_probe_raw.csv"
+)
 
 
 def _rows() -> list[dict[str, str]]:
@@ -55,7 +58,8 @@ def test_required_row_types_present() -> None:
         "ep8_overhead_semantics",
         "overhead_sensitivity",
         "puredecode_ep8_probe",
-        "dp_normalization_check",
+        "tp_degree_check",
+        "tp_scaling_probe",
         "residual_attribution",
         "candidate_fixes",
         "verdict",
@@ -64,11 +68,17 @@ def test_required_row_types_present() -> None:
         assert expected in types
 
 
+def test_no_dp_normalization_row_type() -> None:
+    # The retracted claim must not linger as a row type.
+    assert "dp_normalization_check" not in {r["row_type"] for r in _rows()}
+
+
 def test_row_counts_match_configs() -> None:
     rows = _rows()
     n = len(analyzer.ATTR)
     for per_config in ("overhead_sensitivity", "puredecode_ep8_probe", "residual_attribution"):
         assert sum(r["row_type"] == per_config for r in rows) == n
+    assert sum(r["row_type"] == "tp_scaling_probe" for r in rows) == 5
 
 
 def test_verdict_only_guards_all_false() -> None:
@@ -92,8 +102,6 @@ def test_verdict_only_guards_all_false() -> None:
 
 
 def test_every_config_overpredicts_at_overhead_zero() -> None:
-    # The load-bearing finding: the 90ms fudge was calibrated to pre-397f
-    # under-count; with it removed every ep8 config over-predicts.
     for name, a in analyzer.ATTR.items():
         assert a.sim_ovh0_ratio > 1.0, name
 
@@ -104,18 +112,52 @@ def test_90ms_overhead_regresses_decode_heavy() -> None:
     assert a.abs_err_ovh90 > a.abs_err_ovh0
 
 
-def test_dp2_matches_real_at_tp_times_dp_not_tp() -> None:
-    a = analyzer.ATTR["tp4ep8dp2-8k2k"]
-    # pure-decode compose lines up with real decode iter at num_gpus=tp*dp
-    assert 0.9 <= a.per_iter_over_real_ng_tp_dp <= 1.1
-    # ...and is off by ~2x at num_gpus=tp
-    assert a.per_iter_no_ovh_ms / a.real_iter_ng_tp_ms < 0.75
-
-
-def test_dp1_configs_have_equal_num_gpus_conventions() -> None:
+def test_dp_cancels_in_normalization() -> None:
+    # dp1 configs must have identical num_gpus conventions (dp trivially cancels),
+    # and the tp_degree_check row must state the cancellation explicitly.
     for name, a in analyzer.ATTR.items():
         if a.dp == 1:
             assert a.real_iter_ng_tp_ms == pytest.approx(a.real_iter_ng_tp_dp_ms)
+    row = next(r for r in _rows() if r["row_type"] == "tp_degree_check")
+    assert "CANCELS" in row["value_a"]
+    assert "not a normalization bug" in row["verdict"].lower() or "not a normalization" in row["value_a"].lower()
+
+
+def test_tp4_real_iter_about_2x_tp8() -> None:
+    real = analyzer.TP_SCALING["REAL_DECODE_ITER"]
+    assert 1.8 <= real.ratio <= 2.2
+    # ...while the sim total barely moves.
+    assert analyzer.TP_SCALING["SIM_TOTAL"].ratio < 1.4
+
+
+def test_sim_too_fast_worse_for_tp4() -> None:
+    tp8 = analyzer.ATTR["tp8ep8-8k2k"]
+    tp4 = analyzer.ATTR["tp4ep8dp2-8k2k"]
+    # sim under-covers real iter for both, and much more for tp4.
+    assert tp8.sim_too_fast_ratio < 1.0
+    assert tp4.sim_too_fast_ratio < tp8.sim_too_fast_ratio
+    assert tp4.owed_comm_ms > tp8.owed_comm_ms
+
+
+def test_attention_barely_scales_with_tp() -> None:
+    attn = analyzer.TP_SCALING["generation_attention"]
+    assert 0.85 <= attn.ratio <= 1.15
+    assert not attn.scales_with_tp
+
+
+def test_moe_dominates_and_is_flat() -> None:
+    moe = analyzer.TP_SCALING["generation_moe"]
+    # MoE is the single largest op and does not scale ~2x with tp.
+    assert moe.tp8_ms > analyzer.TP_SCALING["generation_attention"].tp8_ms
+    assert moe.ratio < 1.4
+
+
+def test_ep_dispatch_undermodeled_vs_owed_comm() -> None:
+    pre = analyzer.TP_SCALING["generation_moe_pre_dispatch"]
+    post = analyzer.TP_SCALING["generation_moe_post_dispatch"]
+    modeled = pre.tp4_ms + post.tp4_ms
+    owed = analyzer.ATTR["tp4ep8dp2-8k2k"].owed_comm_ms
+    assert modeled < 0.15 * owed
 
 
 def test_abs_err_symmetry() -> None:
@@ -124,21 +166,22 @@ def test_abs_err_symmetry() -> None:
     assert a.abs_err_ovh90 == pytest.approx(2.0)
 
 
-def test_candidate_fixes_enumerate_structural_changes() -> None:
+def test_candidate_fixes_enumerate_ep_comm() -> None:
     row = next(r for r in _rows() if r["row_type"] == "candidate_fixes")
     text = (row["value_a"] + row["value_b"]).lower()
-    assert "num_gpus" in text
-    assert "overhead" in text
+    assert "all-to-all" in text or "dispatch" in text
+    assert "comm" in text
     assert "mixed" in text or "prefill" in text
 
 
-def test_verdict_and_next_phase() -> None:
+def test_verdict_retracts_normalization_and_names_ep_comm() -> None:
     verdict = next(r for r in _rows() if r["row_type"] == "verdict")
-    assert "single" in verdict["verdict"]
+    assert "not a normalization bug" in verdict["verdict"]
+    assert "communication" in verdict["verdict"] or "comm" in verdict["value_a"].lower()
     assert "No-Go" in verdict["value_b"]
     assert verdict["next_allowed_phase"] == analyzer.NEXT_PHASE
     nxt = next(r for r in _rows() if r["row_type"] == "next_phase")
-    assert "ep8" in nxt["verdict"] or "num_gpus" in nxt["value_b"]
+    assert "comm" in (nxt["value_a"] + nxt["verdict"]).lower()
     assert analyzer.NEXT_PHASE == "phase397h_ep8_decode_composition_fix"
 
 
@@ -166,7 +209,6 @@ def test_overhead_raw_present_and_consistent() -> None:
         rows = list(csv.DictReader(handle))
     assert len(rows) == 6
     for row in rows:
-        # At overhead=0 every config over-predicts.
         assert float(row["ratio_ovh0"]) > 1.0
 
 
@@ -176,15 +218,27 @@ def test_attribution_raw_present_and_consistent() -> None:
         rows = list(csv.DictReader(handle))
     assert len(rows) == len(analyzer.ATTR)
     by_name = {r["config"]: r for r in rows}
+    # dp2 pure-decode compose is ~2x too fast vs the real (num_gpus=tp) iter.
     dp2 = by_name["tp4ep8dp2-8k2k"]
-    assert 0.9 <= float(dp2["per_iter_over_real_ng_tp_dp"]) <= 1.1
+    assert 0.45 <= float(dp2["sim_too_fast_vs_real_iter_ng_tp"]) <= 0.55
+    assert "ep_comm" in dp2["dominant_cause"]
 
 
-def test_checked_in_md_has_verdict() -> None:
+def test_tp_scaling_raw_present_and_consistent() -> None:
+    assert TP_SCALING_RAW.exists()
+    with TP_SCALING_RAW.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    by_op = {r["op_name"]: r for r in rows}
+    assert float(by_op["REAL_DECODE_ITER"]["ratio_tp4_over_tp8"]) > 1.8
+    assert 0.85 <= float(by_op["generation_attention"]["ratio_tp4_over_tp8"]) <= 1.15
+
+
+def test_checked_in_md_has_correction() -> None:
     if not CHECKED_IN_MD.exists():
         pytest.skip("phase397g md not generated yet")
     text = CHECKED_IN_MD.read_text(encoding="utf-8")
     assert "Phase397g" in text
     assert "step 4" in text
     assert "No-Go" in text
-    assert "num_gpus=tp*dp" in text
+    assert "CORRECTION" in text
+    assert "dp cancels" in text.lower() or "dp cancels" in text

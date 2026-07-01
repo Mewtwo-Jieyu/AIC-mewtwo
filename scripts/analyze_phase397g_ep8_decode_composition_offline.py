@@ -1,5 +1,14 @@
 """Phase397g ep8/dp2 decode composition residual attribution (Route delta step 4).
 
+CORRECTION NOTE (supersedes the first 397g cut, commit c935c9e5): the first pass
+claimed a "dp2 per-GPU normalization bug". That was WRONG. Re-reading the
+throughput path, dp cancels exactly in the per-GPU normalization
+(vllm_backend.py:699-723): tokens_s_gpu = throughput_tok_s * (pp*dp) / (tp*pp*dp)
+= throughput_tok_s / tp, and throughput_tok_s is the aggregate one-replica value
+(simulator.py:303). So the normalization is correct. This corrected cut re-runs a
+read-only per-op probe and re-attributes the residual to EP all-to-all
+communication that the simulator under-models.
+
 Phase397f fixed the tp16 decode composition (throughput table PASS, 4.13x->1.44x)
 but the expert-parallel multi-config table still FAILs (max 3.26x->2.17x), and the
 residual is bidirectional: tp8ep8-8k2k over-corrected to 0.62x while
@@ -8,8 +17,8 @@ attributes the ep8/dp2 residual and hands phase397h concrete structural fixes +
 targets. It does NOT modify runtime, does NOT tune the ep8 overhead, needs no
 GPU/SSH, and does not touch the PerfDatabase.
 
-Attribution (offline probe: overhead sweep {0,90}, budget breakdown, pure-decode
-ep8 probe, dual num_gpus convention; raw in the *_raw.csv files):
+Corrected attribution (offline probe: overhead sweep {0,90}, budget breakdown,
+pure-decode ep8 probe, per-op tp8-vs-tp4 dump; raw in the *_raw.csv files):
 
   1. ep8_per_iteration_overhead_ms=90 is a MISCALIBRATED BLUNT FUDGE.
      validate_cb_simulator.py feeds a flat 90ms/iter overhead ONLY to the ep8
@@ -17,26 +26,39 @@ ep8 probe, dual num_gpus convention; raw in the *_raw.csv files):
      iteration_latency when decode_bs>0). At overhead=0 EVERY ep8 config
      OVER-predicts (1.12x-3.22x), so the 90ms was calibrated to the pre-397f
      under-count. Post-397f it over-corrects decode-heavy tp8ep8-8k2k
-     (155.2->82.8, ratio 1.16x->0.62x; abs err 1.16->1.61). The physically owed
-     per-iter EP comm for that config is real 119.8ms - compose 100.2ms ~= 20ms,
-     NOT 90ms.
+     (155.2->82.8, ratio 1.16x->0.62x). A single constant cannot cover a cost
+     that scales with the topology: tp8ep8-8k2k owes ~20ms, tp4ep8dp2-8k2k owes
+     ~116ms.
 
-  2. dp2 PER-GPU NORMALIZATION BUG. _run_agg_cb_sim normalizes throughput with
-     num_gpus=tp, but attention-dp configs run on tp*dp physical GPUs. The
-     pure-decode compose for tp4ep8dp2-8k2k (116.39ms) matches the real decode
-     iter at num_gpus=tp*dp=8 (116.18ms, 1.00x), NOT at num_gpus=tp=4 (232.36ms,
-     0.50x). Dividing dp2 sim throughput by dp lands tp4ep8dp2-8k2k at 0.94x.
+  2. EP ALL-TO-ALL COMMUNICATION IS UNDER-MODELED (the corrected root cause; NOT
+     a normalization bug). dp cancels in the per-GPU normalization, yet the real
+     per-replica decode iter roughly DOUBLES from tp8dp1 (real 119.8ms) to
+     tp4dp2 (real 232.4ms) while the simulator barely moves (100.2ms -> 116.4ms,
+     1.16x). The per-op tp8-vs-tp4 dump shows why the sim misses it:
+       - generation_moe dominates (71.8ms -> 84.8ms, ~72% of the iter) and is
+         nearly flat across tp (EP topology fixed at moe_ep=8; only num_tokens
+         128->256 moves it).
+       - generation_attention is FLAT (21.7ms -> 21.5ms, 0.99x). For MLA the
+         latent KV is replicated across TP, so flat attention is plausibly
+         CORRECT, not the gap.
+       - dense gemms are tiny (~4-5ms total).
+       - the ONLY comm proxy, generation_moe_pre/post_dispatch, is ~2-5ms total
+         -- far too small to cover the owed 20ms (tp8dp1) / 116ms (tp4dp2).
+     So the missing per-iter cost is un-modeled EP dispatch/combine all-to-all
+     communication, which grows with attention_dp * decode_bs tokens and with
+     cross-dp-group network hops (tp4dp2 routes 256 tokens across 8 EP ranks
+     spanning two dp groups; tp8dp1 routes 128 within one group).
 
-  3. LONG-CONTEXT (32k3k) MIXED/PREFILL OVER-PREDICTION. Even at overhead=0 with
-     correct normalization, the 32k3k configs over-predict (tp8ep8-32k3k 1.95x;
-     tp4ep8dp2-32k3k ~1.61x after dp fix). These are mixed/prefill-dominated
-     (long isl), a residual separate from pure decode.
+  3. LONG-CONTEXT (32k3k) MIXED/PREFILL OVER-PREDICTION. Even at overhead=0 the
+     32k3k configs over-predict (tp8ep8-32k3k 1.95x) -- mixed/prefill-dominated
+     (long isl), a residual separate from the pure-decode EP-comm gap.
 
-Verdict: the ep8 residual is NOT a single decode scaling error. 397h should
-(i) replace the flat 90ms ep8 overhead with a structural per-rank EP
-dispatch/combine comm term (decode gap ~20ms for tp8ep8-8k2k), (ii) fix the dp
-per-GPU normalization (num_gpus=tp*dp), then (iii) hand the residual long-context
-32k3k mixed/prefill over-prediction to a follow-up. Default AIC stays No-Go.
+Verdict: the ep8 residual is NOT a single decode scaling error and NOT a
+normalization bug. 397h should (i) model EP dispatch/combine all-to-all comm
+structurally (per-rank, scaling with attention_dp*decode_bs and cross-group hops)
+in place of the flat 90ms, (ii) verify the generation_moe token count under
+attention_dp, then (iii) hand the residual long-context 32k3k mixed/prefill
+over-prediction to a follow-up. Default AIC stays No-Go.
 """
 
 from __future__ import annotations
@@ -61,6 +83,9 @@ OVERHEAD_RAW_CSV = (
 )
 ATTRIBUTION_RAW_CSV = (
     REPO_ROOT / "docs/iter_gap_investigation/phase397g_residual_attribution_raw.csv"
+)
+TP_SCALING_RAW_CSV = (
+    REPO_ROOT / "docs/iter_gap_investigation/phase397g_tp_scaling_probe_raw.csv"
 )
 
 SOURCE = "phase397g_ep8_decode_composition_offline"
@@ -101,15 +126,36 @@ class Attr:
         return self.abs_err_ovh90 > self.abs_err_ovh0 + 1e-9
 
     @property
-    def per_iter_over_real_ng_tp_dp(self) -> float:
-        return self.per_iter_no_ovh_ms / self.real_iter_ng_tp_dp_ms
+    def sim_too_fast_ratio(self) -> float:
+        # Correct comparison: sim per-iter vs the real per-replica decode iter,
+        # which is normalized by num_gpus=tp (dp cancels). <1 means sim too fast.
+        return self.per_iter_no_ovh_ms / self.real_iter_ng_tp_ms
+
+    @property
+    def owed_comm_ms(self) -> float:
+        return self.real_iter_ng_tp_ms - self.per_iter_no_ovh_ms
+
+
+@dataclass(frozen=True)
+class TpOp:
+    op_name: str
+    tp8_ms: float
+    tp4_ms: float
+
+    @property
+    def ratio(self) -> float:
+        return self.tp4_ms / self.tp8_ms if self.tp8_ms > 0 else float("inf")
+
+    @property
+    def scales_with_tp(self) -> bool:
+        return 1.7 <= self.ratio <= 2.3
 
 
 # From the offline probe (aic env, pr403 worktree). batch=128 all configs.
 ATTR: dict[str, Attr] = {
     "tp8ep8-8k2k": Attr(
         "tp8ep8-8k2k", 8, 1, "8k2k",
-        100.1540, 119.83, 119.83, 1.1624, 0.6203, "ep8_overhead_90ms_overcorrects",
+        100.1540, 119.83, 119.83, 1.1624, 0.6203, "ep_comm_undermodeled_owes~20ms",
     ),
     "tp8ep8-32k3k": Attr(
         "tp8ep8-32k3k", 8, 1, "32k3k",
@@ -117,12 +163,24 @@ ATTR: dict[str, Attr] = {
     ),
     "tp4ep8dp2-8k2k": Attr(
         "tp4ep8dp2-8k2k", 4, 2, "8k2k",
-        116.3865, 232.36, 116.18, 1.8784, 1.0869, "dp2_pergpu_normalization",
+        116.3865, 232.36, 116.18, 1.8784, 1.0869, "ep_comm_undermodeled_owes~116ms",
     ),
     "tp4ep8dp2-32k3k": Attr(
         "tp4ep8dp2-32k3k", 4, 2, "32k3k",
-        166.5988, 600.63, 300.31, 3.2229, 2.1731, "dp2_normalization_plus_longcontext",
+        166.5988, 600.63, 300.31, 3.2229, 2.1731, "ep_comm_plus_longcontext",
     ),
+}
+
+# Per-op generation latency, tp8ep8dp1 vs tp4ep8dp2 (8k2k, kv=9000, bs=128).
+# The load-bearing ops for the EP-comm story (full 17-op dump in the raw csv).
+TP_SCALING: dict[str, TpOp] = {
+    "generation_moe": TpOp("generation_moe", 71.7758, 84.7642),
+    "generation_attention": TpOp("generation_attention", 21.7362, 21.5231),
+    "generation_moe_pre_dispatch": TpOp("generation_moe_pre_dispatch", 1.0213, 2.4552),
+    "generation_moe_post_dispatch": TpOp("generation_moe_post_dispatch", 1.0213, 2.3336),
+    "dense_gemm_sum": TpOp("dense_gemm_sum", 4.1593, 4.8631),
+    "SIM_TOTAL": TpOp("SIM_TOTAL", 99.7139, 115.9392),
+    "REAL_DECODE_ITER": TpOp("REAL_DECODE_ITER", 119.8300, 232.3600),
 }
 
 FIELDNAMES = [
@@ -222,33 +280,65 @@ def analyze_phase397g() -> list[dict[str, str]]:
             )
         )
 
-    # --- pure-decode ep8 probe + dp normalization ---
+    # --- pure-decode ep8 probe: sim per-iter vs real decode iter (num_gpus=tp) ---
     for name, a in ATTR.items():
         rows.append(
             _row(
                 "puredecode_ep8_probe",
                 scenario=name,
-                metric="per_iter_no_ovh_vs_real_iter",
+                metric="per_iter_no_ovh_vs_real_iter_ng_tp",
                 value_a=f"per_iter(no ovh)={a.per_iter_no_ovh_ms:.2f}ms",
-                value_b=f"real_iter(ng=tp)={a.real_iter_ng_tp_ms:.2f}ms; "
-                f"real_iter(ng=tp*dp)={a.real_iter_ng_tp_dp_ms:.2f}ms",
-                ratio=f"{a.per_iter_over_real_ng_tp_dp:.4f}",
-                verdict="pure-decode compose vs real decode iter (num_gpus=tp*dp)",
+                value_b=f"real_iter(ng=tp)={a.real_iter_ng_tp_ms:.2f}ms "
+                f"(owed comm ~{a.owed_comm_ms:.0f}ms)",
+                ratio=f"{a.sim_too_fast_ratio:.4f}",
+                verdict="sim too fast: pure-decode compose under-covers real iter",
             )
         )
 
-    # --- dp normalization check ---
+    # --- tp-degree check: dp cancels; real tp4 ~2x tp8; gap is EP comm ---
     rows.append(
         _row(
-            "dp_normalization_check",
-            metric="num_gpus_convention",
-            value_a="sim uses num_gpus=tp (_run_agg_cb_sim sim.run num_gpus=tp)",
-            value_b="attention-dp physical GPUs = tp*dp; tp4ep8dp2-8k2k compose "
-            "116.39ms == real_iter(ng=tp*dp)=116.18ms (1.00x), NOT ng=tp (0.50x)",
-            ratio=f"{ATTR['tp4ep8dp2-8k2k'].per_iter_over_real_ng_tp_dp:.4f}",
-            verdict="dp2 throughput normalized by tp not tp*dp -> ~dp x over-prediction",
+            "tp_degree_check",
+            metric="dp_cancels_real_tp4_is_2x_tp8",
+            value_a="dp CANCELS in per-GPU normalization: tokens_s_gpu = "
+            "throughput_tok_s*(pp*dp)/(tp*pp*dp) = throughput_tok_s/tp "
+            "(vllm_backend.py:699-723; simulator.py:303) -> NOT a normalization bug",
+            value_b="real per-replica decode iter tp8dp1=119.8ms vs tp4dp2=232.4ms "
+            "(~1.94x) while sim barely moves 100.2->116.4ms (1.16x)",
+            ratio=f"{TP_SCALING['REAL_DECODE_ITER'].ratio:.4f}",
+            verdict="the ~2x real gap is un-modeled EP all-to-all comm, not "
+            "attention/dense tp-scaling and not normalization",
         )
     )
+
+    # --- per-op tp8-vs-tp4 scaling probe ---
+    for key in (
+        "generation_moe",
+        "generation_attention",
+        "generation_moe_pre_dispatch",
+        "generation_moe_post_dispatch",
+        "dense_gemm_sum",
+    ):
+        op = TP_SCALING[key]
+        if key == "generation_moe":
+            note = "dominant ~72% of iter; flat across tp (EP fixed, only tokens 128->256)"
+        elif key == "generation_attention":
+            note = "FLAT (0.99x) - MLA latent KV replicated across tp, plausibly correct"
+        elif "dispatch" in key:
+            note = "only comm proxy; ~2-5ms total, far below owed 20/116ms -> under-modeled"
+        else:
+            note = "tiny (~4-5ms); partial tp-scaling"
+        rows.append(
+            _row(
+                "tp_scaling_probe",
+                scenario=op.op_name,
+                metric="tp4_over_tp8_ratio",
+                value_a=f"tp8={op.tp8_ms:.3f}ms",
+                value_b=f"tp4={op.tp4_ms:.3f}ms",
+                ratio=f"{op.ratio:.4f}",
+                verdict=note,
+            )
+        )
 
     # --- per-config residual attribution ---
     for name, a in ATTR.items():
@@ -258,7 +348,8 @@ def analyze_phase397g() -> list[dict[str, str]]:
                 scenario=name,
                 metric="dominant_cause",
                 value_a=f"tp={a.tp} dp={a.dp} shape={a.shape}",
-                value_b=f"ovh0={a.sim_ovh0_ratio:.2f}x ovh90={a.sim_ovh90_ratio:.2f}x",
+                value_b=f"ovh0={a.sim_ovh0_ratio:.2f}x ovh90={a.sim_ovh90_ratio:.2f}x "
+                f"owed~{a.owed_comm_ms:.0f}ms",
                 ratio=f"{a.sim_ovh90_ratio:.4f}",
                 verdict=a.dominant_cause,
             )
@@ -269,11 +360,13 @@ def analyze_phase397g() -> list[dict[str, str]]:
         _row(
             "candidate_fixes",
             metric="phase397h_change_set",
-            value_a="(i) replace flat 90ms ep8 overhead with structural per-rank EP "
-            "dispatch/combine comm (decode gap ~20ms for tp8ep8-8k2k); "
-            "(ii) fix dp per-GPU normalization num_gpus=tp -> tp*dp",
-            value_b="(iii) hand residual long-context 32k3k mixed/prefill "
-            "over-prediction (~1.95x dp1) to a follow-up mixed-path phase",
+            value_a="(i) model EP dispatch/combine all-to-all comm structurally "
+            "(per-rank, scaling with attention_dp*decode_bs tokens and cross-dp-group "
+            "hops) in place of the flat 90ms; (ii) verify generation_moe token count "
+            "under attention_dp (128->256)",
+            value_b="(iii) drop the flat 90ms ep8 overhead once comm is structural; "
+            "(iv) hand residual long-context 32k3k mixed/prefill over-prediction "
+            "(~1.95x dp1) to a follow-up mixed-path phase",
             verdict="enumerated for 397h; not implemented here",
         )
     )
@@ -284,11 +377,13 @@ def analyze_phase397g() -> list[dict[str, str]]:
             "verdict",
             metric="ep8_residual_root_cause",
             value_a="bidirectional residual = 90ms fudge over-correction (decode-heavy) "
-            "+ dp2 num_gpus=tp normalization (~dp x) + long-context mixed over-predict",
+            "+ un-modeled EP all-to-all comm (~20ms tp8dp1 to ~116ms tp4dp2) "
+            "+ long-context mixed over-predict; dp normalization is CORRECT",
             value_b=f"Default {DEFAULT_READINESS}",
             verdict=(
-                "not a single decode scaling error; the flat 90ms ep8 overhead and the "
-                "dp per-GPU normalization are structural, the 32k3k residual is mixed-path"
+                "not a single decode scaling error and not a normalization bug; the flat "
+                "90ms ep8 overhead stands in for topology-dependent EP dispatch/combine "
+                "communication that the simulator under-models"
             ),
             next_allowed_phase=NEXT_PHASE,
         )
@@ -297,11 +392,11 @@ def analyze_phase397g() -> list[dict[str, str]]:
         _row(
             "next_phase",
             metric="route_delta_step5_target",
-            value_a="structuralize ep8 comm (drop flat 90ms) + fix num_gpus=tp*dp",
-            value_b="targets: tp8ep8-8k2k owed ~20ms EP comm; tp4ep8dp2-8k2k -> 0.94x "
-            "after dp fix; re-validate multi-config offline",
+            value_a="structuralize ep8 EP all-to-all comm (drop flat 90ms)",
+            value_b="targets: tp8ep8-8k2k owed ~20ms comm; tp4ep8dp2-8k2k owed ~116ms; "
+            "re-validate multi-config offline to max <= 1.470",
             verdict=(
-                "phase397h: structural ep8 comm + dp normalization fix; then a mixed-path "
+                "phase397h: structural EP dispatch/combine comm term; then a mixed-path "
                 "phase for the 32k3k long-context residual"
             ),
             next_allowed_phase=NEXT_PHASE,
@@ -323,7 +418,8 @@ def _validate_rows(rows: list[dict[str, str]]) -> None:
         "ep8_overhead_semantics",
         "overhead_sensitivity",
         "puredecode_ep8_probe",
-        "dp_normalization_check",
+        "tp_degree_check",
+        "tp_scaling_probe",
         "residual_attribution",
         "candidate_fixes",
         "verdict",
@@ -336,6 +432,8 @@ def _validate_rows(rows: list[dict[str, str]]) -> None:
     for per_scenario_type in ("overhead_sensitivity", "puredecode_ep8_probe", "residual_attribution"):
         if sum(1 for r in rows if r["row_type"] == per_scenario_type) != n:
             raise ValueError(f"{per_scenario_type} must have {n} rows")
+    if sum(1 for r in rows if r["row_type"] == "tp_scaling_probe") != 5:
+        raise ValueError("tp_scaling_probe must have 5 rows")
 
     for row in rows:
         label = row["row_type"]
@@ -372,17 +470,34 @@ def _validate_rows(rows: list[dict[str, str]]) -> None:
     if not ATTR["tp8ep8-8k2k"].overhead_regressed:
         raise ValueError("tp8ep8-8k2k must regress under the 90ms overhead")
 
-    # Load-bearing 3: dp2 pure-decode compose matches real at num_gpus=tp*dp (~1.0x).
-    dp2 = ATTR["tp4ep8dp2-8k2k"]
-    if not 0.9 <= dp2.per_iter_over_real_ng_tp_dp <= 1.1:
-        raise ValueError("tp4ep8dp2-8k2k compose must match real_iter(ng=tp*dp) ~1.0x")
-    # ...and does NOT match at num_gpus=tp (should be ~0.5x for dp2).
-    if dp2.per_iter_no_ovh_ms / dp2.real_iter_ng_tp_ms >= 0.75:
-        raise ValueError("tp4ep8dp2-8k2k should mismatch badly at num_gpus=tp")
+    # Load-bearing 3: dp1 configs have equal num_gpus conventions (dp cancels).
+    for name, a in ATTR.items():
+        if a.dp == 1 and abs(a.real_iter_ng_tp_ms - a.real_iter_ng_tp_dp_ms) > 1e-6:
+            raise ValueError(f"{name} dp1 num_gpus conventions must match")
+
+    # Load-bearing 4: real tp4 decode iter is ~2x tp8 (per-GPU throughput near-equal).
+    real_ratio = TP_SCALING["REAL_DECODE_ITER"].ratio
+    if not 1.8 <= real_ratio <= 2.2:
+        raise ValueError("real tp4 decode iter must be ~2x tp8")
+    if TP_SCALING["SIM_TOTAL"].ratio >= 1.4:
+        raise ValueError("sim total must barely move tp8->tp4 (<1.4x)")
+
+    # Load-bearing 5: attention is flat across tp (MLA), NOT the gap.
+    if not 0.85 <= TP_SCALING["generation_attention"].ratio <= 1.15:
+        raise ValueError("generation_attention must be flat across tp")
+
+    # Load-bearing 6: modeled EP dispatch is far below the owed comm.
+    modeled_dispatch_tp4 = (
+        TP_SCALING["generation_moe_pre_dispatch"].tp4_ms
+        + TP_SCALING["generation_moe_post_dispatch"].tp4_ms
+    )
+    owed_tp4 = ATTR["tp4ep8dp2-8k2k"].owed_comm_ms
+    if modeled_dispatch_tp4 >= 0.15 * owed_tp4:
+        raise ValueError("modeled EP dispatch must be far below owed comm")
 
     verdict = next(r for r in rows if r["row_type"] == "verdict")
-    if "single" not in verdict["verdict"]:
-        raise ValueError("verdict must state it is not a single scaling error")
+    if "not a normalization bug" not in verdict["verdict"]:
+        raise ValueError("verdict must explicitly retract the normalization claim")
     if verdict["next_allowed_phase"] != NEXT_PHASE:
         raise ValueError("verdict next phase mismatch")
 
@@ -402,15 +517,21 @@ def write_phase397g_md(path: Path, rows: list[dict[str, str]]) -> None:
     lines = [
         "# Phase397g ep8/dp2 decode Composition Residual Attribution (Route delta step 4)",
         "",
+        "> CORRECTION (supersedes commit c935c9e5): the first cut claimed a \"dp2 "
+        "per-GPU normalization bug\". That was WRONG -- dp cancels exactly in the "
+        "per-GPU normalization. This corrected cut re-attributes the residual to "
+        "under-modeled EP all-to-all communication.",
+        "",
         "| Item | Result |",
         "|---|---|",
         "| Question | after 397f, why does the ep8 multi-config table still FAIL "
         "(2.17x) with a bidirectional residual (tp8ep8-8k2k 0.62x under, "
         "tp4ep8dp2-32k3k 2.17x over)? |",
-        "| Answer | three structural causes: (1) the flat 90ms ep8 overhead is a "
-        "miscalibrated fudge that over-corrects decode-heavy configs; (2) dp2 "
-        "throughput is normalized by num_gpus=tp instead of tp*dp; (3) the 32k3k "
-        "long-context configs over-predict in the mixed/prefill path. |",
+        "| Answer | three causes: (1) the flat 90ms ep8 overhead is a miscalibrated "
+        "fudge that over-corrects decode-heavy configs; (2) EP all-to-all comm is "
+        "under-modeled (owed ~20ms tp8dp1 to ~116ms tp4dp2); (3) the 32k3k "
+        "long-context configs over-predict in the mixed/prefill path. dp "
+        "normalization is CORRECT. |",
         "| Runtime / table / Default AIC | not modified (verdict-only, offline, "
         "no GPU/SSH, no overhead tuning) |",
         "",
@@ -433,52 +554,75 @@ def write_phase397g_md(path: Path, rows: list[dict[str, str]]) -> None:
     lines += [
         "",
         "At `overhead=0` EVERY ep8 config over-predicts (1.12x-3.22x), so the 90ms was "
-        "calibrated to the pre-397f under-count. Post-397f it over-corrects "
-        "decode-heavy `tp8ep8-8k2k` (1.16x -> 0.62x). The physically owed per-iter EP "
-        "comm there is `real 119.8ms - compose 100.2ms ~= 20ms`, not 90ms.",
+        "calibrated to the pre-397f under-count. A single constant cannot cover a cost "
+        "that scales with the topology: `tp8ep8-8k2k` owes ~20ms, `tp4ep8dp2-8k2k` owes "
+        "~116ms.",
         "",
-        "## 2. dp2 per-GPU normalization bug",
+        "## 2. dp normalization is correct; the gap is un-modeled EP comm",
         "",
-        "`_run_agg_cb_sim` normalizes with `num_gpus=tp`, but attention-dp configs run "
-        "on `tp*dp` physical GPUs.",
+        "The per-GPU throughput normalizes as `tokens_s_gpu = throughput_tok_s*(pp*dp)"
+        "/(tp*pp*dp) = throughput_tok_s/tp` (`vllm_backend.py`:699-723; "
+        "`simulator.py`:303), so **dp cancels** -- there is no normalization bug. Yet "
+        "the real per-replica decode iter roughly doubles from tp8dp1 to tp4dp2 while "
+        "the sim barely moves:",
         "",
-        "| Config | compose (no ovh) | real_iter(ng=tp) | real_iter(ng=tp*dp) | compose/real(ng=tp*dp) |",
+        "| op (8k2k, kv=9000, bs=128) | tp8 ms | tp4 ms | tp4/tp8 | reading |",
         "|---|---|---|---|---|",
     ]
-    for name, a in ATTR.items():
+    for key in (
+        "generation_moe",
+        "generation_attention",
+        "generation_moe_pre_dispatch",
+        "generation_moe_post_dispatch",
+        "dense_gemm_sum",
+        "SIM_TOTAL",
+        "REAL_DECODE_ITER",
+    ):
+        op = TP_SCALING[key]
+        reading = {
+            "generation_moe": "dominant ~72%; flat (EP fixed, tokens 128->256)",
+            "generation_attention": "flat -- MLA latent KV, plausibly correct",
+            "generation_moe_pre_dispatch": "comm proxy, tiny",
+            "generation_moe_post_dispatch": "comm proxy, tiny",
+            "dense_gemm_sum": "tiny",
+            "SIM_TOTAL": "sim barely moves (1.16x)",
+            "REAL_DECODE_ITER": "real ~2x -> owed cost is EP comm",
+        }[key]
         lines.append(
-            f"| {name} | {a.per_iter_no_ovh_ms:.1f} ms | {a.real_iter_ng_tp_ms:.1f} ms | "
-            f"{a.real_iter_ng_tp_dp_ms:.1f} ms | {a.per_iter_over_real_ng_tp_dp:.2f}x |"
+            f"| {op.op_name} | {op.tp8_ms:.3f} | {op.tp4_ms:.3f} | {op.ratio:.2f}x | {reading} |"
         )
     lines += [
         "",
-        "For `tp4ep8dp2-8k2k` the pure-decode compose (116.39ms) matches the real "
-        "decode iter at `num_gpus=tp*dp=8` (116.18ms, **1.00x**), not at `num_gpus=tp=4` "
-        "(0.50x). Dividing dp2 sim throughput by `dp` lands `tp4ep8dp2-8k2k` at 0.94x.",
+        "The only comm proxy (`generation_moe_pre/post_dispatch`) totals ~2-5ms -- far "
+        "below the owed 20ms (tp8dp1) / 116ms (tp4dp2). The missing per-iter cost is "
+        "un-modeled EP dispatch/combine all-to-all communication, which grows with "
+        "`attention_dp * decode_bs` tokens and with cross-dp-group hops.",
         "",
         "## 3. Per-config attribution",
         "",
-        "| Config | tp | dp | shape | dominant cause |",
-        "|---|---|---|---|---|",
+        "| Config | tp | dp | shape | owed comm | dominant cause |",
+        "|---|---|---|---|---|---|",
     ]
     for name, a in ATTR.items():
         lines.append(
-            f"| {name} | {a.tp} | {a.dp} | {a.shape} | {a.dominant_cause} |"
+            f"| {name} | {a.tp} | {a.dp} | {a.shape} | ~{a.owed_comm_ms:.0f}ms | {a.dominant_cause} |"
         )
     lines += [
         "",
-        "## Verdict -- Route delta step 4",
+        "## Verdict -- Route delta step 4 (corrected)",
         "",
-        "- The ep8 residual is NOT a single decode scaling error.",
-        "- (i) The flat 90ms ep8 overhead is a miscalibrated fudge (owed comm ~20ms, "
-        "not 90ms). (ii) dp2 throughput is normalized by `num_gpus=tp` instead of "
-        "`tp*dp`. (iii) The 32k3k long-context configs over-predict in the "
-        "mixed/prefill path.",
+        "- The ep8 residual is NOT a single decode scaling error and NOT a "
+        "normalization bug (dp cancels).",
+        "- (i) The flat 90ms ep8 overhead is a miscalibrated fudge standing in for "
+        "topology-dependent EP dispatch/combine communication. (ii) That EP all-to-all "
+        "comm is under-modeled (modeled ~2-5ms vs owed 20-116ms). (iii) The 32k3k "
+        "long-context configs over-predict in the mixed/prefill path.",
         f"- Default AIC remains **{DEFAULT_READINESS}**.",
-        f"- Next: **{NEXT_PHASE}** -- replace the flat 90ms ep8 overhead with a "
-        "structural per-rank EP dispatch/combine comm term and fix the dp per-GPU "
-        "normalization (`num_gpus=tp*dp`); then a mixed-path phase for the 32k3k "
-        "long-context residual. Re-validate the multi-config table offline.",
+        f"- Next: **{NEXT_PHASE}** -- model EP dispatch/combine all-to-all comm "
+        "structurally (per-rank, scaling with `attention_dp*decode_bs` and cross-group "
+        "hops) in place of the flat 90ms; verify the `generation_moe` token count under "
+        "`attention_dp`; then a mixed-path phase for the 32k3k residual. Re-validate "
+        "the multi-config table offline.",
         "",
         "## Discipline",
         "",
@@ -486,7 +630,8 @@ def write_phase397g_md(path: Path, rows: list[dict[str, str]]) -> None:
         "overhead was only SWEPT ({0,90}) as a diagnostic via the existing CLI switch, "
         "not tuned or persisted; no scope gating; no GPU/SSH; Default AIC No-Go.",
         f"- Raw evidence: `{OVERHEAD_RAW_CSV.relative_to(REPO_ROOT)}`, "
-        f"`{ATTRIBUTION_RAW_CSV.relative_to(REPO_ROOT)}`.",
+        f"`{ATTRIBUTION_RAW_CSV.relative_to(REPO_ROOT)}`, "
+        f"`{TP_SCALING_RAW_CSV.relative_to(REPO_ROOT)}`.",
         "",
     ]
     path.write_text("\n".join(lines), encoding="utf-8")
