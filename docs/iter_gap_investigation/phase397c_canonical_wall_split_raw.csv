@@ -1,0 +1,4 @@
+scenario,isl,osl,batch,real_tok_s_gpu,sim_tok_s_gpu,over_count,steady_wall_ms,steady_iters,steady_output_tokens,decode_wall_ms,decode_wall_pct,mixed_wall_ms,mixed_wall_pct,expand_periter_decode_wall_ms,trapezoid_over_expand_ratio,real_implied_wall_ms,decode_wall_over_real_implied,skip_first_lat_mixed_ms,skip_end_lat_puredecode_ms,skip_eff_per_iter_ms,puredecode_single_iter_ms,puredecode_gen_attn_ms,puredecode_gen_non_attn_ms
+10k3k_b128,10000,3000,128,89.5,59.01,1.5168,796040,5874,751531,754175,94.74,41865,5.26,236647,3.187,524812,1.4370,231.54,30.23,79.20,27.12,27.12,6.885
+10k2k_b32,10000,2000,32,49.8,34.16,1.4579,496487,9964,271353,458200,92.29,38286,7.71,163721,2.799,340553,1.3455,99.00,13.05,40.31,12.35,12.35,5.282
+16k2k_b32,16000,2000,32,41.7,31.09,1.3411,545446,9964,271353,495461,90.84,49985,9.16,237963,2.082,406704,1.2182,99.00,22.76,43.45,18.75,18.75,5.282
