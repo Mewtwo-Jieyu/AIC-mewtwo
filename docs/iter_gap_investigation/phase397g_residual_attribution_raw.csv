@@ -1,0 +1,5 @@
+config,shape,tp,dp,moe_ep,kv,batch,gen_non_attn_ms,gen_attn_ms,per_iter_no_ovh_ms,raw_generation_moe_ms,real_out,real_iter_ng_tp_ms,real_iter_ng_tp_dp_ms,per_iter_over_real_ng_tp_dp,sim_ovh0_ratio,sim_ovh0_div_dp_ratio,dominant_cause
+tp8ep8-8k2k,8k2k,8,1,8,9000,128,77.9776,22.1764,100.1540,71.7758,133.53,119.83,119.83,0.8358,1.1624,1.1624,ep8_overhead_90ms_overcorrects
+tp8ep8-32k3k,32k3k,8,1,8,33500,128,77.9776,71.8018,149.7794,71.7758,52.47,304.94,304.94,0.4912,1.9454,1.9454,longcontext_mixed_prefill
+tp4ep8dp2-8k2k,8k2k,4,2,8,9000,128,94.4161,21.9704,116.3865,84.7642,137.72,232.36,116.18,1.0018,1.8784,0.9392,dp2_pergpu_normalization
+tp4ep8dp2-32k3k,32k3k,4,2,8,33500,128,94.4161,72.1827,166.5988,84.7642,53.28,600.63,300.31,0.5548,3.2229,1.6115,dp2_normalization_plus_longcontext
