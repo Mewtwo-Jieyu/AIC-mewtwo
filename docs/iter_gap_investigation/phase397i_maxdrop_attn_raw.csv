@@ -1,0 +1,7 @@
+config,isl,tp,dp,mixed_iters,ctx_attn_dropped_ms_sum,dropped_total_min_ms_sum,steady_time_ms,dropped_frac_of_steady,a_gt_b_frac,diagnostic_only,runtime_modified
+K2.5-tp8ep8-8k2k,8000,8,1,393,9015.35,16735.61,399000.0,0.0419,1.0,true,false
+K2.5-tp8ep8-32k3k,32000,8,1,388,76523.1,100703.01,920268.3,0.1094,0.995,true,false
+K2.5-tp4ep8dp2-8k2k,8000,4,2,393,15302.88,22984.62,478788.1,0.048,1.0,true,false
+K2.5-tp4ep8dp2-32k3k,32000,4,2,388,159651.6,186313.31,1094126.9,0.1703,1.0,true,false
+K2.5-tp8ep8-8k2k-bt65536,8000,8,1,47,6909.25,7818.87,411266.7,0.019,1.0,true,false
+K2.5-tp4ep8dp2-8k2k-bt65536,8000,4,2,47,12828.08,13734.16,496501.9,0.0277,1.0,true,false

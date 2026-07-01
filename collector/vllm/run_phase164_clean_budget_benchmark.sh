@@ -201,6 +201,12 @@ build_serve_cmd() {
     --tool-call-parser kimi_k2
     --reasoning-parser kimi_k2
   )
+  # phase397i: emit per-iteration scheduler details (context/generation token
+  # counts + elapsed ms per step) into serve.log for read-only TPOT capture.
+  # Measurement-only logging flag; does not change vLLM compute or the simulator.
+  if [[ "${ENABLE_ITER_LOGGING:-1}" == "1" ]]; then
+    SERVE_CMD+=(--enable-logging-iteration-details)
+  fi
   if [[ "${dp}" != "1" ]]; then
     SERVE_CMD+=(--data-parallel-size "${dp}")
   fi

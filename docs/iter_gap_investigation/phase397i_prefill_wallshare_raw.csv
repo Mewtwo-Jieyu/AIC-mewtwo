@@ -1,0 +1,7 @@
+config,isl,tp,dp,steady_time_ms,skip_wall_ms_total,skip_frac_of_steady_uncapped,n_skip_blocks,sim_over_0p17_ratio,note,diagnostic_only,runtime_modified
+K2.5-tp8ep8-8k2k,8000,8,1,399000.0,561603.9,1.408,6,1.162,skip_wall spans warmup+steady; frac>1 confounded,true,false
+K2.5-tp8ep8-32k3k,32000,8,1,920268.3,1289946.9,1.402,4,1.945,skip_wall spans warmup+steady; frac>1 confounded,true,false
+K2.5-tp4ep8dp2-8k2k,8000,4,2,478788.1,652610.3,1.363,6,1.878,skip_wall spans warmup+steady; frac>1 confounded,true,false
+K2.5-tp4ep8dp2-32k3k,32000,4,2,1094126.9,1434517.2,1.311,4,3.223,skip_wall spans warmup+steady; frac>1 confounded,true,false
+K2.5-tp8ep8-8k2k-bt65536,8000,8,1,411266.7,595816.2,1.449,3,1.119,skip_wall spans warmup+steady; frac>1 confounded,true,false
+K2.5-tp4ep8dp2-8k2k-bt65536,8000,4,2,496501.9,692383.2,1.395,3,1.646,skip_wall spans warmup+steady; frac>1 confounded,true,false

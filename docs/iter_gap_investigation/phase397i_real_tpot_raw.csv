@@ -1,0 +1,4 @@
+config,engine_dp,vllm_version,quant_reported,quant_actual,decode_bs_per_replica,real_pure_decode_ms_mean,real_pure_decode_ms_p50,real_pure_decode_ms_p99,pure_decode_iters,real_output_tok_s_gpu_0p19,sim_steady_decode_iter_ms,sim_output_tok_s_gpu,sim_iter_over_real,sim_out_over_real_0p19,gpu_allowed,ssh_allowed,diagnostic_only,runtime_modified
+tp8ep8-bt8000,DP0,0.19.0,fp8_runner_default,compressed-tensors_wna16marlin_moe,128,34.29,34.42,36.90,1999,434.96,102.994,155.21,3.003,0.3568,true,true,true,false
+tp4dp2ep8-bt8000,DP0,0.19.0,fp8_runner_default,compressed-tensors_wna16marlin_moe,72,44.09,44.26,46.38,1999,348.50,123.590,258.69,2.803,0.7423,true,true,true,false
+tp4dp2ep8-bt8000,DP1,0.19.0,fp8_runner_default,compressed-tensors_wna16marlin_moe,56,44.15,44.39,46.46,1999,348.50,123.590,258.69,2.799,0.7423,true,true,true,false

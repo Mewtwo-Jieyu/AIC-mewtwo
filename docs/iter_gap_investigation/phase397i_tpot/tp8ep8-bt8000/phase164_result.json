@@ -1,0 +1,56 @@
+{
+  "bench_result": {
+    "endpoint": "http://127.0.0.1:18000/v1/completions",
+    "failed_requests": 0,
+    "input_len": 8000,
+    "max_concurrency": 128,
+    "mean_latency_ms": 73556.04262335692,
+    "model": "kimi-k2.5",
+    "num_prompts": 128,
+    "ok_requests": 128,
+    "output_len": 2000,
+    "output_tok_s": 3479.6444867683654,
+    "p50_latency_ms": 73556.96515366435,
+    "p99_latency_ms": 73567.75708118454,
+    "request_rate_rps": 1.7398222433841828,
+    "total_completion_tokens": 256000,
+    "total_prompt_tokens": 1024000,
+    "total_tok_s": 17398.222433841827,
+    "total_tokens": 1280000,
+    "use_prompt_token_ids": false,
+    "wall_s": 73.57073430158198,
+    "warmup_requests": 0
+  },
+  "diagnostic_only": true,
+  "hardware": {
+    "cuda_version": "12.8",
+    "driver_version": "570.133.20",
+    "gpu_memory_gb": 140.401,
+    "gpu_model": "NVIDIA H200"
+  },
+  "parallelism": {
+    "dp": 1,
+    "ep": 8,
+    "gpu_count": 8,
+    "tp": 8,
+    "world_size": 8
+  },
+  "perf_database": false,
+  "runtime": {
+    "benchmark_command": "python3 scripts/run_openai_fixed_shape_benchmark.py --host 127.0.0.1 --port 18000 --model kimi-k2.5 --tokenizer /mnt/shared-storage-gpfs2/gpfs2-shared-public/huggingface/zskj-hub/models--moonshotai--Kimi-K2.5 --num-prompts 128 --max-concurrency 128 --input-len 8000 --output-len 2000 --warmup-requests 0 --timeout-s 7200 --result-json docs/iter_gap_investigation/phase397i_tpot/tp8ep8-bt8000/bench_result.json --records-jsonl docs/iter_gap_investigation/phase397i_tpot/tp8ep8-bt8000/bench_records.jsonl ",
+    "dtype": "auto",
+    "model_path": "/mnt/shared-storage-gpfs2/gpfs2-shared-public/huggingface/zskj-hub/models--moonshotai--Kimi-K2.5",
+    "quantization": "fp8",
+    "serve_command": "python3 -m vllm.entrypoints.cli.main serve /mnt/shared-storage-gpfs2/gpfs2-shared-public/huggingface/zskj-hub/models--moonshotai--Kimi-K2.5 --served-model-name kimi-k2.5 --port 18000 --tensor-parallel-size 8 --enable-expert-parallel --max-model-len 262144 --gpu-memory-utilization 0.90 --max-num-batched-tokens 8000 --max-num-seqs 256 --enable-chunked-prefill --enable-prefix-caching --mm-encoder-tp-mode data --skip-mm-profiling --trust-remote-code --enable-auto-tool-choice --tool-call-parser kimi_k2 --reasoning-parser kimi_k2 --enable-logging-iteration-details ",
+    "vllm_version": "0.19.0"
+  },
+  "scenario": "tp8ep8-bt8000",
+  "shape": {
+    "batch_size": 128,
+    "isl": 8000,
+    "max_num_batched_tokens": 8000,
+    "max_num_seqs": 256,
+    "osl": 2000
+  },
+  "valid_for_default": false
+}
