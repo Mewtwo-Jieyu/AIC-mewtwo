@@ -591,7 +591,13 @@ class TestIterationLatencyCalculator:
         assert total1 == pytest.approx(total2)
         assert calc.get_last_breakdown() is not None
 
-    def test_generation_moe_terms_are_tp_scaled(self) -> None:
+    def test_generation_moe_terms_are_not_tp_scaled_per_rank(self) -> None:
+        # phase397e/f: generation_moe(+dispatch) latencies are already PER-RANK
+        # (TP is encoded in the moe_tp_size lookup key), so the calculator must
+        # NOT divide them by tp_size again. Even with a tp_size=4 model the raw
+        # per-rank non-attention (generation_moe 11.0 + generation_dispatch 13.0
+        # = 24.0) is charged unchanged, and pure decode sums it serially with
+        # attention (24.0 + 7.0 = 31.0).
         calc = IterationLatencyCalculator(
             backend=_FakeBackendForIteration(),
             model=_FakeModelForIteration(),
@@ -606,10 +612,9 @@ class TestIterationLatencyCalculator:
         )
         breakdown = calc.get_last_breakdown()
         assert breakdown is not None
-        # generation_moe is tp-scaled; standalone generation_dispatch is not.
-        assert breakdown.generation_non_attention_ms == pytest.approx(15.75)
+        assert breakdown.generation_non_attention_ms == pytest.approx(24.0)
         assert breakdown.generation_attention_ms == pytest.approx(7.0)
-        assert total == pytest.approx(22.75)
+        assert total == pytest.approx(31.0)
 
     def test_pure_decode_latency_includes_dispatch(self) -> None:
         calc = IterationLatencyCalculator(

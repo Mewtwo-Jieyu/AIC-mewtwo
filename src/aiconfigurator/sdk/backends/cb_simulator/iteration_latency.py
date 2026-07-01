@@ -84,30 +84,6 @@ class IterationLatencyCalculator:
     def _combine_with_overlap(self, a_ms: float, b_ms: float) -> float:
         return max(a_ms, b_ms) + self._overlap_factor * min(a_ms, b_ms)
 
-    def _get_tp_size(self) -> int:
-        config = getattr(self._model, "config", None)
-        tp_size = getattr(config, "tp_size", 1)
-        return tp_size if isinstance(tp_size, int) and tp_size > 0 else 1
-
-    def _scale_generation_non_attention(self, gen_dict: dict[str, float]) -> float:
-        """CB-local correction for generation MoE-family ops.
-
-        `run_static(static_gen)` charges MoE/dispatch terms against the full
-        decode batch. For TP execution, the token work seen by the MoE kernels
-        is closer to the per-rank shard, so scale only those terms here rather
-        than mutating the shared backend model used by batch_sync/B1.
-        """
-        tp_size = self._get_tp_size()
-        scaled = 0.0
-        for name, lat in gen_dict.items():
-            if name == "generation_attention":
-                continue
-            if tp_size > 1 and "generation_moe" in name:
-                scaled += lat / tp_size
-            else:
-                scaled += lat
-        return scaled
-
     def _split_context_non_attention(self, ctx_dict: dict[str, float]) -> tuple[float, float]:
         compute_ms = 0.0
         dispatch_ms = 0.0
@@ -121,17 +97,20 @@ class IterationLatencyCalculator:
         return compute_ms, dispatch_ms
 
     def _split_generation_non_attention(self, gen_dict: dict[str, float]) -> tuple[float, float]:
-        tp_size = self._get_tp_size()
+        # No /tp scaling here: generation_moe(+dispatch) latencies from the perf
+        # database are already PER-RANK (TP is encoded in the moe_tp_size/topology
+        # lookup key; the collector benchmarks a single sharded GPU). Dividing by
+        # tp_size again is a double-count (phase397e). Charge the raw per-rank
+        # latency for every non-attention op.
         compute_ms = 0.0
         dispatch_ms = 0.0
         for name, lat in gen_dict.items():
             if name == "generation_attention":
                 continue
-            scaled_lat = lat / tp_size if tp_size > 1 and "generation_moe" in name else lat
             if "dispatch" in name:
-                dispatch_ms += scaled_lat
+                dispatch_ms += lat
             else:
-                compute_ms += scaled_lat
+                compute_ms += lat
         return compute_ms, dispatch_ms
 
     def compute(
@@ -286,11 +265,14 @@ class IterationLatencyCalculator:
                 context_attn_ms,
             )
         else:
-            # Pure decode iteration: dispatch is serial within each layer.
-            total_ms = self._combine_with_overlap(
-                generation_non_attn_ms,
-                gen_attn_ms,
-            )
+            # Pure decode iteration: within each transformer layer the attention
+            # and the MoE/FFN non-attention ops run SERIALLY, so they add rather
+            # than overlap. overlap_factor=0 (max) wrongly dropped the smaller of
+            # the two terms; combined with the /tp double-count (removed above)
+            # this under-counted every decode iteration ~3x (phase397e). Charge
+            # the physically-serial sum here; overlap_factor still governs the
+            # mixed and pure-prefill branches.
+            total_ms = generation_non_attn_ms + gen_attn_ms
         total_ms += overhead_ms
         breakdown = IterationLatencyBreakdown(
             total_ms=total_ms,

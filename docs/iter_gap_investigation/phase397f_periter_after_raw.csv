@@ -1,0 +1,4 @@
+scenario,isl,osl,batch,kv,num_gpus,real_out_tok_s_gpu,gen_attn_ms,gen_non_attn_raw_ms,per_iter_after_serialsum_ms,real_decode_iter_ms,periter_after_over_real
+10k3k_b128,10000,3000,128,11500,16,89.5,26.6206,51.1034,77.7240,89.3855,0.8695
+10k2k_b32,10000,2000,32,11000,16,49.8,12.1814,32.4249,44.6063,40.1606,1.1107
+16k2k_b32,16000,2000,32,17000,16,41.7,17.9083,32.4249,50.3332,47.9616,1.0494
