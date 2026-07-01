@@ -32,7 +32,7 @@ from typing import Optional
 
 import torch
 
-from helper import PowerMonitor, log_perf
+from collector.helper import PowerMonitor, log_perf
 
 
 def get_input_shape_and_comm_size(size, token_dim=4096):
@@ -304,6 +304,18 @@ def setup_vllm_distributed(world_size, rank, use_slurm):
         except Exception as e:
             print(f"\nERROR: Failed to initialize distributed environment: {e}")
             raise
+
+    # vLLM 0.19 requires an active VllmConfig context for initialize_model_parallel
+    # (it calls get_current_vllm_config() internally). Enter a process-wide default
+    # config context and keep a reference so it is not garbage-collected.
+    try:
+        from vllm.config import VllmConfig, set_current_vllm_config
+
+        global _AR_VLLM_CFG_CTX
+        _AR_VLLM_CFG_CTX = set_current_vllm_config(VllmConfig())
+        _AR_VLLM_CFG_CTX.__enter__()
+    except Exception:
+        pass
 
     # Initialize model parallel groups
     vllm_mods["initialize_model_parallel"](tensor_model_parallel_size=world_size, pipeline_model_parallel_size=1)

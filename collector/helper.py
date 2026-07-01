@@ -172,6 +172,7 @@ def benchmark_with_power(
     measure_power: bool | None = None,  # Auto-detect from environment if None
     power_min_duration: float | None = None,  # Auto-detect from environment if None
     allow_graph_fail: bool = False,  # NEW: Enable graceful fallback on graph capture failure
+    force_eager: bool = False,  # Skip CUDA graph capture attempt entirely (non-capturable kernels)
 ):
     """
     Context manager that handles warmup, graph capture, timing, and power monitoring.
@@ -241,22 +242,31 @@ def benchmark_with_power(
     # ═══════════════════════════════════════════════════════════════════
     # CUDA Graph Capture with Optional Fallback
     # ═══════════════════════════════════════════════════════════════════
-    use_graph = True
-    g = torch.cuda.CUDAGraph()
+    # force_eager skips the capture ATTEMPT entirely. Needed for kernels whose
+    # path is known non-capturable (e.g. block-fp8 dynamic input quant): even a
+    # caught capture failure corrupts the process CUDA/RNG state and breaks the
+    # next case ("Offset increment outside graph capture").
+    use_graph = not force_eager
+    g = None
 
-    try:
-        with torch.cuda.graph(g):
-            for _ in range(repeat_n):
-                kernel_func()
-        torch.cuda.synchronize()
-    except Exception as e:
-        if allow_graph_fail:
-            logging.getLogger(__name__).warning(f"CUDA graph capture failed: {e}. Falling back to eager execution.")
-            torch.cuda.empty_cache()  # CRITICAL: Clean up partial allocations
-            use_graph = False
-        else:
-            # Standard behavior: re-raise exception
-            raise
+    if use_graph:
+        g = torch.cuda.CUDAGraph()
+        try:
+            with torch.cuda.graph(g):
+                for _ in range(repeat_n):
+                    kernel_func()
+            torch.cuda.synchronize()
+        except Exception as e:
+            if allow_graph_fail:
+                logging.getLogger(__name__).warning(
+                    f"CUDA graph capture failed: {e}. Falling back to eager execution."
+                )
+                g = None
+                torch.cuda.empty_cache()  # CRITICAL: Clean up partial allocations
+                use_graph = False
+            else:
+                # Standard behavior: re-raise exception
+                raise
 
     # ═══════════════════════════════════════════════════════════════════
     # Warmup the ACTUAL execution path (after graph capture)

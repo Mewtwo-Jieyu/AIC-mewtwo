@@ -541,11 +541,19 @@ def create_and_prepopulate_kv_cache(
     return kv_cache
 
 
+# Holds process-wide vLLM config context managers so they are not garbage
+# collected (GC would run their cleanup and reset the current-config contextvar).
+_PERSISTENT_VLLM_CFG_CTX: list = []
+
+
 @functools.cache  # only run once per process
 def setup_distributed(device):
     # Each process needs to use a different port.
     device_idx = torch.device(device).index
-    port = 8889 + device_idx
+    # Unique high port per worker process. A fixed port (8889+idx) collides with
+    # sockets left in TIME_WAIT by SIGKILLed prior runs -> DistNetworkError on
+    # re-launch. pid is unique across concurrently live workers.
+    port = 20000 + (os.getpid() % 40000)
     print(device, device_idx, port)
 
     os.environ["RANK"] = "0"
@@ -553,6 +561,18 @@ def setup_distributed(device):
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = str(port)
     init_distributed_environment()
+    # vLLM >=0.19 requires an active vllm config context in many more places
+    # (model-parallel init, attention-backend selection via get_attn_backend_cls,
+    # custom-op instantiation). Establish a process-wide default config context,
+    # entered once and intentionally NOT exited for the lifetime of this
+    # short-lived collector process. Collectors that need a specific config still
+    # nest their own set_current_vllm_config() on top; on exit the contextvar
+    # restores this default. Harmless/no-op for older vLLM versions.
+    from vllm.config import set_current_vllm_config
+
+    _default_cfg_cm = set_current_vllm_config(VllmConfig())
+    _default_cfg_cm.__enter__()  # noqa: PLC2801 - persistent for process lifetime
+    _PERSISTENT_VLLM_CFG_CTX.append(_default_cfg_cm)  # prevent GC-triggered reset
     ensure_model_parallel_initialized(1, 1)
 
 

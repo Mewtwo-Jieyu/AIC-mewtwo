@@ -27,7 +27,7 @@ from collector.helper import balanced_logits, benchmark_with_power, get_sm_versi
 
 aic_debug = int(os.getenv("aic_moe_debug", "0"))  # noqa: SIM112
 
-compatible_version = ["0.11.0", "0.12.0", "0.14.0"]
+compatible_version = ["0.11.0", "0.12.0", "0.14.0", "0.19.0"]
 
 
 def get_moe_test_cases():
@@ -228,7 +228,7 @@ def run_moe_torch(
                         w2,
                         tw,
                         ti,
-                        inplace=True,
+                        inplace=False,
                         quant_config=quant_config,
                         global_num_experts=num_experts,
                         expert_map=expert_map,
@@ -240,7 +240,7 @@ def run_moe_torch(
                     w2,
                     topk_weights,
                     topk_ids,
-                    inplace=True,
+                    inplace=False,
                     quant_config=quant_config,
                     global_num_experts=num_experts,
                     expert_map=expert_map,

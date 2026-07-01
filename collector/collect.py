@@ -47,7 +47,7 @@ import time
 import traceback
 from datetime import datetime
 
-from helper import EXIT_CODE_RESTART, create_test_case_id, save_error_report, setup_logging, setup_signal_handlers
+from collector.helper import EXIT_CODE_RESTART, create_test_case_id, save_error_report, setup_logging, setup_signal_handlers
 
 logger = None
 

@@ -17,7 +17,7 @@ from collector.common_test_cases import get_gemm_common_test_cases
 from collector.helper import benchmark_with_power, get_sm_version, log_perf
 from collector.vllm.utils import setup_distributed, with_exit_stack
 
-compatible_versions = ["0.11.0", "0.12.0", "0.14.0"]
+compatible_versions = ["0.11.0", "0.12.0", "0.14.0", "0.19.0"]
 
 FP8_BLOCK_SHAPE = (128, 128)
 
@@ -131,6 +131,12 @@ def run_gemm(exit_stack, gemm_type, m, n, k, perf_filename, device="cuda:0"):
                 except TypeError:
                     maybe_post_process_fp8_weight_block(gemm, cutlass_block_fp8_supported=True)
 
+                # vLLM 0.19 Fp8LinearMethod.apply() reads layer.input_scale
+                # unconditionally. Dynamic (block-wise) activation has no static
+                # input scale, so register None instead of leaving it unset.
+                if not hasattr(gemm, "input_scale"):
+                    gemm.input_scale = None
+
         gemm.forward(x)  # dry run to init
 
         return gemm
@@ -152,6 +158,12 @@ def run_gemm(exit_stack, gemm_type, m, n, k, perf_filename, device="cuda:0"):
         num_warmups=3,
         num_runs=6,
         repeat_n=1,
+        # Block-wise fp8 (dynamic activation quant) uses a non-capturable input
+        # quant op on 0.19; measure it eagerly. Skipping the capture attempt (not
+        # just catching its failure) is required, since a failed capture corrupts
+        # the process CUDA/RNG state and breaks subsequent cases.
+        force_eager=(gemm_type == "fp8_block"),
+        allow_graph_fail=True,
     ) as results:
         pass
 

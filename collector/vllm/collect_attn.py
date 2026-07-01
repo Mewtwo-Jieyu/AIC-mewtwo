@@ -43,6 +43,7 @@ from collector.vllm.utils import (
     create_standard_kv_cache_spec,
     create_vllm_config,
     get_attention_backend,
+    setup_distributed,
     with_exit_stack,
 )
 
@@ -82,6 +83,9 @@ def run_attention_torch(
     device="cuda:0",
 ):
     torch.cuda.set_device(device)
+    # vLLM >=0.19 requires an active vllm config context for attention-backend
+    # selection below; setup_distributed establishes a process-wide default.
+    setup_distributed(device)
 
     dtype = torch.float16
     model = os.path.join(os.path.dirname(__file__), "fake_hf_model")

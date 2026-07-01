@@ -240,31 +240,65 @@ def run_attention_torch(
 
     # Process weights to create W_UK_T and W_UV attributes needed by MLA
     impl.process_weights_after_loading(dtype)
+    # vLLM >=0.19 replaced the unified MLA forward() with forward_mha (context/
+    # prefill) and forward_mqa (decode). Both read impl.dcp_* for context
+    # parallelism; set single-GPU defaults (see _run_mla_kernel_once).
+    impl.dcp_world_size = 1
+    impl.dcp_rank = 0
 
     # Create mock layer and output buffer
     mock_layer = MockAttentionLayer(device)
-    output = torch.empty(
-        query_vllm.shape[0],
-        num_heads * v_head_dim,
-        dtype=query_vllm.dtype,
-        device=query_vllm.device,
-    )
 
     # Run forward pass
 
     test_ite = 6
     warm_up = 3
 
-    def run():
-        impl.forward(
-            mock_layer,
-            query_vllm,
-            kv_c_vllm,
-            k_pe_vllm,
-            kv_cache,
-            attn_metadata,
-            output=output,
+    # Pick the kernel path from what the metadata builder actually produced,
+    # not from is_context_phase: a len-1 "context" request is classified as
+    # decode (prefill is None), so keying off the phase flag would call
+    # forward_mha on decode-only metadata and hit an internal assert.
+    if attn_metadata.prefill is not None:
+        output = torch.empty(
+            query_vllm.shape[0],
+            num_heads * v_head_dim,
+            dtype=query_vllm.dtype,
+            device=query_vllm.device,
         )
+        k_scale = torch.ones((), dtype=torch.float32, device=device)
+
+        def run():
+            impl.forward_mha(
+                query_vllm,
+                kv_c_vllm,
+                k_pe_vllm,
+                kv_cache,
+                attn_metadata,
+                k_scale,
+                output,
+            )
+    else:
+        # forward_mqa expects query shaped [num_tokens, num_heads, head_dim]
+        # (MLA-compressed head dim = kv_lora_rank + qk_rope_head_dim) and returns
+        # a tuple; values are irrelevant for a latency measurement. Under an fp8
+        # kv cache vLLM selects the FlashMLA fp8 decode kernel, which requires the
+        # query itself in float8_e4m3fn, so match the dtype accordingly.
+        q_dtype = torch.float8_e4m3fn if use_fp8_kv_cache else query_vllm.dtype
+        query_for_kernel = torch.randn(
+            query_vllm.shape[0],
+            num_heads,
+            head_dim,
+            dtype=torch.float16,
+            device=query_vllm.device,
+        ).to(q_dtype)
+
+        def run():
+            impl.forward_mqa(
+                query_for_kernel,
+                kv_cache,
+                attn_metadata,
+                mock_layer,
+            )
 
     # Warmup
     for i in range(warm_up):
