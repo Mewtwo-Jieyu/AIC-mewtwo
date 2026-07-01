@@ -1,0 +1,3 @@
+name,tp,dp,per_replica_bs_before,per_replica_bs_after,moe_tokens_before,moe_tokens_after,global_bs_before,global_bs_after,real_gathered_moe_tokens,moe_matches_real_after
+tp8ep8-8k2k,8,1,128,128,128,128,128,128,128,true
+tp4ep8dp2-8k2k,4,2,128,64,256,128,256,128,128,true

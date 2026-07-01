@@ -700,21 +700,36 @@ class VLLMBackend(BaseBackend):
         dp = model.config.attention_dp_size
         num_gpus = tp * pp * dp
 
+        # phase397j: `b` (runtime_config.batch_size) is the GLOBAL concurrency of
+        # the deployment. Under attention data parallelism the engine splits that
+        # concurrency across `dp` replicas, so a single replica (a tp group) only
+        # decodes b/dp requests per iteration -- matching a real DP benchmark that
+        # specifies a global max-concurrency (e.g. tp4dp2 at 128 total ->
+        # ~64 requests/replica; measured DP0 72 / DP1 56). Simulating the full `b`
+        # on one replica over-batched decode by dp and charged the MoE op at
+        # b*attention_dp tokens (2x the real gathered token count for dp=2),
+        # which inverted the tp-vs-tp+dp throughput ranking. Split per replica.
+        # For dp=1 this is a no-op (per_replica == b), so non-DP results are
+        # bit-for-bit unchanged.
+        per_replica_concurrency = int(np.ceil(b / dp))
+
         # Simulator returns TP-group throughput. Pass tp so the reported
         # per-GPU throughput is tp-normalized, then scale only across pp/dp.
         sim = CBSimulator(self, model, database, cb_config)
         result = sim.run(
-            isl=isl, osl=osl, concurrency=b,
+            isl=isl, osl=osl, concurrency=per_replica_concurrency,
             prefix=prefix, num_gpus=tp,
         )
 
         # CB sim throughput validated against real benchmarks (Phase 2).
         # Output-only throughput now comes directly from the simulator.
-        # Scale throughput for dp/pp (same pattern as batch_sync line 351-353)
+        # result.throughput_tok_s is per-replica (concurrency=b/dp); scale across
+        # the dp replicas and pp stages to recover the full-deployment throughput.
         scale_factor = pp * dp
         raw_output_throughput = result.throughput_tok_s * scale_factor
         output_throughput = raw_output_throughput
-        concurrency_scaled = b * scale_factor
+        # `b` is already the global concurrency; only pp adds pipeline replicas.
+        concurrency_scaled = b * pp
 
         ttft = result.mean_ttft_ms
         tpot = result.mean_tpot_ms
@@ -726,12 +741,14 @@ class VLLMBackend(BaseBackend):
         seq_s_gpu = seq_s / num_gpus
         balance_score = isl * b / ctx_tokens / osl
 
-        # Memory check (same as batch_sync path)
+        # Memory check (same as batch_sync path). Per-GPU KV cache holds only the
+        # per-replica in-flight requests, so use the dp-split concurrency (phase397j).
+        # dp=1 -> per_replica_concurrency == b, unchanged.
         num_tokens = result.peak_tokens_per_iter if result.peak_tokens_per_iter > 0 else ctx_tokens
         memory = self._get_memory_usage(
             model,
             database,
-            b,
+            per_replica_concurrency,
             1,
             isl,
             osl,
@@ -764,8 +781,8 @@ class VLLMBackend(BaseBackend):
             "isl": isl, "osl": osl, "prefix": prefix,
             "concurrency": concurrency_scaled,
             "request_rate": request_rate,
-            "bs": b,
-            "global_bs": b * dp,
+            "bs": per_replica_concurrency,
+            "global_bs": b,
             "ttft": ttft, "tpot": tpot,
             "seq/s": seq_s, "seq/s/gpu": seq_s_gpu,
             "tokens/s": output_throughput,
