@@ -400,13 +400,48 @@ class _FakeBackendForIteration:
         return summary
 
 
+class _TokenScaledBackendForIteration:
+    """static_ctx non-attention scales with isl; attention is fixed.
+
+    Lets tests observe that a mixed iteration charges the token-parallel
+    non-attention ops at the MERGED token count (prefill chunk + decode batch),
+    not the prefill chunk alone.
+    """
+
+    def run_static(self, model, database, runtime_config: RuntimeConfig, mode: str):
+        summary = InferenceSummary(runtime_config)
+        if mode == "static_ctx":
+            isl = runtime_config.isl
+            summary.set_context_latency_dict(
+                {
+                    "gemm": 0.01 * isl,
+                    "moe": 0.005 * isl,
+                    "context_attention": 8.0,
+                }
+            )
+        elif mode == "static_gen":
+            summary.set_generation_latency_dict(
+                {
+                    "generation_attention": 7.0,
+                    "generation_moe": 11.0,
+                    "generation_dispatch": 13.0,
+                }
+            )
+        else:
+            raise AssertionError(f"unexpected mode: {mode}")
+        return summary
+
+
 class _FakeModelForIteration:
     class config:
         tp_size = 4
 
 
 class TestIterationLatencyCalculator:
-    def test_decode_non_attention_is_included(self) -> None:
+    def test_mixed_folds_decode_non_attention_into_merged_pass(self) -> None:
+        # In a mixed iteration the token-parallel non-attention ops are charged
+        # once over the merged batch (Pass 1). Pass 3 contributes only the
+        # decode attention term; decode non-attention is NOT double-counted.
         calc = IterationLatencyCalculator(
             backend=_FakeBackendForIteration(),
             model=MagicMock(),
@@ -421,48 +456,65 @@ class TestIterationLatencyCalculator:
         )
         breakdown = calc.get_last_breakdown()
         assert breakdown is not None
-        assert total == pytest.approx(31.0)
+        # merged non-attn (gemm+moe=15) overlaps with ctx_attn(8)+gen_attn(7)=15
+        # combine with default overlap_factor=1.0 -> 15 + 15 = 30.
+        assert total == pytest.approx(30.0)
         assert breakdown.context_non_attention_ms == pytest.approx(15.0)
         assert breakdown.context_attention_ms == pytest.approx(8.0)
-        assert breakdown.generation_non_attention_ms == pytest.approx(24.0)
+        assert breakdown.generation_non_attention_ms == pytest.approx(0.0)
         assert breakdown.generation_attention_ms == pytest.approx(7.0)
 
-    def test_mixed_prefill_latency_matches_pure_prefill_side(self) -> None:
+    def test_mixed_non_attention_uses_merged_total_tokens(self) -> None:
+        # Mixed iterations must charge the token-parallel non-attention ops at
+        # the MERGED token count (prefill + decode), matching the single real
+        # fused-MoE forward -- not at the prefill chunk alone (old split).
         calc = IterationLatencyCalculator(
-            backend=_FakeBackendForIteration(),
+            backend=_TokenScaledBackendForIteration(),
             model=MagicMock(),
             database=MagicMock(),
         )
-        pure_total = calc.compute(
-            prefill_tokens=1024,
+        prefill_tokens = 1000
+        decode_bs = 24
+
+        calc.compute(
+            prefill_tokens=prefill_tokens,
             prefill_batch_size=1,
-            prefill_seq_len=1024,
+            prefill_seq_len=prefill_tokens,
+            decode_batch_size=decode_bs,
+            decode_avg_kv_len=2048,
+        )
+        mixed = calc.get_last_breakdown()
+
+        # Reference: a pure-prefill iteration over the MERGED token count.
+        calc.compute(
+            prefill_tokens=prefill_tokens + decode_bs,
+            prefill_batch_size=1,
+            prefill_seq_len=prefill_tokens + decode_bs,
             decode_batch_size=0,
             decode_avg_kv_len=0,
         )
-        pure_breakdown = calc.get_last_breakdown()
-        mixed_total = calc.compute(
-            prefill_tokens=1024,
-            prefill_batch_size=1,
-            prefill_seq_len=1024,
-            decode_batch_size=4,
-            decode_avg_kv_len=2048,
-        )
-        mixed_breakdown = calc.get_last_breakdown()
+        merged_ref = calc.get_last_breakdown()
 
-        assert pure_breakdown is not None
-        assert mixed_breakdown is not None
-        pure_prefill_ms = (
-            pure_breakdown.context_non_attention_ms
-            + pure_breakdown.context_attention_ms
+        # Reference: a pure-prefill iteration over ONLY the prefill chunk
+        # (the latency the old split granularity would have charged).
+        calc.compute(
+            prefill_tokens=prefill_tokens,
+            prefill_batch_size=1,
+            prefill_seq_len=prefill_tokens,
+            decode_batch_size=0,
+            decode_avg_kv_len=0,
         )
-        mixed_prefill_ms = (
-            mixed_breakdown.context_non_attention_ms
-            + mixed_breakdown.context_attention_ms
+        split_ref = calc.get_last_breakdown()
+
+        assert mixed is not None
+        assert merged_ref is not None
+        assert split_ref is not None
+        assert mixed.context_non_attention_ms == pytest.approx(
+            merged_ref.context_non_attention_ms
         )
-        assert pure_total == pytest.approx(pure_prefill_ms)
-        assert mixed_prefill_ms == pytest.approx(pure_prefill_ms)
-        assert mixed_total >= pure_total
+        assert mixed.context_non_attention_ms > split_ref.context_non_attention_ms
+        # Decode non-attention is folded into the merged pass, not double-counted.
+        assert mixed.generation_non_attention_ms == pytest.approx(0.0)
 
     def test_breakdown_is_cached(self) -> None:
         calc = IterationLatencyCalculator(
@@ -582,7 +634,9 @@ class TestIterationLatencyCalculator:
             decode_avg_kv_len=2048,
         )
 
-        assert total == pytest.approx(27.5)
+        # Mixed: merged non-attn (gemm+moe=15) overlaps with ctx_attn(8)+
+        # gen_attn(7)=15. combine(15,15) @ overlap 0.5 = 15 + 0.5*15 = 22.5.
+        assert total == pytest.approx(22.5)
 
     def test_overlap_factor_validates_range(self) -> None:
         with pytest.raises(ValueError, match="overlap_factor"):

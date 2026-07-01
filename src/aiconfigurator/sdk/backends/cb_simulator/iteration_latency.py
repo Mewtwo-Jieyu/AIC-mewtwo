@@ -186,12 +186,20 @@ class IterationLatencyCalculator:
 
         See vllm_backend.py lines 149-230 for the original pattern.
         """
-        # --- Pass 1: Prefill-side non-attention ops (GEMM, MoE, etc.) ---
-        # We intentionally scope this to PREFILL tokens only. Reusing
-        # static_ctx(total_tokens) over-counts decode-heavy iterations by
-        # charging decode requests as if they were context requests.
+        is_mixed = prefill_tokens > 0 and decode_bs > 0
+
+        # --- Pass 1: Non-attention ops (GEMM, MoE, EP8 comm) ---
+        # These ops are token-parallel: a decode token costs the same as a
+        # prefill token. In a MIXED iteration vLLM runs them ONCE over the
+        # merged batch (prefill chunk + decode tokens), matching the real
+        # fused-MoE forward (phase124 tokens_actual == max_num_batched_tokens).
+        # We therefore charge them at total_tokens for mixed iterations and let
+        # Pass 3 contribute only the decode ATTENTION term. For pure prefill
+        # total_tokens == prefill_tokens, so this is unchanged there; pure
+        # decode skips this pass entirely.
         context_non_attn_ms = 0.0
         if prefill_tokens > 0 and prefill_bs > 0:
+            non_attn_tokens = total_tokens if is_mixed else prefill_tokens
             prefix_adj = int(
                 self._prefix * np.floor(prefill_tokens / max(prefill_seq_len, 1))
             )
@@ -200,7 +208,7 @@ class IterationLatencyCalculator:
                 RuntimeConfig(
                     batch_size=1,
                     beam_width=1,
-                    isl=prefill_tokens,
+                    isl=non_attn_tokens,
                     osl=1,
                     prefix=prefix_adj,
                 ),
@@ -248,32 +256,41 @@ class IterationLatencyCalculator:
                 mode="static_gen",
             )
             gen_dict = summary.get_generation_latency_dict()
-            generation_compute_ms, generation_dispatch_ms = self._split_generation_non_attention(gen_dict)
-            generation_non_attn_ms = generation_compute_ms + generation_dispatch_ms
             gen_attn_ms = gen_dict.get("generation_attention", 0.0)
+            if is_mixed:
+                # Decode non-attention is token-parallel and already charged
+                # once in the merged Pass 1; do not double-count it here.
+                generation_compute_ms = 0.0
+                generation_dispatch_ms = 0.0
+            else:
+                generation_compute_ms, generation_dispatch_ms = self._split_generation_non_attention(gen_dict)
+                generation_non_attn_ms = generation_compute_ms + generation_dispatch_ms
         else:
             generation_compute_ms = 0.0
             generation_dispatch_ms = 0.0
 
-        # Each lane shares fixed GPU setup cost across non-attention and
-        # attention phases, while the two request lanes can overlap.
-        prefill_total_ms = self._combine_with_overlap(
-            context_non_attn_ms,
-            context_attn_ms,
-        )
-        generation_total_ms = self._combine_with_overlap(
-            generation_non_attn_ms,
-            gen_attn_ms,
-        )
-        if prefill_tokens > 0 and decode_bs > 0:
-            total_ms = max(prefill_total_ms, generation_total_ms)
+        # Non-attention and attention phases share fixed GPU setup cost and can
+        # overlap via overlap_factor.
+        overhead_ms = self._per_iteration_overhead_ms if decode_bs > 0 else 0.0
+        if is_mixed:
+            # One merged non-attention forward (Pass 1, total_tokens) overlaps
+            # with the prefill + decode attention kernels of the same forward.
+            total_ms = self._combine_with_overlap(
+                context_non_attn_ms,
+                context_attn_ms + gen_attn_ms,
+            )
         elif prefill_tokens > 0:
             # Pure prefill iteration: no decode lane to overlap with.
-            total_ms = prefill_total_ms
+            total_ms = self._combine_with_overlap(
+                context_non_attn_ms,
+                context_attn_ms,
+            )
         else:
             # Pure decode iteration: dispatch is serial within each layer.
-            total_ms = generation_total_ms
-        overhead_ms = self._per_iteration_overhead_ms if decode_bs > 0 else 0.0
+            total_ms = self._combine_with_overlap(
+                generation_non_attn_ms,
+                gen_attn_ms,
+            )
         total_ms += overhead_ms
         breakdown = IterationLatencyBreakdown(
             total_ms=total_ms,
