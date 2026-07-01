@@ -1,0 +1,5 @@
+config,tp_size,num_heads,num_heads_per_gpu,bs,kv,generation_attention_ms,ratio_vs_tp8_same_bs,note
+tp8ep8dp1,8,64,8,128,9000,21.7362,1.0000,baseline tp8 bs128
+tp8ep8dp1,8,64,8,256,9000,40.0544,1.0000,baseline tp8 bs256
+tp4ep8dp2,4,64,16,128,9000,21.5231,0.9902,num_heads_per_gpu doubled (8->16) but attention latency flat -> KV/latency-bound not head-bound
+tp4ep8dp2,4,64,16,256,9000,40.3015,1.0062,attention scales with bs (21->40 for 128->256) not with tp; correctly TP-independent
