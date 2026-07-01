@@ -257,6 +257,26 @@ class _FakeLatencyCalc:
         return base + prefill_cost + decode_cost
 
 
+class _MixedVsPureDecodeLatencyCalc:
+    """Fake calc where a mixed/prefill iteration is far more expensive than
+    a pure decode iteration, and pure-decode latency grows with KV length.
+
+    Used to prove the skip trapezoid seeds from pure-decode latency, not from
+    the triggering (mixed) iteration.
+    """
+
+    MIXED_MS = 10_000.0
+
+    def compute(
+        self, prefill_tokens: int, prefill_batch_size: int,
+        prefill_seq_len: int, decode_batch_size: int,
+        decode_avg_kv_len: int,
+    ) -> float:
+        if prefill_tokens > 0:
+            return self.MIXED_MS
+        return 5.0 + decode_avg_kv_len * 0.001
+
+
 class _KVGrowthLatencyCalc(_FakeLatencyCalc):
     def compute(
         self, prefill_tokens: int, prefill_batch_size: int,
@@ -344,11 +364,43 @@ class TestCBSimulatorUnit:
             latency_calc=_KVGrowthLatencyCalc(),
             decode_batch_size=8,
             start_avg_kv_len=1024,
-            first_iter_latency_ms=2.0,
             skip_iters=10,
         )
 
         assert skip_lat > 20.0
+
+    def test_decode_skip_seed_uses_pure_decode_not_triggering_iter(self) -> None:
+        # Phase397d: the skip trapezoid must ramp between two PURE-DECODE
+        # latencies (at start_avg_kv_len and start_avg_kv_len + skip_iters),
+        # NOT reuse the triggering iteration's (possibly mixed/prefill) latency.
+        sim = _make_testable_sim(CBSimConfig(num_requests=20, warmup_requests=5))
+        calc = _MixedVsPureDecodeLatencyCalc()
+
+        start_kv = 2048
+        skip = 12
+        bs = 8
+        skip_lat = sim._estimate_decode_skip_latency(
+            latency_calc=calc,
+            decode_batch_size=bs,
+            start_avg_kv_len=start_kv,
+            skip_iters=skip,
+        )
+
+        first = calc.compute(
+            prefill_tokens=0, prefill_batch_size=0, prefill_seq_len=1,
+            decode_batch_size=bs, decode_avg_kv_len=start_kv,
+        )
+        end = calc.compute(
+            prefill_tokens=0, prefill_batch_size=0, prefill_seq_len=1,
+            decode_batch_size=bs, decode_avg_kv_len=start_kv + skip,
+        )
+        expected = (first + end) * skip / 2.0
+
+        assert skip_lat == pytest.approx(expected)
+        # No prefill/mixed compute() call may leak into the seed: the pure-decode
+        # endpoints are tiny relative to the mixed latency, so a contaminated
+        # seed would inflate skip_lat by orders of magnitude.
+        assert skip_lat < calc.MIXED_MS
 
     def test_preempted_request_reprefills(self) -> None:
         cfg = CBSimConfig(

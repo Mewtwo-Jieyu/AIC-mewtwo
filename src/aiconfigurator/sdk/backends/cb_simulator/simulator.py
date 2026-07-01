@@ -55,7 +55,6 @@ class CBSimulator:
         latency_calc: IterationLatencyCalculator,
         decode_batch_size: int,
         start_avg_kv_len: int,
-        first_iter_latency_ms: float,
         skip_iters: int,
     ) -> float:
         """Approximate skipped pure-decode time with a rising-latency ramp.
@@ -65,10 +64,24 @@ class CBSimulator:
         decode segments, especially at high batch size. A trapezoid estimate
         keeps the skip optimization but lets the end-of-segment KV growth
         increase the skipped wall time.
+
+        Both endpoints are computed as PURE-DECODE iterations (at
+        ``start_avg_kv_len`` and ``start_avg_kv_len + skip_iters``). The
+        triggering iteration that fired this skip is often a mixed/prefill
+        iteration whose latency includes the prefill chunk; seeding the ramp
+        with it would inflate every skipped pure-decode iteration by the
+        prefill cost. See docs/iter_gap_investigation/phase397c/d.
         """
         if skip_iters <= 0:
             return 0.0
 
+        first_iter_latency_ms = latency_calc.compute(
+            prefill_tokens=0,
+            prefill_batch_size=0,
+            prefill_seq_len=1,
+            decode_batch_size=decode_batch_size,
+            decode_avg_kv_len=start_avg_kv_len,
+        )
         end_iter_latency_ms = latency_calc.compute(
             prefill_tokens=0,
             prefill_batch_size=0,
@@ -218,7 +231,6 @@ class CBSimulator:
                         latency_calc=latency_calc,
                         decode_batch_size=len(running),
                         start_avg_kv_len=avg_kv + 1,
-                        first_iter_latency_ms=iter_lat,
                         skip_iters=skip,
                     )
                     clock_ms += skip_lat
