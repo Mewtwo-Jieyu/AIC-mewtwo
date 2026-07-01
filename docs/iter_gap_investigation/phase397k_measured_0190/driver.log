@@ -1,0 +1,113 @@
+vllm_version=0.19.0
+NVIDIA H200, 143771, 570.133.20
+[2026-07-01T14:11:03+00:00] === point 0: K2.5-tp8ep8-8k2k tp=8 dp=1 ep=8 isl=8000 osl=2000 max_bt=8000 port=19100 ===
+[2026-07-01T14:11:03+00:00] serve_command: python3 -m vllm.entrypoints.cli.main serve /mnt/shared-storage-gpfs2/gpfs2-shared-public/huggingface/zskj-hub/models--moonshotai--Kimi-K2.5 --served-model-name kimi-k2.5 --port 19100 --tensor-parallel-size 8 --enable-expert-parallel --max-model-len 262144 --gpu-memory-utilization 0.90 --max-num-batched-tokens 8000 --max-num-seqs 256 --enable-chunked-prefill --enable-prefix-caching --mm-encoder-tp-mode data --skip-mm-profiling --trust-remote-code --enable-auto-tool-choice --tool-call-parser kimi_k2 --reasoning-parser kimi_k2
+[2026-07-01T14:11:03+00:00] service_pid=33303
+[2026-07-01T14:15:48+00:00] service_ready port=19100 poll=58
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+progress: 8/128, ok=8, fail=0
+progress: 16/128, ok=16, fail=0
+progress: 24/128, ok=24, fail=0
+progress: 32/128, ok=32, fail=0
+progress: 40/128, ok=40, fail=0
+progress: 48/128, ok=48, fail=0
+progress: 56/128, ok=56, fail=0
+progress: 64/128, ok=64, fail=0
+progress: 72/128, ok=72, fail=0
+progress: 80/128, ok=80, fail=0
+progress: 88/128, ok=88, fail=0
+progress: 96/128, ok=96, fail=0
+progress: 104/128, ok=104, fail=0
+progress: 112/128, ok=112, fail=0
+progress: 120/128, ok=120, fail=0
+progress: 128/128, ok=128, fail=0
+{
+  "ok_requests": 128,
+  "failed_requests": 0,
+  "use_prompt_token_ids": false,
+  "output_tok_s": 3453.435,
+  "total_tok_s": 17267.176,
+  "mean_latency_ms": 74111.563,
+  "p50_latency_ms": 74112.257,
+  "p99_latency_ms": 74120.086
+}
+[2026-07-01T14:17:06+00:00] benchmark_exit_code=0
+[2026-07-01T14:17:06+00:00] wrote docs/iter_gap_investigation/phase397k_measured_0190/K2.5-tp8ep8-8k2k/bench_result.json
+collector/vllm/run_phase397k_agg_bench.sh: line 75: 33303 Killed                  nohup "${serve_cmd[@]}" > "${serve_log}" 2>&1
+[2026-07-01T14:17:21+00:00] gpu_drained
+[2026-07-01T14:17:21+00:00] === point 1: K2.5-tp8ep8-32k3k tp=8 dp=1 ep=8 isl=32000 osl=3000 max_bt=32000 port=19101 ===
+[2026-07-01T14:17:22+00:00] serve_command: python3 -m vllm.entrypoints.cli.main serve /mnt/shared-storage-gpfs2/gpfs2-shared-public/huggingface/zskj-hub/models--moonshotai--Kimi-K2.5 --served-model-name kimi-k2.5 --port 19101 --tensor-parallel-size 8 --enable-expert-parallel --max-model-len 262144 --gpu-memory-utilization 0.90 --max-num-batched-tokens 32000 --max-num-seqs 256 --enable-chunked-prefill --enable-prefix-caching --mm-encoder-tp-mode data --skip-mm-profiling --trust-remote-code --enable-auto-tool-choice --tool-call-parser kimi_k2 --reasoning-parser kimi_k2
+[2026-07-01T14:17:22+00:00] service_pid=34988
+[2026-07-01T14:20:02+00:00] service_ready port=19101 poll=33
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+progress: 8/128, ok=8, fail=0
+progress: 16/128, ok=16, fail=0
+progress: 24/128, ok=24, fail=0
+progress: 32/128, ok=32, fail=0
+progress: 40/128, ok=40, fail=0
+progress: 48/128, ok=48, fail=0
+progress: 56/128, ok=56, fail=0
+progress: 64/128, ok=64, fail=0
+progress: 72/128, ok=72, fail=0
+progress: 80/128, ok=80, fail=0
+progress: 88/128, ok=88, fail=0
+progress: 96/128, ok=96, fail=0
+progress: 104/128, ok=104, fail=0
+progress: 112/128, ok=112, fail=0
+progress: 120/128, ok=120, fail=0
+progress: 128/128, ok=128, fail=0
+{
+  "ok_requests": 128,
+  "failed_requests": 0,
+  "use_prompt_token_ids": false,
+  "output_tok_s": 1589.065,
+  "total_tok_s": 18539.089,
+  "mean_latency_ms": 241394.13,
+  "p50_latency_ms": 241316.956,
+  "p99_latency_ms": 241624.154
+}
+[2026-07-01T14:24:07+00:00] benchmark_exit_code=0
+[2026-07-01T14:24:07+00:00] wrote docs/iter_gap_investigation/phase397k_measured_0190/K2.5-tp8ep8-32k3k/bench_result.json
+collector/vllm/run_phase397k_agg_bench.sh: line 75: 34988 Killed                  nohup "${serve_cmd[@]}" > "${serve_log}" 2>&1
+[2026-07-01T14:24:23+00:00] gpu_drained
+[2026-07-01T14:24:23+00:00] === point 2: K2.5-tp4ep8dp2-8k2k tp=4 dp=2 ep=8 isl=8000 osl=2000 max_bt=8000 port=19102 ===
+[2026-07-01T14:24:23+00:00] serve_command: python3 -m vllm.entrypoints.cli.main serve /mnt/shared-storage-gpfs2/gpfs2-shared-public/huggingface/zskj-hub/models--moonshotai--Kimi-K2.5 --served-model-name kimi-k2.5 --port 19102 --tensor-parallel-size 4 --enable-expert-parallel --max-model-len 262144 --gpu-memory-utilization 0.90 --max-num-batched-tokens 8000 --max-num-seqs 256 --enable-chunked-prefill --enable-prefix-caching --mm-encoder-tp-mode data --skip-mm-profiling --trust-remote-code --enable-auto-tool-choice --tool-call-parser kimi_k2 --reasoning-parser kimi_k2 --data-parallel-size 2
+[2026-07-01T14:24:23+00:00] service_pid=36670
+[2026-07-01T14:26:58+00:00] service_ready port=19102 poll=32
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+progress: 8/128, ok=8, fail=0
+progress: 16/128, ok=16, fail=0
+progress: 24/128, ok=24, fail=0
+progress: 32/128, ok=32, fail=0
+progress: 40/128, ok=40, fail=0
+progress: 48/128, ok=48, fail=0
+progress: 56/128, ok=56, fail=0
+progress: 64/128, ok=64, fail=0
+progress: 72/128, ok=72, fail=0
+progress: 80/128, ok=80, fail=0
+progress: 88/128, ok=88, fail=0
+progress: 96/128, ok=96, fail=0
+progress: 104/128, ok=104, fail=0
+progress: 112/128, ok=112, fail=0
+progress: 120/128, ok=120, fail=0
+progress: 128/128, ok=128, fail=0
+{
+  "ok_requests": 128,
+  "failed_requests": 0,
+  "use_prompt_token_ids": false,
+  "output_tok_s": 2763.275,
+  "total_tok_s": 13816.373,
+  "mean_latency_ms": 92615.83,
+  "p50_latency_ms": 92617.345,
+  "p99_latency_ms": 92631.965
+}
+[2026-07-01T14:28:34+00:00] benchmark_exit_code=0
+[2026-07-01T14:28:34+00:00] wrote docs/iter_gap_investigation/phase397k_measured_0190/K2.5-tp4ep8dp2-8k2k/bench_result.json
+collector/vllm/run_phase397k_agg_bench.sh: line 75: 36670 Killed                  nohup "${serve_cmd[@]}" > "${serve_log}" 2>&1
+[2026-07-01T14:34:01+00:00] gpu_drain_timeout busy_pids=[1291649 1291652 1291654 1291656 1291992 1291993 1291994 1291995 ]
+[2026-07-01T14:34:01+00:00] warn: drain timeout after point K2.5-tp4ep8dp2-8k2k
+[2026-07-01T14:34:01+00:00] === point 3: K2.5-tp4ep8dp2-32k3k tp=4 dp=2 ep=8 isl=32000 osl=3000 max_bt=32000 port=19103 ===
+[2026-07-01T14:34:01+00:00] gpu_busy_before_point busy_pids=[1291649 1291652 1291654 1291656 1291992 1291993 1291994 1291995 ] - waiting to drain

@@ -1,0 +1,203 @@
+vllm_version=0.19.0
+NVIDIA H200, 143771, 570.133.20
+[2026-07-01T14:49:48+00:00] baseline_gpu_pids=[3130059 3419740 3130064 ]
+[2026-07-01T14:49:48+00:00] skip (already done): K2.5-tp8ep8-8k2k
+[2026-07-01T14:49:48+00:00] skip (already done): K2.5-tp8ep8-32k3k
+[2026-07-01T14:49:48+00:00] skip (already done): K2.5-tp4ep8dp2-8k2k
+[2026-07-01T14:49:48+00:00] === point 3: K2.5-tp4ep8dp2-32k3k tp=4 dp=2 ep=8 isl=32000 osl=3000 max_bt=32000 port=19203 ===
+[2026-07-01T14:49:48+00:00] serve_command: python3 -m vllm.entrypoints.cli.main serve /mnt/shared-storage-gpfs2/gpfs2-shared-public/huggingface/zskj-hub/models--moonshotai--Kimi-K2.5 --served-model-name kimi-k2.5 --port 19203 --tensor-parallel-size 4 --enable-expert-parallel --max-model-len 262144 --gpu-memory-utilization 0.80 --max-num-batched-tokens 32000 --max-num-seqs 256 --enable-chunked-prefill --enable-prefix-caching --mm-encoder-tp-mode data --skip-mm-profiling --trust-remote-code --enable-auto-tool-choice --tool-call-parser kimi_k2 --reasoning-parser kimi_k2 --data-parallel-size 2
+[2026-07-01T14:49:48+00:00] service_pid=54725
+[2026-07-01T14:56:28+00:00] service_ready port=19203 poll=81
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+progress: 8/128, ok=8, fail=0
+progress: 16/128, ok=16, fail=0
+progress: 24/128, ok=24, fail=0
+progress: 32/128, ok=32, fail=0
+progress: 40/128, ok=40, fail=0
+progress: 48/128, ok=48, fail=0
+progress: 56/128, ok=56, fail=0
+progress: 64/128, ok=64, fail=0
+progress: 72/128, ok=72, fail=0
+progress: 80/128, ok=80, fail=0
+progress: 88/128, ok=88, fail=0
+progress: 96/128, ok=96, fail=0
+progress: 104/128, ok=104, fail=0
+progress: 112/128, ok=112, fail=0
+progress: 120/128, ok=120, fail=0
+progress: 128/128, ok=128, fail=0
+{
+  "ok_requests": 128,
+  "failed_requests": 0,
+  "use_prompt_token_ids": false,
+  "output_tok_s": 1371.87,
+  "total_tok_s": 16005.153,
+  "mean_latency_ms": 279847.871,
+  "p50_latency_ms": 279851.648,
+  "p99_latency_ms": 279885.903
+}
+[2026-07-01T15:01:11+00:00] benchmark_exit_code=0
+[2026-07-01T15:01:11+00:00] wrote docs/iter_gap_investigation/phase397k_measured_0190/K2.5-tp4ep8dp2-32k3k/bench_result.json
+[2026-07-01T15:01:31+00:00] gpu_drained
+[2026-07-01T15:01:31+00:00] === point 4: K2.5-tp8ep8-8k2k-bt65536 tp=8 dp=1 ep=8 isl=8000 osl=2000 max_bt=65536 port=19204 ===
+[2026-07-01T15:01:32+00:00] serve_command: python3 -m vllm.entrypoints.cli.main serve /mnt/shared-storage-gpfs2/gpfs2-shared-public/huggingface/zskj-hub/models--moonshotai--Kimi-K2.5 --served-model-name kimi-k2.5 --port 19204 --tensor-parallel-size 8 --enable-expert-parallel --max-model-len 262144 --gpu-memory-utilization 0.80 --max-num-batched-tokens 65536 --max-num-seqs 256 --enable-chunked-prefill --enable-prefix-caching --mm-encoder-tp-mode data --skip-mm-profiling --trust-remote-code --enable-auto-tool-choice --tool-call-parser kimi_k2 --reasoning-parser kimi_k2
+[2026-07-01T15:01:32+00:00] service_pid=58153
+[2026-07-01T15:04:22+00:00] service_ready port=19204 poll=35
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+progress: 8/128, ok=8, fail=0
+progress: 16/128, ok=16, fail=0
+progress: 24/128, ok=24, fail=0
+progress: 32/128, ok=32, fail=0
+progress: 40/128, ok=40, fail=0
+progress: 48/128, ok=48, fail=0
+progress: 56/128, ok=56, fail=0
+progress: 64/128, ok=64, fail=0
+progress: 72/128, ok=72, fail=0
+progress: 80/128, ok=80, fail=0
+progress: 88/128, ok=88, fail=0
+progress: 96/128, ok=96, fail=0
+progress: 104/128, ok=104, fail=0
+progress: 112/128, ok=112, fail=0
+progress: 120/128, ok=120, fail=0
+progress: 128/128, ok=128, fail=0
+{
+  "ok_requests": 128,
+  "failed_requests": 0,
+  "use_prompt_token_ids": false,
+  "output_tok_s": 3457.532,
+  "total_tok_s": 17287.659,
+  "mean_latency_ms": 74016.01,
+  "p50_latency_ms": 74011.7,
+  "p99_latency_ms": 74030.472
+}
+[2026-07-01T15:05:39+00:00] benchmark_exit_code=0
+[2026-07-01T15:05:39+00:00] wrote docs/iter_gap_investigation/phase397k_measured_0190/K2.5-tp8ep8-8k2k-bt65536/bench_result.json
+[2026-07-01T15:05:56+00:00] gpu_drained
+[2026-07-01T15:05:56+00:00] === point 5: K2.5-tp4ep8dp2-8k2k-bt65536 tp=4 dp=2 ep=8 isl=8000 osl=2000 max_bt=65536 port=19205 ===
+[2026-07-01T15:05:56+00:00] serve_command: python3 -m vllm.entrypoints.cli.main serve /mnt/shared-storage-gpfs2/gpfs2-shared-public/huggingface/zskj-hub/models--moonshotai--Kimi-K2.5 --served-model-name kimi-k2.5 --port 19205 --tensor-parallel-size 4 --enable-expert-parallel --max-model-len 262144 --gpu-memory-utilization 0.80 --max-num-batched-tokens 65536 --max-num-seqs 256 --enable-chunked-prefill --enable-prefix-caching --mm-encoder-tp-mode data --skip-mm-profiling --trust-remote-code --enable-auto-tool-choice --tool-call-parser kimi_k2 --reasoning-parser kimi_k2 --data-parallel-size 2
+[2026-07-01T15:05:56+00:00] service_pid=59854
+[2026-07-01T15:08:27+00:00] service_exited_before_ready port=19205
+(Worker_DP0_TP1_EP1 pid=61056) INFO 07-01 15:08:18 [gpu_worker.py:470] In v0.19, CUDA graph memory profiling will be enabled by default (VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=1), which more accurately accounts for CUDA graph memory during KV cache allocation. To try it now, set VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=1 and increase --gpu-memory-utilization from 0.8000 to 0.8342 to maintain the same effective KV cache size.
+(Worker_DP1_TP2_EP6 pid=61061) INFO 07-01 15:08:18 [gpu_worker.py:470] In v0.19, CUDA graph memory profiling will be enabled by default (VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=1), which more accurately accounts for CUDA graph memory during KV cache allocation. To try it now, set VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=1 and increase --gpu-memory-utilization from 0.8000 to 0.8342 to maintain the same effective KV cache size.
+(EngineCore_DP0 pid=60254) ERROR 07-01 15:08:18 [core.py:1108] EngineCore failed to start.
+(EngineCore_DP0 pid=60254) ERROR 07-01 15:08:18 [core.py:1108] Traceback (most recent call last):
+(EngineCore_DP0 pid=60254) ERROR 07-01 15:08:18 [core.py:1108]   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core.py", line 1074, in run_engine_core
+(EngineCore_DP0 pid=60254) ERROR 07-01 15:08:18 [core.py:1108]     engine_core = DPEngineCoreProc(*args, **kwargs)
+(EngineCore_DP0 pid=60254) ERROR 07-01 15:08:18 [core.py:1108]                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore_DP0 pid=60254) ERROR 07-01 15:08:18 [core.py:1108]   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core.py", line 1609, in __init__
+(EngineCore_DP0 pid=60254) ERROR 07-01 15:08:18 [core.py:1108]     super().__init__(
+(EngineCore_DP0 pid=60254) ERROR 07-01 15:08:18 [core.py:1108]   File "/usr/local/lib/python3.12/dist-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(EngineCore_DP0 pid=60254) ERROR 07-01 15:08:18 [core.py:1108]     return func(*args, **kwargs)
+(EngineCore_DP0 pid=60254) ERROR 07-01 15:08:18 [core.py:1108]            ^^^^^^^^^^^^^^^^^^^^^
+(EngineCore_DP0 pid=60254) ERROR 07-01 15:08:18 [core.py:1108]   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core.py", line 848, in __init__
+(EngineCore_DP0 pid=60254) ERROR 07-01 15:08:18 [core.py:1108]     super().__init__(
+(EngineCore_DP0 pid=60254) ERROR 07-01 15:08:18 [core.py:1108]   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core.py", line 124, in __init__
+(EngineCore_DP0 pid=60254) ERROR 07-01 15:08:18 [core.py:1108]     kv_cache_config = self._initialize_kv_caches(vllm_config)
+(EngineCore_DP0 pid=60254) ERROR 07-01 15:08:18 [core.py:1108]                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore_DP0 pid=60254) ERROR 07-01 15:08:18 [core.py:1108]   File "/usr/local/lib/python3.12/dist-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(EngineCore_DP0 pid=60254) ERROR 07-01 15:08:18 [core.py:1108]     return func(*args, **kwargs)
+(EngineCore_DP0 pid=60254) ERROR 07-01 15:08:18 [core.py:1108]            ^^^^^^^^^^^^^^^^^^^^^
+(EngineCore_DP0 pid=60254) ERROR 07-01 15:08:18 [core.py:1108]   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core.py", line 258, in _initialize_kv_caches
+(EngineCore_DP0 pid=60254) ERROR 07-01 15:08:18 [core.py:1108]     kv_cache_configs = get_kv_cache_configs(
+(EngineCore_DP0 pid=60254) ERROR 07-01 15:08:18 [core.py:1108]                        ^^^^^^^^^^^^^^^^^^^^^
+(EngineCore_DP0 pid=60254) ERROR 07-01 15:08:18 [core.py:1108]   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/core/kv_cache_utils.py", line 1579, in get_kv_cache_configs
+(EngineCore_DP0 pid=60254) ERROR 07-01 15:08:18 [core.py:1108]     _check_enough_kv_cache_memory(
+(EngineCore_DP0 pid=60254) ERROR 07-01 15:08:18 [core.py:1108]   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/core/kv_cache_utils.py", line 644, in _check_enough_kv_cache_memory
+(EngineCore_DP0 pid=60254) ERROR 07-01 15:08:18 [core.py:1108]     raise ValueError(
+(EngineCore_DP0 pid=60254) ERROR 07-01 15:08:18 [core.py:1108] ValueError: To serve at least one request with the models's max seq len (262144), (17.16 GiB KV cache is needed, which is larger than the available KV cache memory (8.62 GiB). Based on the available memory, the estimated maximum model length is 131648. Try increasing `gpu_memory_utilization` or decreasing `max_model_len` when initializing the engine. See https://docs.vllm.ai/en/latest/configuration/conserving_memory/ for more details.
+(Worker_DP0_TP1_EP1 pid=61056) WARNING 07-01 15:08:18 [multiproc_executor.py:871] WorkerProc was terminated
+(Worker_DP0_TP2_EP2 pid=61057) WARNING 07-01 15:08:18 [multiproc_executor.py:871] WorkerProc was terminated
+(Worker_DP0_TP3_EP3 pid=61058) WARNING 07-01 15:08:18 [multiproc_executor.py:871] WorkerProc was terminated
+(Worker_DP0_TP0_EP0 pid=61055) WARNING 07-01 15:08:18 [multiproc_executor.py:871] WorkerProc was terminated
+(Worker_DP1_TP3_EP7 pid=61062) INFO 07-01 15:08:18 [gpu_worker.py:470] In v0.19, CUDA graph memory profiling will be enabled by default (VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=1), which more accurately accounts for CUDA graph memory during KV cache allocation. To try it now, set VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=1 and increase --gpu-memory-utilization from 0.8000 to 0.8342 to maintain the same effective KV cache size.
+(Worker_DP1_TP1_EP5 pid=61060) INFO 07-01 15:08:18 [gpu_worker.py:470] In v0.19, CUDA graph memory profiling will be enabled by default (VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=1), which more accurately accounts for CUDA graph memory during KV cache allocation. To try it now, set VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=1 and increase --gpu-memory-utilization from 0.8000 to 0.8342 to maintain the same effective KV cache size.
+(EngineCore_DP1 pid=60255) ERROR 07-01 15:08:18 [core.py:1108] EngineCore failed to start.
+(EngineCore_DP1 pid=60255) ERROR 07-01 15:08:18 [core.py:1108] Traceback (most recent call last):
+(EngineCore_DP1 pid=60255) ERROR 07-01 15:08:18 [core.py:1108]   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core.py", line 1074, in run_engine_core
+(EngineCore_DP1 pid=60255) ERROR 07-01 15:08:18 [core.py:1108]     engine_core = DPEngineCoreProc(*args, **kwargs)
+(EngineCore_DP1 pid=60255) ERROR 07-01 15:08:18 [core.py:1108]                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore_DP1 pid=60255) ERROR 07-01 15:08:18 [core.py:1108]   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core.py", line 1609, in __init__
+(EngineCore_DP1 pid=60255) ERROR 07-01 15:08:18 [core.py:1108]     super().__init__(
+(EngineCore_DP1 pid=60255) ERROR 07-01 15:08:18 [core.py:1108]   File "/usr/local/lib/python3.12/dist-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(EngineCore_DP1 pid=60255) ERROR 07-01 15:08:18 [core.py:1108]     return func(*args, **kwargs)
+(EngineCore_DP1 pid=60255) ERROR 07-01 15:08:18 [core.py:1108]            ^^^^^^^^^^^^^^^^^^^^^
+(EngineCore_DP1 pid=60255) ERROR 07-01 15:08:18 [core.py:1108]   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core.py", line 848, in __init__
+(EngineCore_DP1 pid=60255) ERROR 07-01 15:08:18 [core.py:1108]     super().__init__(
+(EngineCore_DP1 pid=60255) ERROR 07-01 15:08:18 [core.py:1108]   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core.py", line 124, in __init__
+(EngineCore_DP1 pid=60255) ERROR 07-01 15:08:18 [core.py:1108]     kv_cache_config = self._initialize_kv_caches(vllm_config)
+(EngineCore_DP1 pid=60255) ERROR 07-01 15:08:18 [core.py:1108]                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore_DP1 pid=60255) ERROR 07-01 15:08:18 [core.py:1108]   File "/usr/local/lib/python3.12/dist-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(EngineCore_DP1 pid=60255) ERROR 07-01 15:08:18 [core.py:1108]     return func(*args, **kwargs)
+(EngineCore_DP1 pid=60255) ERROR 07-01 15:08:18 [core.py:1108]            ^^^^^^^^^^^^^^^^^^^^^
+(EngineCore_DP1 pid=60255) ERROR 07-01 15:08:18 [core.py:1108]   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core.py", line 258, in _initialize_kv_caches
+(EngineCore_DP1 pid=60255) ERROR 07-01 15:08:18 [core.py:1108]     kv_cache_configs = get_kv_cache_configs(
+(EngineCore_DP1 pid=60255) ERROR 07-01 15:08:18 [core.py:1108]                        ^^^^^^^^^^^^^^^^^^^^^
+(EngineCore_DP1 pid=60255) ERROR 07-01 15:08:18 [core.py:1108]   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/core/kv_cache_utils.py", line 1579, in get_kv_cache_configs
+(EngineCore_DP1 pid=60255) ERROR 07-01 15:08:18 [core.py:1108]     _check_enough_kv_cache_memory(
+(EngineCore_DP1 pid=60255) ERROR 07-01 15:08:18 [core.py:1108]   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/core/kv_cache_utils.py", line 644, in _check_enough_kv_cache_memory
+(EngineCore_DP1 pid=60255) ERROR 07-01 15:08:18 [core.py:1108]     raise ValueError(
+(EngineCore_DP1 pid=60255) ERROR 07-01 15:08:18 [core.py:1108] ValueError: To serve at least one request with the models's max seq len (262144), (17.16 GiB KV cache is needed, which is larger than the available KV cache memory (8.62 GiB). Based on the available memory, the estimated maximum model length is 131648. Try increasing `gpu_memory_utilization` or decreasing `max_model_len` when initializing the engine. See https://docs.vllm.ai/en/latest/configuration/conserving_memory/ for more details.
+(Worker_DP1_TP1_EP5 pid=61060) WARNING 07-01 15:08:18 [multiproc_executor.py:871] WorkerProc was terminated
+(Worker_DP1_TP0_EP4 pid=61059) WARNING 07-01 15:08:18 [multiproc_executor.py:871] WorkerProc was terminated
+(Worker_DP1_TP2_EP6 pid=61061) WARNING 07-01 15:08:18 [multiproc_executor.py:871] WorkerProc was terminated
+(Worker_DP1_TP3_EP7 pid=61062) WARNING 07-01 15:08:18 [multiproc_executor.py:871] WorkerProc was terminated
+(EngineCore_DP0 pid=60254) ERROR 07-01 15:08:21 [multiproc_executor.py:273] Worker proc VllmWorker-1 died unexpectedly, shutting down executor.
+(EngineCore_DP1 pid=60255) ERROR 07-01 15:08:22 [multiproc_executor.py:273] Worker proc VllmWorker-2 died unexpectedly, shutting down executor.
+(EngineCore_DP0 pid=60254) Process EngineCore_DP0:
+(EngineCore_DP0 pid=60254) Traceback (most recent call last):
+(EngineCore_DP0 pid=60254)   File "/usr/lib/python3.12/multiprocessing/process.py", line 314, in _bootstrap
+(EngineCore_DP0 pid=60254)     self.run()
+(EngineCore_DP0 pid=60254)   File "/usr/lib/python3.12/multiprocessing/process.py", line 108, in run
+(EngineCore_DP0 pid=60254)     self._target(*self._args, **self._kwargs)
+(EngineCore_DP0 pid=60254)   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core.py", line 1112, in run_engine_core
+(EngineCore_DP0 pid=60254)     raise e
+(EngineCore_DP0 pid=60254)   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core.py", line 1074, in run_engine_core
+(EngineCore_DP0 pid=60254)     engine_core = DPEngineCoreProc(*args, **kwargs)
+(EngineCore_DP0 pid=60254)                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore_DP0 pid=60254)   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core.py", line 1609, in __init__
+(EngineCore_DP0 pid=60254)     super().__init__(
+(EngineCore_DP0 pid=60254)   File "/usr/local/lib/python3.12/dist-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(EngineCore_DP0 pid=60254)     return func(*args, **kwargs)
+(EngineCore_DP0 pid=60254)            ^^^^^^^^^^^^^^^^^^^^^
+(EngineCore_DP0 pid=60254)   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core.py", line 848, in __init__
+(EngineCore_DP0 pid=60254)     super().__init__(
+(EngineCore_DP0 pid=60254)   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core.py", line 124, in __init__
+(EngineCore_DP0 pid=60254)     kv_cache_config = self._initialize_kv_caches(vllm_config)
+(EngineCore_DP0 pid=60254)                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore_DP0 pid=60254)   File "/usr/local/lib/python3.12/dist-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(EngineCore_DP0 pid=60254)     return func(*args, **kwargs)
+(EngineCore_DP0 pid=60254)            ^^^^^^^^^^^^^^^^^^^^^
+(EngineCore_DP0 pid=60254)   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core.py", line 258, in _initialize_kv_caches
+(EngineCore_DP0 pid=60254)     kv_cache_configs = get_kv_cache_configs(
+(EngineCore_DP0 pid=60254)                        ^^^^^^^^^^^^^^^^^^^^^
+(EngineCore_DP0 pid=60254)   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/core/kv_cache_utils.py", line 1579, in get_kv_cache_configs
+(EngineCore_DP0 pid=60254)     _check_enough_kv_cache_memory(
+(EngineCore_DP0 pid=60254)   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/core/kv_cache_utils.py", line 644, in _check_enough_kv_cache_memory
+(EngineCore_DP0 pid=60254)     raise ValueError(
+(EngineCore_DP0 pid=60254) ValueError: To serve at least one request with the models's max seq len (262144), (17.16 GiB KV cache is needed, which is larger than the available KV cache memory (8.62 GiB). Based on the available memory, the estimated maximum model length is 131648. Try increasing `gpu_memory_utilization` or decreasing `max_model_len` when initializing the engine. See https://docs.vllm.ai/en/latest/configuration/conserving_memory/ for more details.
+terminate called without an active exception
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/cli/main.py", line 81, in <module>
+    main()
+  File "/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/cli/main.py", line 75, in main
+    args.dispatch_function(args)
+  File "/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/cli/serve.py", line 118, in cmd
+    run_multi_api_server(args)
+  File "/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/cli/serve.py", line 286, in run_multi_api_server
+    with launch_core_engines(
+         ^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/contextlib.py", line 144, in __exit__
+    next(self.gen)
+  File "/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/utils.py", line 998, in launch_core_engines
+    wait_for_engine_startup(
+  File "/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/utils.py", line 1057, in wait_for_engine_startup
+    raise RuntimeError(
+RuntimeError: Engine core initialization failed. See root cause above. Failed core proc(s): {}
+/usr/lib/python3.12/multiprocessing/resource_tracker.py:279: UserWarning: resource_tracker: There appear to be 9 leaked shared_memory objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '
+[2026-07-01T15:08:38+00:00] gpu_drained
+[2026-07-01T15:08:38+00:00] POINT_FAILED name=K2.5-tp4ep8dp2-8k2k-bt65536
+[2026-07-01T15:08:38+00:00] ALL_POINTS_DONE rc=1

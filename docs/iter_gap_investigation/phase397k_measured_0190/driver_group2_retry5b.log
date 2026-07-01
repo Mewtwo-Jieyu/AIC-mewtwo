@@ -1,0 +1,11 @@
+vllm_version=0.19.0
+NVIDIA H200, 143771, 570.133.20
+[2026-07-01T15:22:41+00:00] baseline_gpu_pids=[3130059 3419740 3130064 ]
+[2026-07-01T15:22:41+00:00] skip (already done): K2.5-tp8ep8-8k2k
+[2026-07-01T15:22:41+00:00] skip (already done): K2.5-tp8ep8-32k3k
+[2026-07-01T15:22:41+00:00] skip (already done): K2.5-tp4ep8dp2-8k2k
+[2026-07-01T15:22:41+00:00] skip (already done): K2.5-tp4ep8dp2-32k3k
+[2026-07-01T15:22:41+00:00] skip (already done): K2.5-tp8ep8-8k2k-bt65536
+[2026-07-01T15:22:41+00:00] === point 5: K2.5-tp4ep8dp2-8k2k-bt65536 tp=4 dp=2 ep=8 isl=8000 osl=2000 max_bt=65536 port=19405 ===
+[2026-07-01T15:22:41+00:00] serve_command: python3 -m vllm.entrypoints.cli.main serve /mnt/shared-storage-gpfs2/gpfs2-shared-public/huggingface/zskj-hub/models--moonshotai--Kimi-K2.5 --served-model-name kimi-k2.5 --port 19405 --tensor-parallel-size 4 --enable-expert-parallel --max-model-len 32768 --gpu-memory-utilization 0.80 --max-num-batched-tokens 65536 --max-num-seqs 256 --enable-chunked-prefill --enable-prefix-caching --mm-encoder-tp-mode data --skip-mm-profiling --trust-remote-code --enable-auto-tool-choice --tool-call-parser kimi_k2 --reasoning-parser kimi_k2 --data-parallel-size 2
+[2026-07-01T15:22:41+00:00] service_pid=64625

@@ -1,0 +1,1 @@
+{"name": "K2.5-tp8ep8-8k2k-bt65536", "tp": 8, "dp": 1, "ep": 8, "isl": 8000, "osl": 2000, "max_num_batched_tokens": 65536, "batch_size": 128, "world_size": 8, "port": 19204}

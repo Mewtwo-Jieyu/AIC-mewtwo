@@ -1,0 +1,1 @@
+{"name": "K2.5-tp4ep8dp2-32k3k", "tp": 4, "dp": 2, "ep": 8, "isl": 32000, "osl": 3000, "max_num_batched_tokens": 32000, "batch_size": 128, "world_size": 8, "port": 19203}
