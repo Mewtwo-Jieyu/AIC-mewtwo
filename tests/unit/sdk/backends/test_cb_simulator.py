@@ -789,7 +789,7 @@ class TestMoEDispatchScaling:
             )
         ]
 
-    def test_vllm_dispatch_rejects_non_whitelisted_bucket(self) -> None:
+    def test_vllm_dispatch_falls_back_for_non_exact_bucket(self) -> None:
         op = MoEDispatch(
             "dispatch",
             1.0,
@@ -804,15 +804,16 @@ class TestMoEDispatchScaling:
         )
         db = _FakePerfDbForMoEDispatch()
 
-        with pytest.raises(ValueError, match="bucket_tokens"):
-            op.query(
-                db,
-                x=128,
-                model_name="moonshotai/Kimi-K2.5",
-                vllm_module_topology="tp4dp2ep8",
-            )
+        latency = op.query(
+            db,
+            x=128,
+            model_name="moonshotai/Kimi-K2.5",
+            vllm_module_topology="tp4dp2ep8",
+        )
 
+        assert float(latency) == pytest.approx(2.0)
         assert db.vllm_module_calls == []
+        assert db.nccl_volumes == [("all_gather", 128 * 1024 * 4)]
 
     def test_vllm_dispatch_post_scope_is_zero_to_avoid_double_count(self) -> None:
         op = MoEDispatch(
@@ -841,7 +842,7 @@ class TestMoEDispatchScaling:
         assert db.nccl_volumes == []
         assert db.vllm_module_calls == []
 
-    def test_vllm_dispatch_post_scope_rejects_non_whitelisted_bucket(self) -> None:
+    def test_vllm_dispatch_post_scope_falls_back_for_non_exact_bucket(self) -> None:
         op = MoEDispatch(
             "dispatch",
             1.0,
@@ -856,15 +857,16 @@ class TestMoEDispatchScaling:
         )
         db = _FakePerfDbForMoEDispatch()
 
-        with pytest.raises(ValueError, match="bucket_tokens"):
-            op.query(
-                db,
-                x=128,
-                model_name="moonshotai/Kimi-K2.5",
-                vllm_module_topology="tp4dp2ep8",
-            )
+        latency = op.query(
+            db,
+            x=128,
+            model_name="moonshotai/Kimi-K2.5",
+            vllm_module_topology="tp4dp2ep8",
+        )
 
+        assert float(latency) == pytest.approx(2.0)
         assert db.vllm_module_calls == []
+        assert db.nccl_volumes == [("reduce_scatter", 128 * 1024 * 4)]
 
     def test_vllm_dispatch_non_topology_scope_keeps_existing_comm_path(self) -> None:
         op = MoEDispatch(
@@ -1103,7 +1105,7 @@ class TestMoEScaling:
             )
         ]
 
-    def test_vllm_moe_rejects_non_whitelisted_bucket(self) -> None:
+    def test_vllm_moe_falls_back_for_non_exact_bucket(self) -> None:
         op = MoE(
             "moe",
             1.0,
@@ -1121,15 +1123,17 @@ class TestMoEScaling:
         )
         db = _FakeVLLMModulePerfDbForMoE()
 
-        with pytest.raises(ValueError, match="bucket_tokens"):
-            op.query(
-                db,
-                x=128,
-                model_name="moonshotai/Kimi-K2.5",
-                vllm_module_topology="tp4dp2ep8",
-            )
+        latency = op.query(
+            db,
+            x=128,
+            model_name="moonshotai/Kimi-K2.5",
+            vllm_module_topology="tp4dp2ep8",
+        )
 
+        assert float(latency) == pytest.approx(99.0)
         assert db.vllm_module_calls == []
+        assert db.query_moe_calls
+        assert db.query_moe_calls[0]["num_tokens"] == 128
 
     def test_vllm_moe_non_topology_scope_keeps_existing_query_moe_path(self) -> None:
         op = MoE(
@@ -1782,21 +1786,23 @@ class TestDiagnoseCBIterLatencyScript:
         assert mixed_summary.aligned_pairs == 2
         assert mixed_summary.overhead_mean_ms == pytest.approx(3.0)
 
-    def test_alpha_overhead_sweep_uses_phase148_validation_gates(self, monkeypatch) -> None:
+    def test_alpha_overhead_sweep_uses_active_validation_gates(self, monkeypatch) -> None:
         module = _load_diagnose_cb_iter_latency_module()
 
         fake_result = SimpleNamespace(
-            throughput_max=1.50,
+            throughput_max=9.00,
             throughput_mean=1.10,
-            multi_config_max=1.48,
+            multi_config_max=1.51,
             multi_config_mean=1.20,
-            ttft_max=1.79,
+            ttft_max=9.00,
             ttft_mean=1.30,
         )
         fake_validate = SimpleNamespace(
             THROUGHPUT_MAX_ACCEPTANCE=1.50,
-            MULTI_CONFIG_MAX_ACCEPTANCE=1.47,
+            MULTI_CONFIG_MAX_ACCEPTANCE=1.50,
             TTFT_MAX_ACCEPTANCE=1.79,
+            THROUGHPUT_GATE_STATUS="legacy_skip",
+            TTFT_GATE_STATUS="legacy_skip",
             run_validation=lambda **kwargs: fake_result,
         )
         monkeypatch.setattr(module, "_load_validate_module", lambda: fake_validate)
@@ -1810,10 +1816,27 @@ class TestDiagnoseCBIterLatencyScript:
         )
 
         assert rows[0].passed == 0
-        assert rows[0].acceptance_score == pytest.approx(1.48 / 1.47)
+        assert rows[0].acceptance_score == pytest.approx(1.51 / 1.50)
 
 
 class TestValidateCBSimulatorBudgetAwareTopK:
+    def test_phase397w_validate_gate_is_019_multi_config_only(self) -> None:
+        module = _load_validate_cb_simulator_module()
+
+        assert module.VALIDATION_DB_VERSION == "0.19.0"
+        assert module.DEFAULT_EP8_PER_ITERATION_OVERHEAD_MS == pytest.approx(0.0)
+        assert module.THROUGHPUT_GATE_STATUS == "legacy_skip"
+        assert module.TTFT_GATE_STATUS == "legacy_skip"
+        assert module.MULTI_CONFIG_MAX_ACCEPTANCE == pytest.approx(1.5)
+        assert {point.name for point in module.MULTI_CONFIG_DATA} == {
+            "K2.5-tp8ep8-8k2k",
+            "K2.5-tp8ep8-32k3k",
+            "K2.5-tp4ep8dp2-8k2k",
+            "K2.5-tp4ep8dp2-32k3k",
+            "K2.5-tp8ep8-8k2k-bt65536",
+            "K2.5-tp4ep8dp2-8k2k-bt65536",
+        }
+
     def test_multi_config_points_define_budget_explicitly(self) -> None:
         module = _load_validate_cb_simulator_module()
 

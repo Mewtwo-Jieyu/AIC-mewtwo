@@ -16,12 +16,24 @@ _VLLM_MODULE_HARDWARE = "h200_sxm"
 _VLLM_MODULE_VERSION = "0.19.0"
 _VLLM_MODULE_TOPOLOGY = "tp4dp2ep8"
 _VLLM_MODULE_QUANT_RUNTIME = "CompressedTensorsWNA16MarlinMoEMethod"
-_VLLM_MODULE_BUCKETS = frozenset({1, 2, 15, 16, 30, 32, 241, 482, 1808, 2048, 3616, 4096, 8192, 16384})
+_VLLM_MODULE_FUSEDMOE_BUCKETS = frozenset(
+    {1, 2, 15, 16, 30, 32, 241, 482, 1808, 2048, 3616, 4096, 8192, 16384}
+)
+_VLLM_MODULE_EP8_COMM_BUCKETS = frozenset({1, 15, 16, 241, 1808, 2048, 8192})
+_VLLM_MODULE_BUCKETS = _VLLM_MODULE_FUSEDMOE_BUCKETS | _VLLM_MODULE_EP8_COMM_BUCKETS
+_VLLM_MODULE_BUCKETS_BY_BOUNDARY = {
+    "fusedmoe_runner_compute": _VLLM_MODULE_FUSEDMOE_BUCKETS,
+    "ep8_comm_dispatch_combine": _VLLM_MODULE_EP8_COMM_BUCKETS,
+}
 
 
 def _validate_vllm_module_bucket(bucket_tokens: int) -> None:
     if bucket_tokens not in _VLLM_MODULE_BUCKETS:
         raise ValueError(f"bucket_tokens must be one of {sorted(_VLLM_MODULE_BUCKETS)}, got {bucket_tokens}")
+
+
+def _has_vllm_module_exact_bucket(module_boundary: str, bucket_tokens: int) -> bool:
+    return bucket_tokens in _VLLM_MODULE_BUCKETS_BY_BOUNDARY[module_boundary]
 
 
 def _is_vllm_module_scope(database: PerfDatabase, model_name: str, topology: str) -> bool:
@@ -565,7 +577,10 @@ class MoE(Operation):
         model_name = str(kwargs.get("model_name", ""))
         vllm_module_topology = str(kwargs.get("vllm_module_topology", ""))
 
-        if _is_vllm_module_scope(database, model_name, vllm_module_topology):
+        if _is_vllm_module_scope(database, model_name, vllm_module_topology) and _has_vllm_module_exact_bucket(
+            "fusedmoe_runner_compute",
+            x,
+        ):
             return _query_vllm_module(
                 database,
                 bucket_tokens=x,
@@ -762,8 +777,10 @@ class MoEDispatch(Operation):
             scaled_num_tokens = max(1, num_tokens // self._scale_num_tokens)
             model_name = str(kwargs.get("model_name", ""))
             vllm_module_topology = str(kwargs.get("vllm_module_topology", ""))
-            if _is_vllm_module_scope(database, model_name, vllm_module_topology):
-                _validate_vllm_module_bucket(scaled_num_tokens)
+            if _is_vllm_module_scope(database, model_name, vllm_module_topology) and _has_vllm_module_exact_bucket(
+                "ep8_comm_dispatch_combine",
+                scaled_num_tokens,
+            ):
                 if not self._pre_dispatch:
                     return PerformanceResult(0.0, energy=0.0)
                 return _query_vllm_module(

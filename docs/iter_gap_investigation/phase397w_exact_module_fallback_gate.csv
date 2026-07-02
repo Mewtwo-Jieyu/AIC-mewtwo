@@ -1,0 +1,6 @@
+source,check,status,max_error,mean_error,threshold,scope,default_readiness,diagnostic_only,valid_for_default,perf_database,verdict
+phase397w_exact_module_fallback_gate,required_bucket_enumeration,passed,,,,tp4dp2ep8 record-mode audit,No-Go,true,false,false,bucket_widening_rejected_near_continuous_bucket_family
+phase397w_exact_module_fallback_gate,exact_module_miss_fallback,implemented,,,,fusedmoe_runner_compute and ep8_comm_dispatch_combine,No-Go,true,false,false,exact_hit_kept_anchor_only_miss_falls_back_structural
+phase397w_exact_module_fallback_gate,throughput_legacy_017_gate,skipped,2.62,2.29,,tp16 legacy 0.17 surface,No-Go,true,false,false,legacy_not_acceptance_gate
+phase397w_exact_module_fallback_gate,ttft_legacy_017_gate,skipped,6.30,5.00,,tp16 legacy 0.17 surface,No-Go,true,false,false,legacy_not_acceptance_gate
+phase397w_exact_module_fallback_gate,multi_config_019_gate,failed,3.57,2.58,1.50,6x 0.19-real 8-card MULTI_CONFIG,No-Go,true,false,false,no_crash_but_active_gate_not_sufficient

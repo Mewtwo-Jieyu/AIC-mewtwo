@@ -362,11 +362,14 @@ def run_alpha_overhead_sweep(args: argparse.Namespace) -> list[SweepResult]:
                 ep8_per_iteration_overhead_ms=args.ep8_per_iteration_overhead_ms,
                 verbose=False,
             )
-            passed = (
-                result.throughput_max <= validate.THROUGHPUT_MAX_ACCEPTANCE
-                and result.multi_config_max <= validate.MULTI_CONFIG_MAX_ACCEPTANCE
-                and result.ttft_max <= validate.TTFT_MAX_ACCEPTANCE
-            )
+            gate_scores = [
+                result.multi_config_max / validate.MULTI_CONFIG_MAX_ACCEPTANCE
+            ]
+            if getattr(validate, "THROUGHPUT_GATE_STATUS", "active") != "legacy_skip":
+                gate_scores.append(result.throughput_max / validate.THROUGHPUT_MAX_ACCEPTANCE)
+            if getattr(validate, "TTFT_GATE_STATUS", "active") != "legacy_skip":
+                gate_scores.append(result.ttft_max / validate.TTFT_MAX_ACCEPTANCE)
+            passed = all(score <= 1.0 for score in gate_scores)
             rows.append(
                 SweepResult(
                     overlap_factor=alpha,
@@ -377,11 +380,7 @@ def run_alpha_overhead_sweep(args: argparse.Namespace) -> list[SweepResult]:
                     multi_config_mean=result.multi_config_mean,
                     ttft_max=result.ttft_max,
                     ttft_mean=result.ttft_mean,
-                    acceptance_score=max(
-                        result.throughput_max / validate.THROUGHPUT_MAX_ACCEPTANCE,
-                        result.multi_config_max / validate.MULTI_CONFIG_MAX_ACCEPTANCE,
-                        result.ttft_max / validate.TTFT_MAX_ACCEPTANCE,
-                    ),
+                    acceptance_score=max(gate_scores),
                     passed=int(passed),
                 )
             )
@@ -1496,7 +1495,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--block-size", type=int, default=16)
     parser.add_argument("--overlap-factor", type=float, default=0.0)
     parser.add_argument("--per-iteration-overhead-ms", type=float, default=0.0)
-    parser.add_argument("--ep8-per-iteration-overhead-ms", type=float, default=90.0)
+    parser.add_argument("--ep8-per-iteration-overhead-ms", type=float, default=0.0)
     parser.add_argument(
         "--experimental-forward-descriptor",
         action="store_true",
