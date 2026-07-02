@@ -1,0 +1,9 @@
+category,cb_sim_ms,measured_ms,sim_over_meas
+attention,31.8911,16.898,1.8873
+moe,9.6878,9.529,1.0167
+proj_gemm+norm,4.1583,5.159,0.806
+comm,6.3974,6.181,1.035
+serial_sum,52.1347,39.386,1.3237
+decode_wall_measured,,36.847,
+ep8_overhead_ms,0.0,,
+cb_sim_total_with_overhead,52.1347,36.847,1.4149

@@ -10,6 +10,25 @@ from vllm.model_executor.layers.fused_moe.config import fp8_w8a8_moe_quant_confi
 from vllm.model_executor.layers.fused_moe.layer import determine_expert_map
 from vllm.version import __version__ as vllm_version
 
+# wna16 (4-bit W4A16 marlin) MoE path. Mirrors vLLM's
+# CompressedTensorsWNA16MarlinMoEMethod weight prep + apply so that the
+# collected latency matches the real `marlin_moe_wna16` kernel served for
+# compressed-tensors pack-quantized checkpoints (e.g. Kimi-K2.5 routed experts).
+try:
+    from vllm import _custom_ops as _vllm_ops
+    from vllm.model_executor.layers.fused_moe.fused_marlin_moe import fused_marlin_moe
+    from vllm.model_executor.layers.quantization.utils.marlin_utils import (
+        marlin_make_workspace_new,
+        marlin_moe_permute_scales,
+    )
+    from vllm.scalar_type import scalar_types
+
+    _WNA16_MARLIN_AVAILABLE = True
+    _WNA16_TYPE_MAP = {4: scalar_types.uint4b8, 8: scalar_types.uint8b128}
+except Exception:  # pragma: no cover - older vLLM without marlin MoE
+    _WNA16_MARLIN_AVAILABLE = False
+    _WNA16_TYPE_MAP = {}
+
 # Compatibility: block FP8 helpers may differ by version.
 # Priority: vllm.utils.deep_gemm -> deep_gemm extension -> None.
 try:
@@ -81,6 +100,248 @@ def get_moe_test_cases():
     return test_cases
 
 
+def _build_marlin_wna16_experts(
+    local_num_experts,
+    hidden_size,
+    local_inter_size,
+    group_size,
+    num_bits,
+    params_dtype,
+    device,
+):
+    """Construct marlin-repacked int4 (W4A16) expert weights + permuted scales.
+
+    Replicates CompressedTensorsWNA16MarlinMoEMethod.create_weights +
+    process_weights_after_loading (non-actorder branch). Values are random; only
+    shapes/dtypes/layout matter for latency measurement.
+    """
+    packed_factor = 32 // num_bits
+    # Pre-repack "checkpoint" layout (Marlin backend, is_transposed):
+    #   w13: (E, hidden // packed_factor, 2 * inter)
+    #   w2:  (E, inter  // packed_factor, hidden)
+    w13_packed = torch.randint(
+        torch.iinfo(torch.int32).min,
+        torch.iinfo(torch.int32).max,
+        (local_num_experts, hidden_size // packed_factor, 2 * local_inter_size),
+        dtype=torch.int32,
+        device=device,
+    )
+    w2_packed = torch.randint(
+        torch.iinfo(torch.int32).min,
+        torch.iinfo(torch.int32).max,
+        (local_num_experts, local_inter_size // packed_factor, hidden_size),
+        dtype=torch.int32,
+        device=device,
+    )
+    num_groups_w13 = hidden_size // group_size
+    num_groups_w2 = local_inter_size // group_size
+    w13_scale = (
+        torch.rand((local_num_experts, num_groups_w13, 2 * local_inter_size), dtype=params_dtype, device=device) * 0.01
+    )
+    w2_scale = torch.rand((local_num_experts, num_groups_w2, hidden_size), dtype=params_dtype, device=device) * 0.01
+
+    empty_g_idx = torch.empty((local_num_experts, 0), dtype=torch.int32, device=device)
+
+    marlin_w13 = _vllm_ops.gptq_marlin_moe_repack(
+        w13_packed,
+        empty_g_idx,
+        w13_packed.shape[1] * packed_factor,
+        w13_packed.shape[2],
+        num_bits,
+    )
+    marlin_w2 = _vllm_ops.gptq_marlin_moe_repack(
+        w2_packed,
+        empty_g_idx,
+        w2_packed.shape[1] * packed_factor,
+        w2_packed.shape[2],
+        num_bits,
+    )
+    marlin_w13_scale = marlin_moe_permute_scales(
+        s=w13_scale,
+        size_k=marlin_w13.shape[2],
+        size_n=w13_scale.shape[2],
+        group_size=group_size,
+    )
+    marlin_w2_scale = marlin_moe_permute_scales(
+        s=w2_scale,
+        size_k=w2_scale.shape[1] * group_size,
+        size_n=w2_scale.shape[2],
+        group_size=group_size,
+    )
+    workspace = marlin_make_workspace_new(torch.device(device), 4)
+    return marlin_w13, marlin_w2, marlin_w13_scale, marlin_w2_scale, empty_g_idx, workspace
+
+
+def run_moe_marlin_wna16(
+    moe_type,
+    num_tokens_lists,
+    hidden_size,
+    inter_size,
+    topk,
+    num_experts,
+    moe_tp_size,
+    moe_ep_size,
+    model_name,
+    perf_filename,
+    distributed="power_law",
+    power_law_alpha=0.0,
+    device="cuda:0",
+    group_size=32,
+):
+    """Benchmark 4-bit W4A16 (wna16) marlin MoE and log to perf table."""
+    if not _WNA16_MARLIN_AVAILABLE:
+        raise ImportError("wna16 marlin MoE path is unavailable in this vLLM build.")
+
+    num_bits = 4
+    quant_type_id = _WNA16_TYPE_MAP[num_bits].id
+    params_dtype = torch.float16
+
+    torch.cuda.set_device(device)
+    torch.set_default_device(device)
+
+    local_inter_size = inter_size // moe_tp_size
+    expert_map_result = determine_expert_map(moe_ep_size, 0, num_experts)
+    if isinstance(expert_map_result, tuple) and len(expert_map_result) == 3:
+        local_num_experts, expert_map, _ = expert_map_result
+    else:
+        local_num_experts, expert_map = expert_map_result  # type: ignore[misc]
+
+    (
+        marlin_w13,
+        marlin_w2,
+        marlin_w13_scale,
+        marlin_w2_scale,
+        empty_g_idx,
+        workspace,
+    ) = _build_marlin_wna16_experts(
+        local_num_experts,
+        hidden_size,
+        local_inter_size,
+        group_size,
+        num_bits,
+        params_dtype,
+        device,
+    )
+
+    for num_tokens_idx, num_tokens in enumerate(num_tokens_lists):
+        print("num_tokens", num_tokens, "topk", topk)
+        hidden_states = torch.randn([num_tokens, hidden_size], dtype=params_dtype, device=device)
+
+        num_iter = 10 if distributed == "power_law" else 1
+        if distributed == "power_law":
+            topk_weights_list = []
+            topk_ids_list = []
+            for _ in range(num_iter):
+                logits = (
+                    power_law_logits_v3(num_tokens, num_experts, topk, moe_ep_size, power_law_alpha)
+                    .to(params_dtype)
+                    .to(device)
+                )
+                weights, ids = torch.topk(logits, topk, dim=-1)
+                # fused_marlin_moe requires float32 topk weights and int32 ids.
+                topk_weights_list.append(F.softmax(weights, dim=-1).to(torch.float32))
+                topk_ids_list.append(ids.to(torch.int32))
+        elif distributed == "balanced":
+            actual_logits = balanced_logits(num_tokens, num_experts, topk).to(params_dtype).to(device)
+            topk_weights, topk_ids = torch.topk(actual_logits, topk, dim=-1)
+            topk_weights = F.softmax(topk_weights, dim=-1).to(torch.float32)
+            topk_ids = topk_ids.to(torch.int32)
+        else:
+            raise ValueError(f"Unsupported distributed mode: {distributed}")
+
+        def _marlin_call(tw, ti):
+            return fused_marlin_moe(
+                hidden_states[: tw.shape[0]],
+                marlin_w13,
+                marlin_w2,
+                None,
+                None,
+                marlin_w13_scale,
+                marlin_w2_scale,
+                tw,
+                ti,
+                quant_type_id=quant_type_id,
+                global_num_experts=num_experts,
+                expert_map=expert_map,
+                g_idx1=empty_g_idx,
+                g_idx2=empty_g_idx,
+                sort_indices1=empty_g_idx,
+                sort_indices2=empty_g_idx,
+                workspace=workspace,
+                is_k_full=True,
+            )
+
+        def run_single_iteration():
+            if distributed == "power_law":
+                for tw, ti in zip(topk_weights_list, topk_ids_list):
+                    _ = _marlin_call(tw, ti)
+            else:
+                _ = _marlin_call(topk_weights, topk_ids)
+
+        # CUDA-graph timing: real vLLM decode replays captured graphs, so the
+        # per-op latency has no kernel-launch overhead. Eager timing inflates
+        # small-batch marlin MoE ~3x (launch-bound), which over-predicts
+        # generation_moe. Capture the num_iter marlin calls once and time replays
+        # to match the profiled `marlin_moe_wna16` self-CUDA time.
+        def _time_cuda_graph():
+            capture_stream = torch.cuda.Stream(device=device)
+            capture_stream.wait_stream(torch.cuda.current_stream())
+            with torch.cuda.stream(capture_stream):
+                for _ in range(3):
+                    run_single_iteration()
+            torch.cuda.current_stream().wait_stream(capture_stream)
+            torch.cuda.synchronize()
+
+            graph = torch.cuda.CUDAGraph()
+            with torch.cuda.graph(graph):
+                run_single_iteration()
+            torch.cuda.synchronize()
+
+            reps = 20
+            start_evt = torch.cuda.Event(enable_timing=True)
+            end_evt = torch.cuda.Event(enable_timing=True)
+            start_evt.record()
+            for _ in range(reps):
+                graph.replay()
+            end_evt.record()
+            torch.cuda.synchronize()
+            return start_evt.elapsed_time(end_evt) / reps / num_iter
+
+        try:
+            latency = _time_cuda_graph()
+        except torch.OutOfMemoryError:
+            if num_tokens_idx > 0:
+                break
+            raise
+        power_stats = None
+
+        print(f"moe latency: {latency}")
+
+        log_perf(
+            item_list=[
+                {
+                    "moe_dtype": moe_type,
+                    "num_tokens": num_tokens,
+                    "hidden_size": hidden_size,
+                    "inter_size": inter_size,
+                    "topk": topk,
+                    "num_experts": num_experts,
+                    "moe_tp_size": moe_tp_size,
+                    "moe_ep_size": moe_ep_size,
+                    "distribution": "power_law_" + str(power_law_alpha) if distributed == "power_law" else distributed,
+                    "latency": latency,
+                }
+            ],
+            framework="VLLM",
+            version=vllm_version,
+            device_name=torch.cuda.get_device_name(device),
+            op_name="moe",
+            kernel_source="vllm_marlin_moe_wna16",
+            perf_filename=perf_filename,
+            power_stats=power_stats,
+        )
+
+
 def run_moe_torch(
     moe_type,
     num_tokens_lists,
@@ -97,6 +358,23 @@ def run_moe_torch(
     device="cuda:0",
 ):
     """Run vLLM MoE performance benchmarking"""
+    if moe_type in ("int4_wo", "w4a16", "wna16"):
+        return run_moe_marlin_wna16(
+            "int4_wo",
+            num_tokens_lists,
+            hidden_size,
+            inter_size,
+            topk,
+            num_experts,
+            moe_tp_size,
+            moe_ep_size,
+            model_name,
+            perf_filename,
+            distributed=distributed,
+            power_law_alpha=power_law_alpha,
+            device=device,
+        )
+
     torch.cuda.set_device(device)
     torch.set_default_device(device)
 

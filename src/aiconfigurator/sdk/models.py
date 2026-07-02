@@ -69,6 +69,12 @@ def _infer_quant_modes_from_raw_config(raw_config: dict) -> dict[str, object]:
     elif quant_algo == "mxfp4":
         overrides["gemm_quant_mode"] = common.GEMMQuantMode.float16
         overrides["moe_quant_mode"] = common.MoEQuantMode.w4a16_mxfp4
+    elif quant_algo in ("w4a16", "int4_wo", "wna16"):
+        # compressed-tensors pack-quantized W4A16 (int4 weights, 16-bit acts),
+        # e.g. Kimi-K2.5 routed experts -> marlin_moe_wna16. Dense/attn stay 16-bit
+        # (real checkpoints only quantize the routed experts), so gemm keeps float16.
+        overrides["gemm_quant_mode"] = common.GEMMQuantMode.float16
+        overrides["moe_quant_mode"] = common.MoEQuantMode.int4_wo
     elif quant_algo == "float16":
         overrides["gemm_quant_mode"] = common.GEMMQuantMode.float16
         overrides["moe_quant_mode"] = common.MoEQuantMode.float16
@@ -1491,15 +1497,19 @@ class DeepSeekModel(BaseModel):
             ]
         )
 
-        # when tp_size=0, the comm part will be 0
-        # self.context_ops.append(ops.CustomAllReduce('context_ar_1', self._num_layers, h, tp_size))
-        # self.context_ops.append(ops.CustomAllReduce('context_ar_2', self._num_layers, h, tp_size))
-        # self.generation_ops.append(
-        #     ops.CustomAllReduce('generation_ar_1', self._num_layers*self._mtp_scale_factor, h, tp_size)
-        # )
-        # self.generation_ops.append(
-        #     ops.CustomAllReduce('generation_ar_2', self._num_layers*self._mtp_scale_factor, h, tp_size)
-        # )
+        # TP all-reduce communication (2 per layer: post-attention, post-MoE).
+        # phase397m: re-enabled to replace the fictional 90ms ep8 decode overhead
+        # with real custom_allreduce modeling. Measured ~5.9ms/iter for tp8 decode
+        # (2 x 61 layers x allreduce(msg=bs*h*2B)), matching the profiled reality.
+        # when tp_size<=1, CustomAllReduce contributes ~0.
+        self.context_ops.append(ops.CustomAllReduce("context_ar_1", self._num_layers, h, tp_size))
+        self.context_ops.append(ops.CustomAllReduce("context_ar_2", self._num_layers, h, tp_size))
+        self.generation_ops.append(
+            ops.CustomAllReduce("generation_ar_1", self._num_layers * self._mtp_scale_factor, h, tp_size)
+        )
+        self.generation_ops.append(
+            ops.CustomAllReduce("generation_ar_2", self._num_layers * self._mtp_scale_factor, h, tp_size)
+        )
 
         # pp
         pp_scale_factor = pp_size - 1

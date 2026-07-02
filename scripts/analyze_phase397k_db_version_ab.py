@@ -49,7 +49,11 @@ from validate_cb_simulator import (  # noqa: E402
 SYSTEMS_ROOT = str(REPO_ROOT / "src" / "aiconfigurator" / "systems")
 DB_VERSIONS = ("0.12.0", "0.19.0")
 OVERLAP_FACTOR = 0.0
-EP8_OVERHEAD_MS = 90.0
+# phase397m: source the ep8 decode overhead from the backend constant (now 0.0)
+# so this A/B reflects the current structural model — communication is carried by
+# the re-enabled generation_ar CustomAllReduce ops instead of the fictional 90ms.
+# Override with --ep8-overhead-ms 90 to reproduce the pre-phase397m comparison.
+EP8_OVERHEAD_MS = VLLMBackend._CB_SIM_8GPU_EP_DECODE_OVERHEAD_MS
 
 
 def _load_model_db(tp: int, dp: int, moe_tp: int, moe_ep: int, version: str):
@@ -64,10 +68,17 @@ def _load_model_db(tp: int, dp: int, moe_tp: int, moe_ep: int, version: str):
     db = PerfDatabase(
         system=SYSTEM, backend=BACKEND, version=version, systems_root=SYSTEMS_ROOT
     )
+    # phase397m: per-op queries fall back to db._default_database_mode (SILICON),
+    # which hard-asserts when a kernel table is absent. K2.5 now declares w4a16, but
+    # the legacy 0.12.0 DB predates 4-bit MoE and has no int4_wo table. Use HYBRID so
+    # the missing-table case degrades to the empirical estimate (matching the
+    # database_mode=HYBRID we pass to run_agg). 0.19.0 has the real int4 table, so its
+    # numbers are unaffected; only 0.12.0's int4 queries take the empirical path.
+    db._default_database_mode = common.DatabaseMode.HYBRID
     return model, db
 
 
-def _sim_point(pt, version: str) -> dict:
+def _sim_point(pt, version: str, ep8_overhead_ms: float = EP8_OVERHEAD_MS) -> dict:
     model, db = _load_model_db(pt.tp, pt.dp, pt.moe_tp, pt.moe_ep, version)
     # Force the standard kernel-table modeling path for BOTH DB versions.
     #
@@ -87,7 +98,7 @@ def _sim_point(pt, version: str) -> dict:
         pt.batch_size,
         max_num_batched_tokens=pt.max_num_batched_tokens,
         overlap_factor=OVERLAP_FACTOR,
-        per_iteration_overhead_ms=EP8_OVERHEAD_MS,
+        per_iteration_overhead_ms=ep8_overhead_ms,
     )
     summary = backend.run_agg(
         model,
@@ -168,11 +179,12 @@ def _read_measured(measured_csv: Path) -> dict[str, dict]:
     return out
 
 
-def run_ab(measured_csv: Path | None, out_csv: Path) -> None:
+def run_ab(measured_csv: Path | None, out_csv: Path, ep8_overhead_ms: float = EP8_OVERHEAD_MS) -> None:
     measured = _read_measured(measured_csv) if measured_csv else {}
+    print(f"[ab] ep8 decode per-iteration overhead = {ep8_overhead_ms} ms")
     rows: list[dict] = []
     for pt in MULTI_CONFIG_DATA:
-        sim = {ver: _sim_point(pt, ver) for ver in DB_VERSIONS}
+        sim = {ver: _sim_point(pt, ver, ep8_overhead_ms) for ver in DB_VERSIONS}
         m = measured.get(pt.name)
         real = float(m["measured_output_tok_s_gpu"]) if m else 0.0
         row = {
@@ -263,12 +275,19 @@ def main() -> None:
     p_ab = sub.add_parser("ab", help="run cb_sim 0.12.0 vs 0.19.0 A/B")
     p_ab.add_argument("--measured", type=Path, default=None)
     p_ab.add_argument("--out", type=Path, required=True)
+    p_ab.add_argument(
+        "--ep8-overhead-ms",
+        type=float,
+        default=EP8_OVERHEAD_MS,
+        help="ep8 decode per-iteration overhead ms (default: backend constant, "
+        "now 0.0; pass 90 to reproduce the pre-phase397m A/B)",
+    )
 
     args = parser.parse_args()
     if args.mode == "build-measured":
         build_measured(args.results_dir, args.out)
     elif args.mode == "ab":
-        run_ab(args.measured, args.out)
+        run_ab(args.measured, args.out, args.ep8_overhead_ms)
 
 
 if __name__ == "__main__":

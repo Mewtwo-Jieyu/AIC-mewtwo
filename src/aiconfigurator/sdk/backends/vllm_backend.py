@@ -35,7 +35,12 @@ class VLLMBackend(BaseBackend):
     _VLLM_MAX_CHUNK_TOKENS: int = 8192
     _CB_SIM_DEFAULT_OVERLAP_FACTOR: float = 0.0
     _CB_SIM_DEFAULT_DECODE_OVERHEAD_MS: float = 0.0
-    _CB_SIM_8GPU_EP_DECODE_OVERHEAD_MS: float = 90.0
+    # phase397m: the 90ms ep8 decode "overhead" was a magic-number placeholder for
+    # the unmodeled TP all-reduce communication (K2.5 generation_ar was commented
+    # out). phase397l profiling showed real decode comm is ~5.9ms all-reduce (no
+    # all2all). Communication is now modeled structurally via the re-enabled
+    # CustomAllReduce ops in DeepSeekModel, so this iteration-level constant is 0.
+    _CB_SIM_8GPU_EP_DECODE_OVERHEAD_MS: float = 0.0
     _CB_SIM_EP8_DECODE_OVERHEAD_SOURCE_KEY = (
         "phase148_h200_vllm_ep8_all2all_decode_candidate"
     )

@@ -1,6 +1,7 @@
 {
   "architectures": ["KimiK25ForConditionalGeneration"],
   "model_type": "kimi_k25",
+  "quant_algo": "w4a16",
   "num_hidden_layers": 61,
   "hidden_size": 7168,
   "num_attention_heads": 64,
