@@ -1,0 +1,26 @@
+[2026-07-02T16:26:37+00:00] baseline_gpu_pids=[]
+[2026-07-02T16:26:37+00:00] === point 0: K2.5-tp8ep8-8k2k tp=8 dp=1 ep=8 isl=8000 osl=2000 max_bt=8000 port=20700 ===
+[2026-07-02T16:26:37+00:00] serve_command: python3 -m vllm.entrypoints.cli.main serve /mnt/shared-storage-gpfs2/gpfs2-shared-public/huggingface/zskj-hub/models--moonshotai--Kimi-K2.5 --served-model-name kimi-k2.5 --port 20700 --tensor-parallel-size 8 --enable-expert-parallel --max-model-len 262144 --gpu-memory-utilization 0.80 --max-num-batched-tokens 8000 --max-num-seqs 256 --enable-chunked-prefill --no-enable-prefix-caching --mm-encoder-tp-mode data --skip-mm-profiling --trust-remote-code --enable-auto-tool-choice --tool-call-parser kimi_k2 --reasoning-parser kimi_k2
+[2026-07-02T16:26:37+00:00] service_pid=4393
+[2026-07-02T16:32:57+00:00] service_ready port=20700 poll=77
+[2026-07-02T16:36:53+00:00] benchmark_exit_code=0
+[2026-07-02T16:36:54+00:00] wrote docs/iter_gap_investigation/phase400_clean_recollect/K2.5-tp8ep8-8k2k/bench_result.json
+[2026-07-02T16:37:11+00:00] gpu_drained
+[2026-07-02T16:37:11+00:00] === point 1: K2.5-tp8ep8-32k3k tp=8 dp=1 ep=8 isl=32000 osl=3000 max_bt=32000 port=20701 ===
+[2026-07-02T16:37:11+00:00] serve_command: python3 -m vllm.entrypoints.cli.main serve /mnt/shared-storage-gpfs2/gpfs2-shared-public/huggingface/zskj-hub/models--moonshotai--Kimi-K2.5 --served-model-name kimi-k2.5 --port 20701 --tensor-parallel-size 8 --enable-expert-parallel --max-model-len 262144 --gpu-memory-utilization 0.80 --max-num-batched-tokens 32000 --max-num-seqs 256 --enable-chunked-prefill --no-enable-prefix-caching --mm-encoder-tp-mode data --skip-mm-profiling --trust-remote-code --enable-auto-tool-choice --tool-call-parser kimi_k2 --reasoning-parser kimi_k2
+[2026-07-02T16:37:11+00:00] service_pid=6830
+[2026-07-02T16:40:01+00:00] service_ready port=20701 poll=35
+[2026-07-02T16:56:03+00:00] benchmark_exit_code=0
+[2026-07-02T16:56:03+00:00] wrote docs/iter_gap_investigation/phase400_clean_recollect/K2.5-tp8ep8-32k3k/bench_result.json
+[2026-07-02T16:56:20+00:00] gpu_drained
+[2026-07-02T16:56:20+00:00] === point 2: K2.5-tp4ep8dp2-8k2k tp=4 dp=2 ep=8 isl=8000 osl=2000 max_bt=8000 port=20702 ===
+[2026-07-02T16:56:20+00:00] serve_command: python3 -m vllm.entrypoints.cli.main serve /mnt/shared-storage-gpfs2/gpfs2-shared-public/huggingface/zskj-hub/models--moonshotai--Kimi-K2.5 --served-model-name kimi-k2.5 --port 20702 --tensor-parallel-size 4 --enable-expert-parallel --max-model-len 262144 --gpu-memory-utilization 0.80 --max-num-batched-tokens 8000 --max-num-seqs 256 --enable-chunked-prefill --no-enable-prefix-caching --mm-encoder-tp-mode data --skip-mm-profiling --trust-remote-code --enable-auto-tool-choice --tool-call-parser kimi_k2 --reasoning-parser kimi_k2 --data-parallel-size 2
+[2026-07-02T16:56:20+00:00] service_pid=8538
+[2026-07-02T16:59:15+00:00] service_ready port=20702 poll=36
+[2026-07-02T17:02:49+00:00] benchmark_exit_code=0
+[2026-07-02T17:02:49+00:00] wrote docs/iter_gap_investigation/phase400_clean_recollect/K2.5-tp4ep8dp2-8k2k/bench_result.json
+[2026-07-02T17:03:11+00:00] gpu_drained
+[2026-07-02T17:03:11+00:00] === point 3: K2.5-tp4ep8dp2-32k3k tp=4 dp=2 ep=8 isl=32000 osl=3000 max_bt=32000 port=20703 ===
+[2026-07-02T17:03:11+00:00] serve_command: python3 -m vllm.entrypoints.cli.main serve /mnt/shared-storage-gpfs2/gpfs2-shared-public/huggingface/zskj-hub/models--moonshotai--Kimi-K2.5 --served-model-name kimi-k2.5 --port 20703 --tensor-parallel-size 4 --enable-expert-parallel --max-model-len 262144 --gpu-memory-utilization 0.80 --max-num-batched-tokens 32000 --max-num-seqs 256 --enable-chunked-prefill --no-enable-prefix-caching --mm-encoder-tp-mode data --skip-mm-profiling --trust-remote-code --enable-auto-tool-choice --tool-call-parser kimi_k2 --reasoning-parser kimi_k2 --data-parallel-size 2
+[2026-07-02T17:03:11+00:00] service_pid=11068
+[2026-07-02T17:06:12+00:00] service_ready port=20703 poll=37
