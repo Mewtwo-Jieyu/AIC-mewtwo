@@ -1,0 +1,26 @@
+[phase397u] shot=local48_direct distributed=power_law_local48_direct out=phase397u_marlin_config_gate_ee60d42/local48_direct.txt
+num_tokens 128 topk 8
+[marlin_diag] idx=0 distribution=power_law_local48_direct_1.01 input_tokens=128 effective_m=102 topk=8 local_num_experts=48 global_num_experts=48 block_size_m=32 num_tokens_post_padded=2176 valid_blocks=68 rank0_num_tokens=102 rank0_total_selections=159
+[marlin_diag] idx=1 distribution=power_law_local48_direct_1.01 input_tokens=128 effective_m=91 topk=8 local_num_experts=48 global_num_experts=48 block_size_m=32 num_tokens_post_padded=2080 valid_blocks=65 rank0_num_tokens=91 rank0_total_selections=155
+[marlin_diag] idx=2 distribution=power_law_local48_direct_1.01 input_tokens=128 effective_m=96 topk=8 local_num_experts=48 global_num_experts=48 block_size_m=32 num_tokens_post_padded=1696 valid_blocks=53 rank0_num_tokens=96 rank0_total_selections=154
+[marlin_diag] idx=3 distribution=power_law_local48_direct_1.01 input_tokens=128 effective_m=104 topk=8 local_num_experts=48 global_num_experts=48 block_size_m=32 num_tokens_post_padded=2176 valid_blocks=68 rank0_num_tokens=104 rank0_total_selections=174
+[marlin_diag] idx=4 distribution=power_law_local48_direct_1.01 input_tokens=128 effective_m=101 topk=8 local_num_experts=48 global_num_experts=48 block_size_m=32 num_tokens_post_padded=1856 valid_blocks=58 rank0_num_tokens=101 rank0_total_selections=187
+[marlin_diag] idx=5 distribution=power_law_local48_direct_1.01 input_tokens=128 effective_m=94 topk=8 local_num_experts=48 global_num_experts=48 block_size_m=32 num_tokens_post_padded=1664 valid_blocks=52 rank0_num_tokens=94 rank0_total_selections=145
+[marlin_diag] idx=6 distribution=power_law_local48_direct_1.01 input_tokens=128 effective_m=73 topk=8 local_num_experts=48 global_num_experts=48 block_size_m=16 num_tokens_post_padded=976 valid_blocks=61 rank0_num_tokens=73 rank0_total_selections=159
+[marlin_diag] idx=7 distribution=power_law_local48_direct_1.01 input_tokens=128 effective_m=88 topk=8 local_num_experts=48 global_num_experts=48 block_size_m=32 num_tokens_post_padded=1568 valid_blocks=49 rank0_num_tokens=88 rank0_total_selections=155
+[marlin_diag] idx=8 distribution=power_law_local48_direct_1.01 input_tokens=128 effective_m=104 topk=8 local_num_experts=48 global_num_experts=48 block_size_m=32 num_tokens_post_padded=2112 valid_blocks=66 rank0_num_tokens=104 rank0_total_selections=187
+[marlin_diag] idx=9 distribution=power_law_local48_direct_1.01 input_tokens=128 effective_m=102 topk=8 local_num_experts=48 global_num_experts=48 block_size_m=32 num_tokens_post_padded=1856 valid_blocks=58 rank0_num_tokens=102 rank0_total_selections=183
+moe latency: 0.6937806701660156
+[phase397u] shot=force_block64 distributed=power_law_force_block64 out=phase397u_marlin_config_gate_ee60d42/force_block64.txt
+num_tokens 128 topk 8
+[marlin_diag] idx=0 distribution=power_law_force_block64_1.01 input_tokens=128 effective_m=128 topk=8 local_num_experts=48 global_num_experts=384 block_size_m=64 num_tokens_post_padded=3072 valid_blocks=48
+[marlin_diag] idx=1 distribution=power_law_force_block64_1.01 input_tokens=128 effective_m=128 topk=8 local_num_experts=48 global_num_experts=384 block_size_m=64 num_tokens_post_padded=2496 valid_blocks=39
+[marlin_diag] idx=2 distribution=power_law_force_block64_1.01 input_tokens=128 effective_m=128 topk=8 local_num_experts=48 global_num_experts=384 block_size_m=64 num_tokens_post_padded=2496 valid_blocks=39
+[marlin_diag] idx=3 distribution=power_law_force_block64_1.01 input_tokens=128 effective_m=128 topk=8 local_num_experts=48 global_num_experts=384 block_size_m=64 num_tokens_post_padded=2112 valid_blocks=33
+[marlin_diag] idx=4 distribution=power_law_force_block64_1.01 input_tokens=128 effective_m=128 topk=8 local_num_experts=48 global_num_experts=384 block_size_m=64 num_tokens_post_padded=2560 valid_blocks=40
+[marlin_diag] idx=5 distribution=power_law_force_block64_1.01 input_tokens=128 effective_m=128 topk=8 local_num_experts=48 global_num_experts=384 block_size_m=64 num_tokens_post_padded=2112 valid_blocks=33
+[marlin_diag] idx=6 distribution=power_law_force_block64_1.01 input_tokens=128 effective_m=128 topk=8 local_num_experts=48 global_num_experts=384 block_size_m=64 num_tokens_post_padded=2176 valid_blocks=34
+[marlin_diag] idx=7 distribution=power_law_force_block64_1.01 input_tokens=128 effective_m=128 topk=8 local_num_experts=48 global_num_experts=384 block_size_m=64 num_tokens_post_padded=2176 valid_blocks=34
+[marlin_diag] idx=8 distribution=power_law_force_block64_1.01 input_tokens=128 effective_m=128 topk=8 local_num_experts=48 global_num_experts=384 block_size_m=64 num_tokens_post_padded=2240 valid_blocks=35
+[marlin_diag] idx=9 distribution=power_law_force_block64_1.01 input_tokens=128 effective_m=128 topk=8 local_num_experts=48 global_num_experts=384 block_size_m=64 num_tokens_post_padded=2560 valid_blocks=40
+moe latency: 0.7427938842773438

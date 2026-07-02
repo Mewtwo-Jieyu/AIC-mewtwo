@@ -1,0 +1,2 @@
+framework,version,device,op_name,kernel_source,moe_dtype,num_tokens,hidden_size,inter_size,topk,num_experts,moe_tp_size,moe_ep_size,distribution,latency
+VLLM,0.19.0,NVIDIA H200,moe,vllm_marlin_moe_wna16,int4_wo,128,7168,2048,8,384,1,8,power_law_force_block64_1.01,0.7427938842773438

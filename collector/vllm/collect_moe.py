@@ -21,6 +21,7 @@ from vllm.version import __version__ as vllm_version
 try:
     from vllm import _custom_ops as _vllm_ops
     from vllm.model_executor.layers.fused_moe.fused_marlin_moe import (
+        _fused_marlin_moe,
         batched_fused_marlin_moe,
         fused_marlin_moe,
     )
@@ -62,6 +63,8 @@ def _is_power_law_mode(distributed):
         "power_law_eplb",
         "power_law_rank0_compact",
         "power_law_batched_rank0",
+        "power_law_local48_direct",
+        "power_law_force_block64",
     )
 
 
@@ -77,6 +80,14 @@ def _is_batched_rank0_mode(distributed):
     return distributed == "power_law_batched_rank0"
 
 
+def _is_local48_direct_mode(distributed):
+    return distributed == "power_law_local48_direct"
+
+
+def _is_force_block64_mode(distributed):
+    return distributed == "power_law_force_block64"
+
+
 def _distribution_label(distributed, power_law_alpha):
     if distributed == "power_law":
         return "power_law_" + str(power_law_alpha)
@@ -86,6 +97,10 @@ def _distribution_label(distributed, power_law_alpha):
         return "power_law_rank0_compact_" + str(power_law_alpha)
     if distributed == "power_law_batched_rank0":
         return "power_law_batched_rank0_" + str(power_law_alpha)
+    if distributed == "power_law_local48_direct":
+        return "power_law_local48_direct_" + str(power_law_alpha)
+    if distributed == "power_law_force_block64":
+        return "power_law_force_block64_" + str(power_law_alpha)
     return distributed
 
 
@@ -285,6 +300,7 @@ def run_moe_marlin_wna16(
                     return_rank0_info=(
                         _is_rank0_compact_mode(distributed)
                         or _is_batched_rank0_mode(distributed)
+                        or _is_local48_direct_mode(distributed)
                     ),
                 )
                 rank0_info = None
@@ -306,6 +322,21 @@ def run_moe_marlin_wna16(
                         )
                     )
                     expert_num_tokens_list.append(expert_num_tokens.to(device))
+                    rank0_info_list.append(rank0_info)
+                    continue
+                if _is_local48_direct_mode(distributed):
+                    _, rank0_info = logits_result
+                    local_selected = rank0_info["rank0_selected_slots"].to(torch.int64)
+                    local_mask = local_selected < local_num_experts
+                    local_ids = torch.where(
+                        local_mask,
+                        local_selected,
+                        torch.full_like(local_selected, -1),
+                    )
+                    local_weights = local_mask.to(torch.float32)
+                    local_weights = local_weights / local_weights.sum(dim=-1, keepdim=True).clamp_min(1.0)
+                    topk_weights_list.append(local_weights.to(device))
+                    topk_ids_list.append(local_ids.to(torch.int32).to(device))
                     rank0_info_list.append(rank0_info)
                     continue
                 if _is_rank0_compact_mode(distributed):
@@ -348,6 +379,63 @@ def run_moe_marlin_wna16(
                 is_k_full=True,
             )
 
+        def _marlin_force_block64_call(tw, ti):
+            block_size_m = 64
+            sorted_token_ids, expert_ids, num_tokens_post_padded = moe_align_block_size(
+                ti,
+                block_size_m,
+                num_experts,
+                expert_map,
+                ignore_invalid_experts=True,
+            )
+            moe_output = _fused_marlin_moe(
+                hidden_states=hidden_states[: tw.shape[0]],
+                w1=marlin_w13,
+                w2=marlin_w2,
+                bias1=None,
+                bias2=None,
+                w1_scale=marlin_w13_scale,
+                w2_scale=marlin_w2_scale,
+                topk_weights=tw,
+                num_topk=ti.shape[1],
+                quant_type=_WNA16_TYPE_MAP[num_bits],
+                apply_router_weight_on_input=False,
+                expert_map=expert_map,
+                block_size_m=block_size_m,
+                sorted_token_ids=sorted_token_ids,
+                expert_ids=expert_ids,
+                num_tokens_post_padded=num_tokens_post_padded,
+                g_idx1=empty_g_idx,
+                g_idx2=empty_g_idx,
+                sort_indices1=empty_g_idx,
+                sort_indices2=empty_g_idx,
+                workspace=workspace,
+                is_k_full=True,
+            ).view(-1, ti.shape[1], hidden_states.shape[1])
+            return torch.sum(moe_output, dim=1)
+
+        def _local48_direct_marlin_call(tw, ti):
+            return fused_marlin_moe(
+                hidden_states[: tw.shape[0]],
+                marlin_w13,
+                marlin_w2,
+                None,
+                None,
+                marlin_w13_scale,
+                marlin_w2_scale,
+                tw,
+                ti,
+                quant_type_id=quant_type_id,
+                global_num_experts=local_num_experts,
+                expert_map=None,
+                g_idx1=empty_g_idx,
+                g_idx2=empty_g_idx,
+                sort_indices1=empty_g_idx,
+                sort_indices2=empty_g_idx,
+                workspace=workspace,
+                is_k_full=True,
+            )
+
         def _batched_marlin_call(hidden, expert_num_tokens):
             return batched_fused_marlin_moe(
                 hidden,
@@ -379,12 +467,18 @@ def run_moe_marlin_wna16(
             if os.getenv("AIC_MOE_MARLIN_DIAG", "0") != "1":
                 return
             effective_m = ti.shape[0]
-            block_size_m = _block_size_m(effective_m, local_num_experts, ti.shape[1])
+            block_size_m = 64 if _is_force_block64_mode(distributed) else _block_size_m(
+                effective_m,
+                local_num_experts,
+                ti.shape[1],
+            )
+            align_global_num_experts = local_num_experts if _is_local48_direct_mode(distributed) else num_experts
+            align_expert_map = None if _is_local48_direct_mode(distributed) else expert_map
             _, expert_ids, num_tokens_post_padded = moe_align_block_size(
                 ti,
                 block_size_m,
-                num_experts,
-                expert_map,
+                align_global_num_experts,
+                align_expert_map,
                 ignore_invalid_experts=True,
             )
             valid_blocks = int((expert_ids >= 0).sum().item())
@@ -395,7 +489,7 @@ def run_moe_marlin_wna16(
                 "effective_m": effective_m,
                 "topk": ti.shape[1],
                 "local_num_experts": local_num_experts,
-                "global_num_experts": num_experts,
+                "global_num_experts": align_global_num_experts,
                 "block_size_m": block_size_m,
                 "num_tokens_post_padded": int(num_tokens_post_padded.item()),
                 "valid_blocks": valid_blocks,
@@ -451,7 +545,12 @@ def run_moe_marlin_wna16(
                     _ = _batched_marlin_call(hidden, expert_num_tokens)
             elif _is_power_law_mode(distributed):
                 for tw, ti in zip(topk_weights_list, topk_ids_list):
-                    _ = _marlin_call(tw, ti)
+                    if _is_local48_direct_mode(distributed):
+                        _ = _local48_direct_marlin_call(tw, ti)
+                    elif _is_force_block64_mode(distributed):
+                        _ = _marlin_force_block64_call(tw, ti)
+                    else:
+                        _ = _marlin_call(tw, ti)
             else:
                 _ = _marlin_call(topk_weights, topk_ids)
 
