@@ -1,0 +1,14 @@
+category,ms_per_iter,pct_gpu_busy
+attention,16.8981,42.9
+moe_expert_gemm,8.0201,20.36
+proj_gemm,4.0417,10.26
+moe_aux,1.5093,3.83
+allreduce,5.8943,14.97
+allgather,0.2867,0.73
+norm_elementwise,1.1174,2.84
+other,1.6179,4.11
+TOTAL_gpu_busy,39.3856,100.0
+decode_wall_ms_per_iter,36.8472,
+comm_ms_per_iter,6.181,15.69
+n_profiled_steps,25,
+decode_bs,128,
