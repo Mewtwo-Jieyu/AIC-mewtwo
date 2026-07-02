@@ -1525,11 +1525,11 @@ class TestVLLMCBSimBoundary:
         assert result_dict["tokens/s/gpu"] == pytest.approx(1234.0 / 8.0)
         assert result_dict["tpot"] == pytest.approx(2.0)
         assert per_ops["cb_sim_scheduling"]["per_iteration_overhead_ms"] == pytest.approx(
-            90.0
+            0.0
         )
         assert (
             per_ops["cb_sim_scheduling"]["per_iteration_overhead_source_key"]
-            == "phase148_h200_vllm_ep8_all2all_decode_candidate"
+            == "none"
         )
         assert (
             per_ops["cb_sim_scheduling"]["per_iteration_overhead_topology_key"]
@@ -1805,7 +1805,7 @@ class TestDiagnoseCBIterLatencyScript:
             SimpleNamespace(
                 alpha_values="0.0",
                 overhead_values="0.0",
-                ep8_per_iteration_overhead_ms=90.0,
+                ep8_per_iteration_overhead_ms=0.0,
             )
         )
 
