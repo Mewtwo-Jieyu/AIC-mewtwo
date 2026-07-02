@@ -86,6 +86,19 @@ class MultiConfigPoint:
 
 
 @dataclass(frozen=True)
+class MultiConfigKVCapacity:
+    scenario: str
+    kv_cache_tokens: int
+    block_size: int
+    num_gpu_blocks: int
+    serve_log: str
+    serve_log_line_numbers: tuple[int, ...]
+    override_num_gpu_blocks: int
+    override_line_numbers: tuple[int, ...]
+    capacity_scope: str = "per_engine"
+
+
+@dataclass(frozen=True)
 class MultiConfigTopKRow:
     name: str
     tp: int
@@ -244,6 +257,86 @@ MULTI_CONFIG_DATA = [
         real_total_tok_s_gpu=779.76,
     ),
 ]
+
+KV_CACHE_BLOCK_SIZE = 16
+PHASE397K_KV_CAPACITY_BY_SCENARIO = {
+    "K2.5-tp8ep8-8k2k": MultiConfigKVCapacity(
+        scenario="K2.5-tp8ep8-8k2k",
+        kv_cache_tokens=760_160,
+        block_size=KV_CACHE_BLOCK_SIZE,
+        num_gpu_blocks=47_510,
+        serve_log="docs/iter_gap_investigation/phase397k_measured_0190/K2.5-tp8ep8-8k2k/serve.log",
+        serve_log_line_numbers=(202,),
+        override_num_gpu_blocks=512,
+        override_line_numbers=(161, 163, 165, 167, 168, 171, 173, 175),
+    ),
+    "K2.5-tp8ep8-32k3k": MultiConfigKVCapacity(
+        scenario="K2.5-tp8ep8-32k3k",
+        kv_cache_tokens=675_216,
+        block_size=KV_CACHE_BLOCK_SIZE,
+        num_gpu_blocks=42_201,
+        serve_log="docs/iter_gap_investigation/phase397k_measured_0190/K2.5-tp8ep8-32k3k/serve.log",
+        serve_log_line_numbers=(195,),
+        override_num_gpu_blocks=512,
+        override_line_numbers=(154, 156, 158, 159, 162, 163, 166, 168),
+    ),
+    "K2.5-tp4ep8dp2-8k2k": MultiConfigKVCapacity(
+        scenario="K2.5-tp4ep8dp2-8k2k",
+        kv_cache_tokens=672_128,
+        block_size=KV_CACHE_BLOCK_SIZE,
+        num_gpu_blocks=42_008,
+        serve_log="docs/iter_gap_investigation/phase397k_measured_0190/K2.5-tp4ep8dp2-8k2k/serve.log",
+        serve_log_line_numbers=(210, 213),
+        override_num_gpu_blocks=512,
+        override_line_numbers=(170, 172, 174, 175, 176, 180, 182, 184),
+    ),
+    "K2.5-tp4ep8dp2-32k3k": MultiConfigKVCapacity(
+        scenario="K2.5-tp4ep8dp2-32k3k",
+        kv_cache_tokens=320_800,
+        block_size=KV_CACHE_BLOCK_SIZE,
+        num_gpu_blocks=20_050,
+        serve_log="docs/iter_gap_investigation/phase397k_measured_0190/K2.5-tp4ep8dp2-32k3k/serve.log",
+        serve_log_line_numbers=(204, 212),
+        override_num_gpu_blocks=512,
+        override_line_numbers=(165, 167, 168, 169, 173, 174, 177, 179),
+    ),
+    "K2.5-tp8ep8-8k2k-bt65536": MultiConfigKVCapacity(
+        scenario="K2.5-tp8ep8-8k2k-bt65536",
+        kv_cache_tokens=343_552,
+        block_size=KV_CACHE_BLOCK_SIZE,
+        num_gpu_blocks=21_472,
+        serve_log="docs/iter_gap_investigation/phase397k_measured_0190/K2.5-tp8ep8-8k2k-bt65536/serve.log",
+        serve_log_line_numbers=(195,),
+        override_num_gpu_blocks=512,
+        override_line_numbers=(154, 155, 156, 160, 161, 164, 166, 167),
+    ),
+    "K2.5-tp4ep8dp2-8k2k-bt65536": MultiConfigKVCapacity(
+        scenario="K2.5-tp4ep8dp2-8k2k-bt65536",
+        kv_cache_tokens=25_744,
+        block_size=KV_CACHE_BLOCK_SIZE,
+        num_gpu_blocks=1_609,
+        serve_log="docs/iter_gap_investigation/phase397k_measured_0190/K2.5-tp4ep8dp2-8k2k-bt65536/serve.log",
+        serve_log_line_numbers=(200, 210),
+        override_num_gpu_blocks=256,
+        override_line_numbers=(163, 165, 167, 169, 171, 173, 175, 177),
+    ),
+}
+
+
+def _multi_config_kv_capacity(point: MultiConfigPoint) -> MultiConfigKVCapacity:
+    try:
+        capacity = PHASE397K_KV_CAPACITY_BY_SCENARIO[point.name]
+    except KeyError as exc:
+        raise ValueError(f"missing Phase397k KV capacity for {point.name}") from exc
+    if capacity.block_size != KV_CACHE_BLOCK_SIZE:
+        raise ValueError(f"unexpected KV block size for {point.name}: {capacity.block_size}")
+    if capacity.kv_cache_tokens != capacity.num_gpu_blocks * capacity.block_size:
+        raise ValueError(f"KV tokens must equal blocks * block_size for {point.name}")
+    return capacity
+
+
+def _multi_config_num_gpu_blocks(point: MultiConfigPoint) -> int:
+    return _multi_config_kv_capacity(point).num_gpu_blocks
 
 
 def _write_rows(path: Path, rows: list[object]) -> None:
@@ -561,6 +654,7 @@ def _make_cb_config(
     overlap_factor: float = 1.0,
     per_iteration_overhead_ms: float = 0.0,
     max_num_batched_tokens: int | None = None,
+    num_gpu_blocks: int = 0,
 ) -> CBSimConfig:
     """Create CBSimConfig aligned with run_agg default chunk budget."""
     # Need enough requests for meaningful steady-state measurement.
@@ -572,6 +666,8 @@ def _make_cb_config(
         num_requests=num_requests,
         warmup_requests=warmup_requests,
         long_prefill_token_threshold=long_prefill_token_threshold,
+        num_gpu_blocks=num_gpu_blocks,
+        block_size=KV_CACHE_BLOCK_SIZE,
         overlap_factor=overlap_factor,
         per_iteration_overhead_ms=per_iteration_overhead_ms,
     )
@@ -607,6 +703,7 @@ def _run_multi_config_diagnostic_raw(
             max_num_batched_tokens=pt.max_num_batched_tokens,
             overlap_factor=overlap_factor,
             per_iteration_overhead_ms=ep8_per_iteration_overhead_ms,
+            num_gpu_blocks=_multi_config_num_gpu_blocks(pt),
         )
         cb_summary = backend.run_agg(
             model,
@@ -879,6 +976,7 @@ def _run_multi_config_validation(
             pt.batch_size,
             overlap_factor=overlap_factor,
             per_iteration_overhead_ms=ep8_per_iteration_overhead_ms,
+            num_gpu_blocks=_multi_config_num_gpu_blocks(pt),
         )
         cb_summary = backend.run_agg(
             model,

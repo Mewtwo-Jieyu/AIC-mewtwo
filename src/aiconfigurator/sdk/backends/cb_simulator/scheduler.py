@@ -33,11 +33,11 @@ class CBScheduler:
             return 0
         return (total_tokens + self._config.block_size - 1) // self._config.block_size
 
-    def _scheduled_token_delta(self, req: Request, result: ScheduleResult) -> int:
-        delta = result.prefill_tokens.get(req.request_id, 0)
-        if req in result.decode_reqs:
-            delta += 1
-        return delta
+    def _scheduled_token_deltas(self, result: ScheduleResult) -> dict[int, int]:
+        deltas = dict(result.prefill_tokens)
+        for req in result.decode_reqs:
+            deltas[req.request_id] = deltas.get(req.request_id, 0) + 1
+        return deltas
 
     def _total_blocks(
         self,
@@ -51,8 +51,9 @@ class CBScheduler:
             reqs[req.request_id] = req
         for req in result.decode_reqs:
             reqs[req.request_id] = req
+        scheduled_deltas = self._scheduled_token_deltas(result)
         return sum(
-            self._blocks_needed(req, self._scheduled_token_delta(req, result))
+            self._blocks_needed(req, scheduled_deltas.get(req.request_id, 0))
             for req in reqs.values()
         )
 
