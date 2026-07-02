@@ -121,6 +121,15 @@ class CBScheduler:
 
         return True, released_tokens
 
+    def _fits_block_capacity(
+        self,
+        running: list[Request],
+        result: ScheduleResult,
+    ) -> bool:
+        if self._config.num_gpu_blocks <= 0:
+            return True
+        return self._total_blocks(running, result) <= self._config.num_gpu_blocks
+
     def _next_waiting_candidate(
         self,
         waiting: list[Request],
@@ -207,11 +216,8 @@ class CBScheduler:
             result.prefill_reqs.append(req)
             result.prefill_tokens[req.request_id] = chunk
             budget -= chunk
-            fits, released = self._ensure_block_capacity(
-                req, waiting, running, result, preempted_ids,
-            )
-            budget += released
-            if not fits:
+            if not self._fits_block_capacity(running, result):
+                budget += self._remove_from_result(req, result)
                 break
 
             # If this was a partial prefill, stop admitting more.

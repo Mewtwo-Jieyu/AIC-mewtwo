@@ -215,6 +215,28 @@ class TestCBScheduler:
         assert result.prefill_tokens[0] == 16
         assert result.prefill_tokens[2] == 16
 
+    def test_waiting_admission_does_not_preempt_running(self) -> None:
+        cfg = CBSimConfig(
+            max_num_batched_tokens=32,
+            num_gpu_blocks=4,
+            block_size=16,
+        )
+        sched = CBScheduler(cfg)
+        running_req = _make_decoding(0, isl=32, gen=0)
+        waiting_req = _make_req(1, isl=32)
+        running = [running_req]
+        waiting = [waiting_req]
+
+        result = sched.schedule(waiting=waiting, running=running)
+
+        assert running == [running_req]
+        assert waiting == [waiting_req]
+        assert running_req.num_preemptions == 0
+        assert waiting_req.state == RequestState.WAITING
+        assert result.decode_reqs == [running_req]
+        assert result.prefill_reqs == []
+        assert result.prefill_tokens == {}
+
     def test_no_preemption_with_unlimited_blocks(self) -> None:
         cfg = CBSimConfig(
             max_num_batched_tokens=32,
