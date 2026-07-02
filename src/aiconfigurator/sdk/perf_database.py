@@ -32,6 +32,15 @@ _VLLM_MODULE_BOUNDARIES = frozenset(
 )
 _VLLM_MODULE_BUCKETS = frozenset({1, 2, 15, 16, 30, 32, 241, 482, 1808, 2048, 3616, 4096, 8192, 16384})
 
+# Phase397v: profiler-anchored int4_wo MoE calibrated roofline.
+# Anchor provenance: phase397l tp8ep8 decode profile,
+# moe_expert_gemm=8.0201 ms/iter over 60 MoE layers at bs=128.
+_PHASE397V_INT4_WO_MOE_ANCHOR_MS_PER_LAYER = 8.0201 / 60.0
+_PHASE397V_INT4_WO_MOE_ANCHOR_SOL_MS = 0.22047402666666666
+_PHASE397V_INT4_WO_MOE_SOL_SCALE = (
+    _PHASE397V_INT4_WO_MOE_ANCHOR_MS_PER_LAYER / _PHASE397V_INT4_WO_MOE_ANCHOR_SOL_MS
+)
+
 
 def _normalize_systems_paths(raw_paths: str | Iterable[str] | None) -> list[str]:
     default_path = os.fspath(pkg_resources.files("aiconfigurator") / "systems")
@@ -4663,6 +4672,28 @@ class PerfDatabase:
             scale_factor = 0.4
             return latency / scale_factor
 
+        def use_phase397v_int4_wo_calibrated_sol() -> bool:
+            return (
+                self.system == "h200_sxm"
+                and self.backend == common.BackendName.vllm.value
+                and self.version == "0.19.0"
+                and quant_mode == common.MoEQuantMode.int4_wo
+            )
+
+        def get_phase397v_int4_wo_calibrated_sol() -> float:
+            sol_latency = get_sol(
+                num_tokens,
+                hidden_size,
+                inter_size,
+                topk,
+                num_experts,
+                moe_tp_size,
+                moe_ep_size,
+                quant_mode,
+                workload_distribution,
+            )[0]
+            return sol_latency * _PHASE397V_INT4_WO_MOE_SOL_SCALE
+
         if database_mode is None:
             database_mode = self._default_database_mode
         if database_mode == common.DatabaseMode.SOL:
@@ -4691,6 +4722,8 @@ class PerfDatabase:
                 workload_distribution,
             )
         elif database_mode == common.DatabaseMode.EMPIRICAL:
+            if use_phase397v_int4_wo_calibrated_sol():
+                return PerformanceResult(get_phase397v_int4_wo_calibrated_sol(), energy=0.0)
             emp_latency = get_empirical(
                 num_tokens,
                 hidden_size,
@@ -4704,6 +4737,8 @@ class PerfDatabase:
             )
             return PerformanceResult(emp_latency, energy=0.0)
         else:
+            if use_phase397v_int4_wo_calibrated_sol():
+                return PerformanceResult(get_phase397v_int4_wo_calibrated_sol(), energy=0.0)
             try:
                 if self.backend == common.BackendName.sglang.value:
                     # deepep_moe is for sglang wideep only

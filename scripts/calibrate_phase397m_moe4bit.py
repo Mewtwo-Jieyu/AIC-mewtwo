@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""phase397m: profiler-anchor the 4-bit (wna16 marlin) MoE micro-benchmark table.
+"""phase397m: deprecated profiler-anchor for the 4-bit MoE micro-benchmark table.
+
+Deprecated by Phase397v: int4_wo MoE now uses a calibrated-SOL path in
+``PerfDatabase.query_moe`` instead of writing micro-benchmark rows multiplied by
+``k``. Keep this script only as historical provenance for the old table path.
 
 Why calibration is needed
 --------------------------
