@@ -1,0 +1,21 @@
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------
+                                                   Name    Self CPU %      Self CPU   CPU total %     CPU total  CPU time avg     Self CUDA   Self CUDA %    CUDA total  CUDA time avg    # of Calls
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------
+                                       _vllm_fa3_C::fwd         1.64%      56.233us        48.23%       1.657ms     552.430us       1.433ms       100.00%       1.912ms     637.461us             3
+void cutlass::device_kernel<flash::enable_sm90_or_la...         0.00%       0.000us         0.00%       0.000us       0.000us       1.420ms        99.05%       1.420ms     473.216us             3
+                                Activity Buffer Request        44.21%       1.519ms        44.21%       1.519ms       1.519ms     479.072us        33.42%     479.072us     479.072us             1
+void cutlass::device_kernel<flash::FlashAttnFwdCombi...         0.00%       0.000us         0.00%       0.000us       0.000us      13.664us         0.95%      13.664us       4.555us             3
+                                 aten::split_with_sizes         6.15%     211.310us         6.31%     216.670us      72.223us       0.000us         0.00%       0.000us       0.000us             3
+                                       aten::as_strided         0.28%       9.735us         0.28%       9.735us       0.541us       0.000us         0.00%       0.000us       0.000us            18
+                                            aten::slice         0.27%       9.311us         0.32%      10.921us       1.820us       0.000us         0.00%       0.000us       0.000us             6
+                                        aten::unsqueeze         0.28%       9.729us         0.36%      12.494us       2.082us       0.000us         0.00%       0.000us       0.000us             6
+                                       aten::empty_like         9.52%     326.990us         9.97%     342.704us     114.235us       0.000us         0.00%       0.000us       0.000us             3
+                                    aten::empty_strided         0.46%      15.714us         0.46%      15.714us       5.238us       0.000us         0.00%       0.000us       0.000us             3
+                                            aten::empty         0.78%      26.852us         0.78%      26.852us       2.238us       0.000us         0.00%       0.000us       0.000us            12
+                                   cudaFuncSetAttribute         0.13%       4.484us         0.13%       4.484us       1.495us       0.000us         0.00%       0.000us       0.000us             3
+                                       cudaLaunchKernel         0.94%      32.198us         0.94%      32.198us      10.733us       0.000us         0.00%       0.000us       0.000us             3
+                                    cudaLaunchKernelExC         0.53%      18.327us         0.53%      18.327us       6.109us       0.000us         0.00%       0.000us       0.000us             3
+                                  cudaDeviceSynchronize        34.81%       1.196ms        34.81%       1.196ms       1.196ms       0.000us         0.00%       0.000us       0.000us             1
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------
+Self CPU time total: 3.436ms
+Self CUDA time total: 1.433ms

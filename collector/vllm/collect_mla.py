@@ -5,6 +5,7 @@
 import math
 import os
 import time
+from pathlib import Path
 
 import torch
 import vllm
@@ -52,6 +53,10 @@ def run_attention_torch(
     phase397o_timing=False,
     phase397o_warmup_iters=20,
     phase397o_measure_iters=200,
+    phase397q_profile_path=None,
+    phase397q_profile_iters=1,
+    phase397q_full_cudagraph_metadata=False,
+    phase397q_max_num_splits=None,
 ):
     setup_distributed(device)
     torch.cuda.set_device(device)
@@ -148,6 +153,14 @@ def run_attention_torch(
         max_num_seqs=batch_size,
         use_fp8_kv_cache=use_fp8_kv_cache,
     )
+    if phase397q_full_cudagraph_metadata:
+        from vllm.config.compilation import CUDAGraphMode
+
+        vllm_config.compilation_config.cudagraph_mode = CUDAGraphMode.FULL
+        vllm_config.compilation_config.max_cudagraph_capture_size = max(
+            batch_spec.batch_size,
+            batch_spec.compute_num_tokens(),
+        )
     assert convert_dtype_to_torch(vllm_config.model_config.dtype) == torch.bfloat16
 
     kv_cache_spec = create_standard_kv_cache_spec(vllm_config, use_fp8_kv_cache)
@@ -210,6 +223,21 @@ def run_attention_torch(
         common_prefix_len=0,
         common_attn_metadata=common_attn_metadata,
     )
+    if phase397q_max_num_splits is not None:
+        if phase397q_max_num_splits < 0:
+            raise SystemExit("phase397q_max_num_splits must be non-negative")
+        if attn_metadata.decode is None:
+            raise SystemExit("phase397q_max_num_splits only supports decode metadata")
+        attn_metadata.decode.max_num_splits = phase397q_max_num_splits
+        attn_metadata.decode.scheduler_metadata = builder._schedule_decode(
+            num_reqs=attn_metadata.decode.seq_lens.shape[0],
+            cu_query_lens=attn_metadata.decode.query_start_loc,
+            max_query_len=attn_metadata.decode.max_query_len,
+            seqlens=attn_metadata.decode.seq_lens,
+            max_seq_len=attn_metadata.decode.max_seq_len,
+            causal=True,
+            max_num_splits=phase397q_max_num_splits,
+        )
 
     # Create mock kv_b_proj using the same weights as reference implementation
     from vllm.model_executor.layers.linear import ColumnParallelLinear
@@ -316,6 +344,13 @@ def run_attention_torch(
             warmup_iters=phase397o_warmup_iters,
             measure_iters=phase397o_measure_iters,
         )
+        profile_path = ""
+        if phase397q_profile_path:
+            profile_path = _write_phase397q_profiler_table(
+                run,
+                phase397q_profile_path,
+                profile_iters=phase397q_profile_iters,
+            )
         timing.update(
             {
                 "target_backend": type(impl).__name__,
@@ -330,9 +365,18 @@ def run_attention_torch(
                 "input_len": input_len,
                 "target_seq_len": input_len + 1,
                 "tp_size": tp_size,
+                "block_size": block_size,
                 "randomize_blocks": randomize_blocks,
                 "warmup_iters": phase397o_warmup_iters,
                 "measure_iters": phase397o_measure_iters,
+                "phase397q_profile_path": profile_path,
+                "phase397q_profile_iters": phase397q_profile_iters if profile_path else 0,
+                "phase397q_full_cudagraph_metadata": phase397q_full_cudagraph_metadata,
+                "scheduler_metadata_present": attn_metadata.decode.scheduler_metadata is not None,
+                "scheduler_metadata_shape": _shape(attn_metadata.decode.scheduler_metadata)
+                if attn_metadata.decode.scheduler_metadata is not None
+                else "",
+                "decode_max_num_splits": attn_metadata.decode.max_num_splits,
                 "called_attention_kernel": True,
                 "called_model_forward": False,
             }
@@ -516,6 +560,34 @@ def _measure_phase397o_generation_mla(run, warmup_iters=20, measure_iters=200):
         "graph_p99_ms": graph["p99"],
         "graph_capture": True,
     }
+
+
+def _write_phase397q_profiler_table(run, path, profile_iters=1, warmup_iters=3):
+    if profile_iters <= 0:
+        raise SystemExit("phase397q_profile_iters must be positive")
+    if warmup_iters < 0:
+        raise SystemExit("phase397q profiler warmup_iters must be non-negative")
+    for _ in range(warmup_iters):
+        run()
+    torch.cuda.synchronize()
+    activities = [torch.profiler.ProfilerActivity.CPU]
+    if torch.cuda.is_available():
+        activities.append(torch.profiler.ProfilerActivity.CUDA)
+    with torch.profiler.profile(
+        activities=activities,
+        record_shapes=False,
+        with_stack=False,
+    ) as prof:
+        for _ in range(profile_iters):
+            run()
+    torch.cuda.synchronize()
+    output = Path(path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(
+        prof.key_averages().table(sort_by="self_cuda_time_total", row_limit=200),
+        encoding="utf-8",
+    )
+    return str(output)
 
 
 def _prepare_mla_smoke_state(

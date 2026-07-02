@@ -1,0 +1,112 @@
+SPLIT=0
+[phase397q] heads=8 dtype=float16 batch=128 seq=9001 block=64 randomize=True
+cuda:0 0 26425
+INFO 07-02 06:05:14 [parallel_state.py:1400] world_size=-1 rank=-1 local_rank=-1 distributed_init_method=env:// backend=nccl
+INFO 07-02 06:05:14 [scheduler.py:238] Chunked prefill is enabled with max_num_batched_tokens=2048.
+INFO 07-02 06:05:14 [vllm.py:790] Asynchronous scheduling is enabled.
+INFO 07-02 06:05:15 [parallel_state.py:1716] rank 0 in world size 1 is assigned as DP rank 0, PP rank 0, PCP rank 0, TP rank 0, EP rank 0, EPLB rank N/A
+INFO 07-02 06:05:16 [cuda.py:334] Using FLASH_ATTN_MLA attention backend out of potential backends: ['FLASH_ATTN_MLA', 'FLASHMLA', 'TRITON_MLA'].
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-02 06:05:16 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 06:05:16 [model.py:1678] Using max model len 9000
+INFO 07-02 06:05:16 [scheduler.py:238] Chunked prefill is enabled with max_num_batched_tokens=8192.
+INFO 07-02 06:05:16 [compilation.py:290] Enabled custom fusions: norm_quant, act_quant
+INFO 07-02 06:05:16 [mla_attention.py:2137] Using FlashAttention prefill for MLA
+[phase397q] wrote phase397q_mla_split_sweep_0.csv
+[rank0]:[W702 06:05:17.778729069 ProcessGroupNCCL.cpp:1553] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())
+SPLIT=1
+[phase397q] heads=8 dtype=float16 batch=128 seq=9001 block=64 randomize=True
+cuda:0 0 26730
+INFO 07-02 06:05:21 [parallel_state.py:1400] world_size=-1 rank=-1 local_rank=-1 distributed_init_method=env:// backend=nccl
+INFO 07-02 06:05:21 [scheduler.py:238] Chunked prefill is enabled with max_num_batched_tokens=2048.
+INFO 07-02 06:05:21 [vllm.py:790] Asynchronous scheduling is enabled.
+INFO 07-02 06:05:22 [parallel_state.py:1716] rank 0 in world size 1 is assigned as DP rank 0, PP rank 0, PCP rank 0, TP rank 0, EP rank 0, EPLB rank N/A
+INFO 07-02 06:05:23 [cuda.py:334] Using FLASH_ATTN_MLA attention backend out of potential backends: ['FLASH_ATTN_MLA', 'FLASHMLA', 'TRITON_MLA'].
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-02 06:05:23 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 06:05:23 [model.py:1678] Using max model len 9000
+INFO 07-02 06:05:23 [scheduler.py:238] Chunked prefill is enabled with max_num_batched_tokens=8192.
+INFO 07-02 06:05:23 [compilation.py:290] Enabled custom fusions: norm_quant, act_quant
+INFO 07-02 06:05:23 [mla_attention.py:2137] Using FlashAttention prefill for MLA
+[phase397q] wrote phase397q_mla_split_sweep_1.csv
+[rank0]:[W702 06:05:23.662813070 ProcessGroupNCCL.cpp:1553] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())
+SPLIT=2
+[phase397q] heads=8 dtype=float16 batch=128 seq=9001 block=64 randomize=True
+cuda:0 0 27035
+INFO 07-02 06:05:27 [parallel_state.py:1400] world_size=-1 rank=-1 local_rank=-1 distributed_init_method=env:// backend=nccl
+INFO 07-02 06:05:28 [scheduler.py:238] Chunked prefill is enabled with max_num_batched_tokens=2048.
+INFO 07-02 06:05:28 [vllm.py:790] Asynchronous scheduling is enabled.
+INFO 07-02 06:05:29 [parallel_state.py:1716] rank 0 in world size 1 is assigned as DP rank 0, PP rank 0, PCP rank 0, TP rank 0, EP rank 0, EPLB rank N/A
+INFO 07-02 06:05:30 [cuda.py:334] Using FLASH_ATTN_MLA attention backend out of potential backends: ['FLASH_ATTN_MLA', 'FLASHMLA', 'TRITON_MLA'].
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-02 06:05:30 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 06:05:30 [model.py:1678] Using max model len 9000
+INFO 07-02 06:05:30 [scheduler.py:238] Chunked prefill is enabled with max_num_batched_tokens=8192.
+INFO 07-02 06:05:30 [compilation.py:290] Enabled custom fusions: norm_quant, act_quant
+INFO 07-02 06:05:30 [mla_attention.py:2137] Using FlashAttention prefill for MLA
+[phase397q] wrote phase397q_mla_split_sweep_2.csv
+[rank0]:[W702 06:05:30.683691635 ProcessGroupNCCL.cpp:1553] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())
+SPLIT=4
+[phase397q] heads=8 dtype=float16 batch=128 seq=9001 block=64 randomize=True
+cuda:0 0 27340
+INFO 07-02 06:05:35 [parallel_state.py:1400] world_size=-1 rank=-1 local_rank=-1 distributed_init_method=env:// backend=nccl
+INFO 07-02 06:05:36 [scheduler.py:238] Chunked prefill is enabled with max_num_batched_tokens=2048.
+INFO 07-02 06:05:36 [vllm.py:790] Asynchronous scheduling is enabled.
+INFO 07-02 06:05:36 [parallel_state.py:1716] rank 0 in world size 1 is assigned as DP rank 0, PP rank 0, PCP rank 0, TP rank 0, EP rank 0, EPLB rank N/A
+INFO 07-02 06:05:37 [cuda.py:334] Using FLASH_ATTN_MLA attention backend out of potential backends: ['FLASH_ATTN_MLA', 'FLASHMLA', 'TRITON_MLA'].
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-02 06:05:37 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 06:05:37 [model.py:1678] Using max model len 9000
+INFO 07-02 06:05:37 [scheduler.py:238] Chunked prefill is enabled with max_num_batched_tokens=8192.
+INFO 07-02 06:05:37 [compilation.py:290] Enabled custom fusions: norm_quant, act_quant
+INFO 07-02 06:05:37 [mla_attention.py:2137] Using FlashAttention prefill for MLA
+[phase397q] wrote phase397q_mla_split_sweep_4.csv
+[rank0]:[W702 06:05:38.110074368 ProcessGroupNCCL.cpp:1553] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())
+SPLIT=8
+[phase397q] heads=8 dtype=float16 batch=128 seq=9001 block=64 randomize=True
+cuda:0 0 27645
+INFO 07-02 06:05:42 [parallel_state.py:1400] world_size=-1 rank=-1 local_rank=-1 distributed_init_method=env:// backend=nccl
+INFO 07-02 06:05:43 [scheduler.py:238] Chunked prefill is enabled with max_num_batched_tokens=2048.
+INFO 07-02 06:05:43 [vllm.py:790] Asynchronous scheduling is enabled.
+INFO 07-02 06:05:44 [parallel_state.py:1716] rank 0 in world size 1 is assigned as DP rank 0, PP rank 0, PCP rank 0, TP rank 0, EP rank 0, EPLB rank N/A
+INFO 07-02 06:05:45 [cuda.py:334] Using FLASH_ATTN_MLA attention backend out of potential backends: ['FLASH_ATTN_MLA', 'FLASHMLA', 'TRITON_MLA'].
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-02 06:05:45 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 06:05:45 [model.py:1678] Using max model len 9000
+INFO 07-02 06:05:45 [scheduler.py:238] Chunked prefill is enabled with max_num_batched_tokens=8192.
+INFO 07-02 06:05:45 [compilation.py:290] Enabled custom fusions: norm_quant, act_quant
+INFO 07-02 06:05:45 [mla_attention.py:2137] Using FlashAttention prefill for MLA
+[phase397q] wrote phase397q_mla_split_sweep_8.csv
+[rank0]:[W702 06:05:46.784221154 ProcessGroupNCCL.cpp:1553] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())
+SPLIT=16
+[phase397q] heads=8 dtype=float16 batch=128 seq=9001 block=64 randomize=True
+cuda:0 0 27950
+INFO 07-02 06:05:50 [parallel_state.py:1400] world_size=-1 rank=-1 local_rank=-1 distributed_init_method=env:// backend=nccl
+INFO 07-02 06:05:50 [scheduler.py:238] Chunked prefill is enabled with max_num_batched_tokens=2048.
+INFO 07-02 06:05:50 [vllm.py:790] Asynchronous scheduling is enabled.
+INFO 07-02 06:05:51 [parallel_state.py:1716] rank 0 in world size 1 is assigned as DP rank 0, PP rank 0, PCP rank 0, TP rank 0, EP rank 0, EPLB rank N/A
+INFO 07-02 06:05:51 [cuda.py:334] Using FLASH_ATTN_MLA attention backend out of potential backends: ['FLASH_ATTN_MLA', 'FLASHMLA', 'TRITON_MLA'].
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-02 06:05:51 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 06:05:51 [model.py:1678] Using max model len 9000
+INFO 07-02 06:05:52 [scheduler.py:238] Chunked prefill is enabled with max_num_batched_tokens=8192.
+INFO 07-02 06:05:52 [compilation.py:290] Enabled custom fusions: norm_quant, act_quant
+INFO 07-02 06:05:52 [mla_attention.py:2137] Using FlashAttention prefill for MLA
+[phase397q] wrote phase397q_mla_split_sweep_16.csv
+[rank0]:[W702 06:05:52.430020763 ProcessGroupNCCL.cpp:1553] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())
+SPLIT=32
+[phase397q] heads=8 dtype=float16 batch=128 seq=9001 block=64 randomize=True
+cuda:0 0 28255
+INFO 07-02 06:05:56 [parallel_state.py:1400] world_size=-1 rank=-1 local_rank=-1 distributed_init_method=env:// backend=nccl
+INFO 07-02 06:05:57 [scheduler.py:238] Chunked prefill is enabled with max_num_batched_tokens=2048.
+INFO 07-02 06:05:57 [vllm.py:790] Asynchronous scheduling is enabled.
+INFO 07-02 06:05:58 [parallel_state.py:1716] rank 0 in world size 1 is assigned as DP rank 0, PP rank 0, PCP rank 0, TP rank 0, EP rank 0, EPLB rank N/A
+INFO 07-02 06:05:58 [cuda.py:334] Using FLASH_ATTN_MLA attention backend out of potential backends: ['FLASH_ATTN_MLA', 'FLASHMLA', 'TRITON_MLA'].
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-02 06:05:58 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 06:05:58 [model.py:1678] Using max model len 9000
+INFO 07-02 06:05:58 [scheduler.py:238] Chunked prefill is enabled with max_num_batched_tokens=8192.
+INFO 07-02 06:05:58 [compilation.py:290] Enabled custom fusions: norm_quant, act_quant
+INFO 07-02 06:05:58 [mla_attention.py:2137] Using FlashAttention prefill for MLA
+[phase397q] wrote phase397q_mla_split_sweep_32.csv
+[rank0]:[W702 06:05:59.020976200 ProcessGroupNCCL.cpp:1553] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())

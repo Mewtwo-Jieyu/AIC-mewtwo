@@ -1,0 +1,8 @@
+row_type,verdict,local_num_heads,batch_size,target_seq_len,block_size,randomize_blocks,max_num_splits,graph_p50_ms,eager200_p50_ms,serve_target_ms,ratio_vs_serve,within_8pct,artifact,notes
+planned_acceptance_b128,failed,8,128,9001,64,true,32,0.475328,0.502048,0.260256,1.826386,false,phase397q_mla_split_instrument_fullcg.csv,"b128 remains near the Phase397o/DB microbenchmark latency even with full-cudagraph scheduler metadata"
+split_sweep_best_b128,failed,8,128,9001,64,true,1,0.472192,0.495200,0.260256,1.814336,false,phase397q_mla_split_sweep_1.csv,"max_num_splits sweep 0/1/2/4/8/16/32 did not approach the serve anchor"
+effective_batch_b64,diagnostic_pass_not_table_write,8,64,9001,64,true,32,0.243456,0.269120,0.260256,1.069005,true,phase397q_mla_b64_acceptance_check.csv,"b64 lands inside the serve-anchor tolerance, which points to batch semantics mismatch rather than a validated b128 table row"
+batch_check_b96,failed,8,96,9001,64,true,32,0.472416,0.495744,0.260256,1.815197,false,phase397q_mla_batch_check_96.csv,"b96 follows the b128 slow path"
+batch_check_b128,failed,8,128,9001,64,true,32,0.475008,0.497952,0.260256,1.825157,false,phase397q_mla_batch_check_128.csv,"b128 reproduces the slow path"
+residue_check,passed,,,,,,,,,,,,gpu_compute_apps_after.txt;process_residual_after.txt,"GPU compute app after file is empty and filtered process residual is empty"
+phase397q_verdict,stop_no_perf_table_write,,,,,,,,,,,,phase397q_mla_recollect_stop_report.md,"Do not rewrite generation_mla_perf.txt from this run; next step must fix the serve batch-shape interpretation first"
