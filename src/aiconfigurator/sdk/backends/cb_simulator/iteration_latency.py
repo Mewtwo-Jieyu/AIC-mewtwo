@@ -252,12 +252,9 @@ class IterationLatencyCalculator:
         # overlap via overlap_factor.
         overhead_ms = self._per_iteration_overhead_ms if decode_bs > 0 else 0.0
         if is_mixed:
-            # One merged non-attention forward (Pass 1, total_tokens) overlaps
-            # with the prefill + decode attention kernels of the same forward.
-            total_ms = self._combine_with_overlap(
-                context_non_attn_ms,
-                context_attn_ms + gen_attn_ms,
-            )
+            # Mixed iteration: the merged non-attention pass, context attention,
+            # and decode attention execute serially within the fused forward.
+            total_ms = context_non_attn_ms + context_attn_ms + gen_attn_ms
         elif prefill_tokens > 0:
             # Pure prefill iteration: no decode lane to overlap with.
             total_ms = self._combine_with_overlap(

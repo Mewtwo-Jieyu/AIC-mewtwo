@@ -508,8 +508,8 @@ class TestIterationLatencyCalculator:
         )
         breakdown = calc.get_last_breakdown()
         assert breakdown is not None
-        # merged non-attn (gemm+moe=15) overlaps with ctx_attn(8)+gen_attn(7)=15
-        # combine with default overlap_factor=1.0 -> 15 + 15 = 30.
+        # Mixed iterations charge the physical serial sum of merged non-attn,
+        # context attention, and decode attention.
         assert total == pytest.approx(30.0)
         assert breakdown.context_non_attention_ms == pytest.approx(15.0)
         assert breakdown.context_attention_ms == pytest.approx(8.0)
@@ -676,24 +676,32 @@ class TestIterationLatencyCalculator:
         assert breakdown.iteration_overhead_ms == pytest.approx(0.0)
         assert total == pytest.approx(23.0)
 
-    def test_overlap_factor_partially_overlaps_attention_and_non_attention(self) -> None:
-        calc = IterationLatencyCalculator(
+    def test_mixed_serial_sum_is_independent_of_overlap_factor(self) -> None:
+        calc_no_overlap = IterationLatencyCalculator(
             backend=_FakeBackendForIteration(),
             model=MagicMock(),
             database=MagicMock(),
-            overlap_factor=0.5,
+            overlap_factor=0.0,
         )
-        total = calc.compute(
+        calc_full_overlap = IterationLatencyCalculator(
+            backend=_FakeBackendForIteration(),
+            model=MagicMock(),
+            database=MagicMock(),
+            overlap_factor=1.0,
+        )
+
+        args = dict(
             prefill_tokens=1024,
             prefill_batch_size=1,
             prefill_seq_len=1024,
             decode_batch_size=4,
             decode_avg_kv_len=2048,
         )
+        total_no_overlap = calc_no_overlap.compute(**args)
+        total_full_overlap = calc_full_overlap.compute(**args)
 
-        # Mixed: merged non-attn (gemm+moe=15) overlaps with ctx_attn(8)+
-        # gen_attn(7)=15. combine(15,15) @ overlap 0.5 = 15 + 0.5*15 = 22.5.
-        assert total == pytest.approx(22.5)
+        assert total_no_overlap == pytest.approx(30.0)
+        assert total_full_overlap == pytest.approx(30.0)
 
     def test_overlap_factor_validates_range(self) -> None:
         with pytest.raises(ValueError, match="overlap_factor"):
