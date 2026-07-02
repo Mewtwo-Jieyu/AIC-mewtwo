@@ -1,0 +1,14 @@
+UID          PID    PPID  C STIME TTY          TIME CMD
+root           1       0  0 Jul01 ?        00:04:04 /kubebrain/worker-init run --enable-sshd --enable-pid-monitor --metrics-addr= -- sh -c sleep inf
+root          24       1  0 Jul01 ?        00:03:42 /proc/self/exe run shim --uid 0 --gid 0 -- sh -c sleep inf
+root          60      24  0 Jul01 ?        00:00:00 sh -c sleep inf
+root          62      60  0 Jul01 ?        00:00:00 sleep inf
+root          79       1  0 Jul01 ?        00:00:00 sshd: /usr/sbin/sshd -D -f /kubebrain/static-sshd_config -p 22222 [listener] 0 of 10-100 startups
+root          80       1  0 Jul01 ?        00:00:00 sleep infinity
+root          81       1  0 Jul01 ?        00:00:00 sleep infinity
+root       43022      79  0 03:26 ?        00:00:00 sshd: root@notty
+root       43111   43022  0 03:26 ?        00:00:00 bash -c env LD_LIBRARY_PATH=/usr/local/nvidia/lib64:/usr/local/cuda-12.9/compat /usr/local/nvidia/bin/nvidia-smi > /mnt/shared-storage-user/ailab-sys/zhaojieyu/aic/phase397o_mla_recollect_420b95d/gpu_compute_apps_after.txt
+root       43112   43111  0 03:26 ?        00:00:00 /usr/local/nvidia/bin/nvidia-smi
+root       43113      79  0 03:26 ?        00:00:00 sshd: root@notty
+root       43161   43113  0 03:26 ?        00:00:00 bash -c ps -ef > /mnt/shared-storage-user/ailab-sys/zhaojieyu/aic/phase397o_mla_recollect_420b95d/process_snapshot_after.txt
+root       43162   43161  0 03:26 ?        00:00:00 ps -ef

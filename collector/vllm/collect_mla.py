@@ -48,6 +48,10 @@ def run_attention_torch(
     is_context_phase,
     perf_filename,
     device="cuda:0",
+    randomize_blocks=True,
+    phase397o_timing=False,
+    phase397o_warmup_iters=20,
+    phase397o_measure_iters=200,
 ):
     setup_distributed(device)
     torch.cuda.set_device(device)
@@ -193,7 +197,7 @@ def run_attention_torch(
         device=device,
         num_blocks=num_kv_cache_blocks,
         common_attn_metadata=common_attn_metadata,
-        randomize_blocks=True,
+        randomize_blocks=randomize_blocks,
         kv_cache_dtype="fp8" if use_fp8_kv_cache else None,
     )
 
@@ -300,6 +304,41 @@ def run_attention_torch(
                 mock_layer,
             )
 
+    kv_cache_dtype_str = "float16" if not use_fp8_kv_cache else "fp8"
+    dtype_str = "float16"
+    kernel_source = f"vllm_{backend_name}".lower()
+
+    if phase397o_timing:
+        if attn_metadata.prefill is not None:
+            raise SystemExit("Phase397o MLA recollect only supports generation forward_mqa")
+        timing = _measure_phase397o_generation_mla(
+            run,
+            warmup_iters=phase397o_warmup_iters,
+            measure_iters=phase397o_measure_iters,
+        )
+        timing.update(
+            {
+                "target_backend": type(impl).__name__,
+                "kernel_entrypoint": "forward_mqa",
+                "kernel_source": kernel_source,
+                "mla_dtype": dtype_str,
+                "kv_cache_dtype": kv_cache_dtype_str,
+                "num_heads": num_heads,
+                "batch_size": batch_size,
+                "isl": 1,
+                "step": input_len,
+                "input_len": input_len,
+                "target_seq_len": input_len + 1,
+                "tp_size": tp_size,
+                "randomize_blocks": randomize_blocks,
+                "warmup_iters": phase397o_warmup_iters,
+                "measure_iters": phase397o_measure_iters,
+                "called_attention_kernel": True,
+                "called_model_forward": False,
+            }
+        )
+        return timing
+
     # Warmup
     for i in range(warm_up):
         run()
@@ -325,10 +364,6 @@ def run_attention_torch(
         isl = 1
         step = input_len
         op_name = "generation_mla"
-
-    kv_cache_dtype_str = "float16" if not use_fp8_kv_cache else "fp8"
-    dtype_str = "float16"
-    kernel_source = f"vllm_{backend_name}".lower()
 
     log_perf(
         item_list=[
@@ -390,6 +425,96 @@ def _summarize_ms(samples):
         "mean": sum(samples) / len(samples),
         "p50": _percentile_ms(samples, 50),
         "p99": _percentile_ms(samples, 99),
+    }
+
+
+def _measure_cuda_event_loop_average(run, warmup_iters, measure_iters):
+    if warmup_iters < 0:
+        raise SystemExit("warmup_iters must be non-negative")
+    if measure_iters <= 0:
+        raise SystemExit("measure_iters must be positive")
+    for _ in range(warmup_iters):
+        run()
+    torch.cuda.synchronize()
+    start_event = torch.cuda.Event(enable_timing=True)
+    end_event = torch.cuda.Event(enable_timing=True)
+    start_event.record()
+    for _ in range(measure_iters):
+        run()
+    end_event.record()
+    torch.cuda.synchronize()
+    return start_event.elapsed_time(end_event) / measure_iters
+
+
+def _measure_cuda_event_samples(run, warmup_iters, measure_iters):
+    if warmup_iters < 0:
+        raise SystemExit("warmup_iters must be non-negative")
+    if measure_iters <= 0:
+        raise SystemExit("measure_iters must be positive")
+    for _ in range(warmup_iters):
+        run()
+    torch.cuda.synchronize()
+    samples = []
+    for _ in range(measure_iters):
+        start_event = torch.cuda.Event(enable_timing=True)
+        end_event = torch.cuda.Event(enable_timing=True)
+        start_event.record()
+        run()
+        end_event.record()
+        torch.cuda.synchronize()
+        samples.append(start_event.elapsed_time(end_event))
+    return samples
+
+
+def _measure_cuda_graph_samples(run, warmup_iters, measure_iters):
+    if warmup_iters < 0:
+        raise SystemExit("warmup_iters must be non-negative")
+    if measure_iters <= 0:
+        raise SystemExit("measure_iters must be positive")
+    for _ in range(warmup_iters):
+        run()
+    torch.cuda.synchronize()
+    graph = torch.cuda.CUDAGraph()
+    with torch.cuda.graph(graph):
+        run()
+    torch.cuda.synchronize()
+    samples = []
+    for _ in range(measure_iters):
+        start_event = torch.cuda.Event(enable_timing=True)
+        end_event = torch.cuda.Event(enable_timing=True)
+        start_event.record()
+        graph.replay()
+        end_event.record()
+        torch.cuda.synchronize()
+        samples.append(start_event.elapsed_time(end_event))
+    return samples
+
+
+def _measure_phase397o_generation_mla(run, warmup_iters=20, measure_iters=200):
+    eager6 = _measure_cuda_event_loop_average(run, warmup_iters=3, measure_iters=6)
+    eager200 = _summarize_ms(
+        _measure_cuda_event_samples(
+            run,
+            warmup_iters=warmup_iters,
+            measure_iters=measure_iters,
+        )
+    )
+    graph = _summarize_ms(
+        _measure_cuda_graph_samples(
+            run,
+            warmup_iters=warmup_iters,
+            measure_iters=measure_iters,
+        )
+    )
+    return {
+        "eager6_ms": eager6,
+        "eager200_mean_ms": eager200["mean"],
+        "eager200_p50_ms": eager200["p50"],
+        "eager200_p99_ms": eager200["p99"],
+        "graph_mean_ms": graph["mean"],
+        "graph_p50_ms": graph["p50"],
+        "graph_p99_ms": graph["p99"],
+        "graph_capture": True,
     }
 
 

@@ -425,7 +425,7 @@ def create_and_prepopulate_kv_cache_mla(
 
     inv_perm = torch.zeros(blocks_end, dtype=torch.long, device=device)
     inv_perm[1:] = torch.argsort(perm) + 1  # Add 1 to account for starting from block 1
-    kv_cache[1:blocks_end, ...] = kv_cache[perm, ...]
+    _permute_kv_cache_blocks_in_place(kv_cache, perm, blocks_end)
 
     # Construct the right block table
     # Start from block_id=1 since block_id=0 is considered the null block
@@ -447,6 +447,32 @@ def create_and_prepopulate_kv_cache_mla(
         slot_mapping[start:end] = block_table[i, block_indices] * block_size + token_inter_block_offsets.to(device)
 
     return kv_cache
+
+
+def _permute_kv_cache_blocks_in_place(kv_cache: torch.Tensor, perm: torch.Tensor, blocks_end: int) -> None:
+    """Apply ``kv_cache[1:blocks_end] = kv_cache[perm]`` without a full temp copy."""
+    if blocks_end <= 2:
+        return
+    dest_for_src = {int(src): dest for dest, src in zip(range(1, blocks_end), perm.tolist(), strict=True)}
+    visited: set[int] = set()
+    for start in range(1, blocks_end):
+        if start in visited:
+            continue
+        dest = dest_for_src[start]
+        if dest == start:
+            visited.add(start)
+            continue
+        current = start
+        tmp = kv_cache[current].clone()
+        while True:
+            dest = dest_for_src[current]
+            next_tmp = kv_cache[dest].clone()
+            kv_cache[dest].copy_(tmp)
+            visited.add(current)
+            current = dest
+            tmp = next_tmp
+            if current == start:
+                break
 
 
 def create_and_prepopulate_kv_cache(

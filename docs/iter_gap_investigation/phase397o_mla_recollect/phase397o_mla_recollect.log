@@ -1,0 +1,252 @@
+[phase397o] 1/48 heads=8 dtype=float16 batch=64 seq=8192 randomize=True
+cuda:0 0 22028
+INFO 07-02 03:22:18 [parallel_state.py:1400] world_size=-1 rank=-1 local_rank=-1 distributed_init_method=env:// backend=nccl
+INFO 07-02 03:22:19 [scheduler.py:238] Chunked prefill is enabled with max_num_batched_tokens=2048.
+INFO 07-02 03:22:19 [vllm.py:790] Asynchronous scheduling is enabled.
+INFO 07-02 03:22:19 [parallel_state.py:1716] rank 0 in world size 1 is assigned as DP rank 0, PP rank 0, PCP rank 0, TP rank 0, EP rank 0, EPLB rank N/A
+INFO 07-02 03:22:20 [cuda.py:334] Using FLASH_ATTN_MLA attention backend out of potential backends: ['FLASH_ATTN_MLA', 'TRITON_MLA'].
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-02 03:22:20 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:20 [model.py:1678] Using max model len 8191
+INFO 07-02 03:22:20 [scheduler.py:238] Chunked prefill is enabled with max_num_batched_tokens=8192.
+INFO 07-02 03:22:20 [compilation.py:290] Enabled custom fusions: norm_quant, act_quant
+INFO 07-02 03:22:20 [mla_attention.py:2137] Using FlashAttention prefill for MLA
+[phase397o] 2/48 heads=8 dtype=float16 batch=64 seq=8192 randomize=False
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-02 03:22:21 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:21 [model.py:1678] Using max model len 8191
+[phase397o] 3/48 heads=8 dtype=float16 batch=64 seq=9001 randomize=True
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-02 03:22:21 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:21 [model.py:1678] Using max model len 9000
+[phase397o] 4/48 heads=8 dtype=float16 batch=64 seq=9001 randomize=False
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-02 03:22:21 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:21 [model.py:1678] Using max model len 9000
+[phase397o] 5/48 heads=8 dtype=float16 batch=64 seq=16384 randomize=True
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-02 03:22:21 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:21 [model.py:1678] Using max model len 16383
+[phase397o] 6/48 heads=8 dtype=float16 batch=64 seq=16384 randomize=False
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-02 03:22:22 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:22 [model.py:1678] Using max model len 16383
+[phase397o] 7/48 heads=8 dtype=float16 batch=128 seq=8192 randomize=True
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-02 03:22:23 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:23 [model.py:1678] Using max model len 8191
+[phase397o] 8/48 heads=8 dtype=float16 batch=128 seq=8192 randomize=False
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-02 03:22:24 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:24 [model.py:1678] Using max model len 8191
+[phase397o] 9/48 heads=8 dtype=float16 batch=128 seq=9001 randomize=True
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-02 03:22:24 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:24 [model.py:1678] Using max model len 9000
+[phase397o] 10/48 heads=8 dtype=float16 batch=128 seq=9001 randomize=False
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-02 03:22:25 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:25 [model.py:1678] Using max model len 9000
+[phase397o] 11/48 heads=8 dtype=float16 batch=128 seq=16384 randomize=True
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-02 03:22:25 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:25 [model.py:1678] Using max model len 16383
+[phase397o] 12/48 heads=8 dtype=float16 batch=128 seq=16384 randomize=False
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-02 03:22:27 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:27 [model.py:1678] Using max model len 16383
+[phase397o] 13/48 heads=8 dtype=fp8 batch=64 seq=8192 randomize=True
+WARNING 07-02 03:22:28 [cuda.py:324] --block-size 16 precluded higher-priority backend(s) FLASHMLA. Using TRITON_MLA instead, which may result in reduced performance. Consider removing --block-size to auto-select the optimal block size.
+INFO 07-02 03:22:28 [cuda.py:334] Using TRITON_MLA attention backend out of potential backends: ['TRITON_MLA'].
+VLLM chose MLA backend: TRITON_MLA
+INFO 07-02 03:22:28 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:28 [model.py:1678] Using max model len 8191
+INFO 07-02 03:22:28 [cache.py:227] Using fp8 data type to store kv cache. It reduces the GPU memory footprint and boosts the performance. Meanwhile, it may cause accuracy drop without a proper scaling factor.
+[phase397o] 14/48 heads=8 dtype=fp8 batch=64 seq=8192 randomize=False
+WARNING 07-02 03:22:30 [cuda.py:324] --block-size 16 precluded higher-priority backend(s) FLASHMLA. Using TRITON_MLA instead, which may result in reduced performance. Consider removing --block-size to auto-select the optimal block size.
+VLLM chose MLA backend: TRITON_MLA
+INFO 07-02 03:22:30 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:30 [model.py:1678] Using max model len 8191
+INFO 07-02 03:22:30 [cache.py:227] Using fp8 data type to store kv cache. It reduces the GPU memory footprint and boosts the performance. Meanwhile, it may cause accuracy drop without a proper scaling factor.
+[phase397o] 15/48 heads=8 dtype=fp8 batch=64 seq=9001 randomize=True
+WARNING 07-02 03:22:30 [cuda.py:324] --block-size 16 precluded higher-priority backend(s) FLASHMLA. Using TRITON_MLA instead, which may result in reduced performance. Consider removing --block-size to auto-select the optimal block size.
+VLLM chose MLA backend: TRITON_MLA
+INFO 07-02 03:22:30 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:30 [model.py:1678] Using max model len 9000
+INFO 07-02 03:22:30 [cache.py:227] Using fp8 data type to store kv cache. It reduces the GPU memory footprint and boosts the performance. Meanwhile, it may cause accuracy drop without a proper scaling factor.
+[phase397o] 16/48 heads=8 dtype=fp8 batch=64 seq=9001 randomize=False
+WARNING 07-02 03:22:32 [cuda.py:324] --block-size 16 precluded higher-priority backend(s) FLASHMLA. Using TRITON_MLA instead, which may result in reduced performance. Consider removing --block-size to auto-select the optimal block size.
+VLLM chose MLA backend: TRITON_MLA
+INFO 07-02 03:22:32 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:32 [model.py:1678] Using max model len 9000
+INFO 07-02 03:22:32 [cache.py:227] Using fp8 data type to store kv cache. It reduces the GPU memory footprint and boosts the performance. Meanwhile, it may cause accuracy drop without a proper scaling factor.
+[phase397o] 17/48 heads=8 dtype=fp8 batch=64 seq=16384 randomize=True
+WARNING 07-02 03:22:32 [cuda.py:324] --block-size 16 precluded higher-priority backend(s) FLASHMLA. Using TRITON_MLA instead, which may result in reduced performance. Consider removing --block-size to auto-select the optimal block size.
+VLLM chose MLA backend: TRITON_MLA
+INFO 07-02 03:22:32 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:32 [model.py:1678] Using max model len 16383
+INFO 07-02 03:22:32 [cache.py:227] Using fp8 data type to store kv cache. It reduces the GPU memory footprint and boosts the performance. Meanwhile, it may cause accuracy drop without a proper scaling factor.
+[phase397o] 18/48 heads=8 dtype=fp8 batch=64 seq=16384 randomize=False
+WARNING 07-02 03:22:33 [cuda.py:324] --block-size 16 precluded higher-priority backend(s) FLASHMLA. Using TRITON_MLA instead, which may result in reduced performance. Consider removing --block-size to auto-select the optimal block size.
+VLLM chose MLA backend: TRITON_MLA
+INFO 07-02 03:22:33 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:33 [model.py:1678] Using max model len 16383
+INFO 07-02 03:22:33 [cache.py:227] Using fp8 data type to store kv cache. It reduces the GPU memory footprint and boosts the performance. Meanwhile, it may cause accuracy drop without a proper scaling factor.
+[phase397o] 19/48 heads=8 dtype=fp8 batch=128 seq=8192 randomize=True
+WARNING 07-02 03:22:33 [cuda.py:324] --block-size 16 precluded higher-priority backend(s) FLASHMLA. Using TRITON_MLA instead, which may result in reduced performance. Consider removing --block-size to auto-select the optimal block size.
+VLLM chose MLA backend: TRITON_MLA
+INFO 07-02 03:22:33 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:33 [model.py:1678] Using max model len 8191
+INFO 07-02 03:22:33 [cache.py:227] Using fp8 data type to store kv cache. It reduces the GPU memory footprint and boosts the performance. Meanwhile, it may cause accuracy drop without a proper scaling factor.
+[phase397o] 20/48 heads=8 dtype=fp8 batch=128 seq=8192 randomize=False
+WARNING 07-02 03:22:34 [cuda.py:324] --block-size 16 precluded higher-priority backend(s) FLASHMLA. Using TRITON_MLA instead, which may result in reduced performance. Consider removing --block-size to auto-select the optimal block size.
+VLLM chose MLA backend: TRITON_MLA
+INFO 07-02 03:22:34 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:34 [model.py:1678] Using max model len 8191
+INFO 07-02 03:22:34 [cache.py:227] Using fp8 data type to store kv cache. It reduces the GPU memory footprint and boosts the performance. Meanwhile, it may cause accuracy drop without a proper scaling factor.
+[phase397o] 21/48 heads=8 dtype=fp8 batch=128 seq=9001 randomize=True
+WARNING 07-02 03:22:35 [cuda.py:324] --block-size 16 precluded higher-priority backend(s) FLASHMLA. Using TRITON_MLA instead, which may result in reduced performance. Consider removing --block-size to auto-select the optimal block size.
+VLLM chose MLA backend: TRITON_MLA
+INFO 07-02 03:22:35 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:35 [model.py:1678] Using max model len 9000
+INFO 07-02 03:22:35 [cache.py:227] Using fp8 data type to store kv cache. It reduces the GPU memory footprint and boosts the performance. Meanwhile, it may cause accuracy drop without a proper scaling factor.
+[phase397o] 22/48 heads=8 dtype=fp8 batch=128 seq=9001 randomize=False
+WARNING 07-02 03:22:36 [cuda.py:324] --block-size 16 precluded higher-priority backend(s) FLASHMLA. Using TRITON_MLA instead, which may result in reduced performance. Consider removing --block-size to auto-select the optimal block size.
+VLLM chose MLA backend: TRITON_MLA
+INFO 07-02 03:22:36 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:36 [model.py:1678] Using max model len 9000
+INFO 07-02 03:22:36 [cache.py:227] Using fp8 data type to store kv cache. It reduces the GPU memory footprint and boosts the performance. Meanwhile, it may cause accuracy drop without a proper scaling factor.
+[phase397o] 23/48 heads=8 dtype=fp8 batch=128 seq=16384 randomize=True
+WARNING 07-02 03:22:36 [cuda.py:324] --block-size 16 precluded higher-priority backend(s) FLASHMLA. Using TRITON_MLA instead, which may result in reduced performance. Consider removing --block-size to auto-select the optimal block size.
+VLLM chose MLA backend: TRITON_MLA
+INFO 07-02 03:22:36 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:36 [model.py:1678] Using max model len 16383
+INFO 07-02 03:22:36 [cache.py:227] Using fp8 data type to store kv cache. It reduces the GPU memory footprint and boosts the performance. Meanwhile, it may cause accuracy drop without a proper scaling factor.
+[phase397o] 24/48 heads=8 dtype=fp8 batch=128 seq=16384 randomize=False
+WARNING 07-02 03:22:39 [cuda.py:324] --block-size 16 precluded higher-priority backend(s) FLASHMLA. Using TRITON_MLA instead, which may result in reduced performance. Consider removing --block-size to auto-select the optimal block size.
+VLLM chose MLA backend: TRITON_MLA
+INFO 07-02 03:22:39 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:39 [model.py:1678] Using max model len 16383
+INFO 07-02 03:22:39 [cache.py:227] Using fp8 data type to store kv cache. It reduces the GPU memory footprint and boosts the performance. Meanwhile, it may cause accuracy drop without a proper scaling factor.
+[phase397o] 25/48 heads=16 dtype=float16 batch=64 seq=8192 randomize=True
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-02 03:22:39 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:39 [model.py:1678] Using max model len 8191
+[phase397o] 26/48 heads=16 dtype=float16 batch=64 seq=8192 randomize=False
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-02 03:22:40 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:40 [model.py:1678] Using max model len 8191
+[phase397o] 27/48 heads=16 dtype=float16 batch=64 seq=9001 randomize=True
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-02 03:22:40 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:40 [model.py:1678] Using max model len 9000
+[phase397o] 28/48 heads=16 dtype=float16 batch=64 seq=9001 randomize=False
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-02 03:22:40 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:40 [model.py:1678] Using max model len 9000
+[phase397o] 29/48 heads=16 dtype=float16 batch=64 seq=16384 randomize=True
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-02 03:22:41 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:41 [model.py:1678] Using max model len 16383
+[phase397o] 30/48 heads=16 dtype=float16 batch=64 seq=16384 randomize=False
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-02 03:22:42 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:42 [model.py:1678] Using max model len 16383
+[phase397o] 31/48 heads=16 dtype=float16 batch=128 seq=8192 randomize=True
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-02 03:22:42 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:42 [model.py:1678] Using max model len 8191
+[phase397o] 32/48 heads=16 dtype=float16 batch=128 seq=8192 randomize=False
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-02 03:22:43 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:43 [model.py:1678] Using max model len 8191
+[phase397o] 33/48 heads=16 dtype=float16 batch=128 seq=9001 randomize=True
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-02 03:22:43 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:43 [model.py:1678] Using max model len 9000
+[phase397o] 34/48 heads=16 dtype=float16 batch=128 seq=9001 randomize=False
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-02 03:22:44 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:44 [model.py:1678] Using max model len 9000
+[phase397o] 35/48 heads=16 dtype=float16 batch=128 seq=16384 randomize=True
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-02 03:22:44 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:44 [model.py:1678] Using max model len 16383
+[phase397o] 36/48 heads=16 dtype=float16 batch=128 seq=16384 randomize=False
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-02 03:22:46 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:46 [model.py:1678] Using max model len 16383
+[phase397o] 37/48 heads=16 dtype=fp8 batch=64 seq=8192 randomize=True
+WARNING 07-02 03:22:47 [cuda.py:324] --block-size 16 precluded higher-priority backend(s) FLASHMLA. Using TRITON_MLA instead, which may result in reduced performance. Consider removing --block-size to auto-select the optimal block size.
+VLLM chose MLA backend: TRITON_MLA
+INFO 07-02 03:22:47 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:47 [model.py:1678] Using max model len 8191
+INFO 07-02 03:22:47 [cache.py:227] Using fp8 data type to store kv cache. It reduces the GPU memory footprint and boosts the performance. Meanwhile, it may cause accuracy drop without a proper scaling factor.
+[phase397o] 38/48 heads=16 dtype=fp8 batch=64 seq=8192 randomize=False
+WARNING 07-02 03:22:48 [cuda.py:324] --block-size 16 precluded higher-priority backend(s) FLASHMLA. Using TRITON_MLA instead, which may result in reduced performance. Consider removing --block-size to auto-select the optimal block size.
+VLLM chose MLA backend: TRITON_MLA
+INFO 07-02 03:22:48 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:48 [model.py:1678] Using max model len 8191
+INFO 07-02 03:22:48 [cache.py:227] Using fp8 data type to store kv cache. It reduces the GPU memory footprint and boosts the performance. Meanwhile, it may cause accuracy drop without a proper scaling factor.
+[phase397o] 39/48 heads=16 dtype=fp8 batch=64 seq=9001 randomize=True
+WARNING 07-02 03:22:49 [cuda.py:324] --block-size 16 precluded higher-priority backend(s) FLASHMLA. Using TRITON_MLA instead, which may result in reduced performance. Consider removing --block-size to auto-select the optimal block size.
+VLLM chose MLA backend: TRITON_MLA
+INFO 07-02 03:22:49 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:49 [model.py:1678] Using max model len 9000
+INFO 07-02 03:22:49 [cache.py:227] Using fp8 data type to store kv cache. It reduces the GPU memory footprint and boosts the performance. Meanwhile, it may cause accuracy drop without a proper scaling factor.
+[phase397o] 40/48 heads=16 dtype=fp8 batch=64 seq=9001 randomize=False
+WARNING 07-02 03:22:50 [cuda.py:324] --block-size 16 precluded higher-priority backend(s) FLASHMLA. Using TRITON_MLA instead, which may result in reduced performance. Consider removing --block-size to auto-select the optimal block size.
+VLLM chose MLA backend: TRITON_MLA
+INFO 07-02 03:22:50 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:50 [model.py:1678] Using max model len 9000
+INFO 07-02 03:22:50 [cache.py:227] Using fp8 data type to store kv cache. It reduces the GPU memory footprint and boosts the performance. Meanwhile, it may cause accuracy drop without a proper scaling factor.
+[phase397o] 41/48 heads=16 dtype=fp8 batch=64 seq=16384 randomize=True
+WARNING 07-02 03:22:50 [cuda.py:324] --block-size 16 precluded higher-priority backend(s) FLASHMLA. Using TRITON_MLA instead, which may result in reduced performance. Consider removing --block-size to auto-select the optimal block size.
+VLLM chose MLA backend: TRITON_MLA
+INFO 07-02 03:22:50 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:50 [model.py:1678] Using max model len 16383
+INFO 07-02 03:22:50 [cache.py:227] Using fp8 data type to store kv cache. It reduces the GPU memory footprint and boosts the performance. Meanwhile, it may cause accuracy drop without a proper scaling factor.
+[phase397o] 42/48 heads=16 dtype=fp8 batch=64 seq=16384 randomize=False
+WARNING 07-02 03:22:51 [cuda.py:324] --block-size 16 precluded higher-priority backend(s) FLASHMLA. Using TRITON_MLA instead, which may result in reduced performance. Consider removing --block-size to auto-select the optimal block size.
+VLLM chose MLA backend: TRITON_MLA
+INFO 07-02 03:22:51 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:51 [model.py:1678] Using max model len 16383
+INFO 07-02 03:22:51 [cache.py:227] Using fp8 data type to store kv cache. It reduces the GPU memory footprint and boosts the performance. Meanwhile, it may cause accuracy drop without a proper scaling factor.
+[phase397o] 43/48 heads=16 dtype=fp8 batch=128 seq=8192 randomize=True
+WARNING 07-02 03:22:52 [cuda.py:324] --block-size 16 precluded higher-priority backend(s) FLASHMLA. Using TRITON_MLA instead, which may result in reduced performance. Consider removing --block-size to auto-select the optimal block size.
+VLLM chose MLA backend: TRITON_MLA
+INFO 07-02 03:22:52 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:52 [model.py:1678] Using max model len 8191
+INFO 07-02 03:22:52 [cache.py:227] Using fp8 data type to store kv cache. It reduces the GPU memory footprint and boosts the performance. Meanwhile, it may cause accuracy drop without a proper scaling factor.
+[phase397o] 44/48 heads=16 dtype=fp8 batch=128 seq=8192 randomize=False
+WARNING 07-02 03:22:53 [cuda.py:324] --block-size 16 precluded higher-priority backend(s) FLASHMLA. Using TRITON_MLA instead, which may result in reduced performance. Consider removing --block-size to auto-select the optimal block size.
+VLLM chose MLA backend: TRITON_MLA
+INFO 07-02 03:22:53 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:53 [model.py:1678] Using max model len 8191
+INFO 07-02 03:22:53 [cache.py:227] Using fp8 data type to store kv cache. It reduces the GPU memory footprint and boosts the performance. Meanwhile, it may cause accuracy drop without a proper scaling factor.
+[phase397o] 45/48 heads=16 dtype=fp8 batch=128 seq=9001 randomize=True
+WARNING 07-02 03:22:53 [cuda.py:324] --block-size 16 precluded higher-priority backend(s) FLASHMLA. Using TRITON_MLA instead, which may result in reduced performance. Consider removing --block-size to auto-select the optimal block size.
+VLLM chose MLA backend: TRITON_MLA
+INFO 07-02 03:22:53 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:53 [model.py:1678] Using max model len 9000
+INFO 07-02 03:22:53 [cache.py:227] Using fp8 data type to store kv cache. It reduces the GPU memory footprint and boosts the performance. Meanwhile, it may cause accuracy drop without a proper scaling factor.
+[phase397o] 46/48 heads=16 dtype=fp8 batch=128 seq=9001 randomize=False
+WARNING 07-02 03:22:55 [cuda.py:324] --block-size 16 precluded higher-priority backend(s) FLASHMLA. Using TRITON_MLA instead, which may result in reduced performance. Consider removing --block-size to auto-select the optimal block size.
+VLLM chose MLA backend: TRITON_MLA
+INFO 07-02 03:22:55 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:55 [model.py:1678] Using max model len 9000
+INFO 07-02 03:22:55 [cache.py:227] Using fp8 data type to store kv cache. It reduces the GPU memory footprint and boosts the performance. Meanwhile, it may cause accuracy drop without a proper scaling factor.
+[phase397o] 47/48 heads=16 dtype=fp8 batch=128 seq=16384 randomize=True
+WARNING 07-02 03:22:55 [cuda.py:324] --block-size 16 precluded higher-priority backend(s) FLASHMLA. Using TRITON_MLA instead, which may result in reduced performance. Consider removing --block-size to auto-select the optimal block size.
+VLLM chose MLA backend: TRITON_MLA
+INFO 07-02 03:22:55 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:55 [model.py:1678] Using max model len 16383
+INFO 07-02 03:22:55 [cache.py:227] Using fp8 data type to store kv cache. It reduces the GPU memory footprint and boosts the performance. Meanwhile, it may cause accuracy drop without a proper scaling factor.
+[phase397o] 48/48 heads=16 dtype=fp8 batch=128 seq=16384 randomize=False
+WARNING 07-02 03:22:57 [cuda.py:324] --block-size 16 precluded higher-priority backend(s) FLASHMLA. Using TRITON_MLA instead, which may result in reduced performance. Consider removing --block-size to auto-select the optimal block size.
+VLLM chose MLA backend: TRITON_MLA
+INFO 07-02 03:22:57 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-02 03:22:57 [model.py:1678] Using max model len 16383
+INFO 07-02 03:22:57 [cache.py:227] Using fp8 data type to store kv cache. It reduces the GPU memory footprint and boosts the performance. Meanwhile, it may cause accuracy drop without a proper scaling factor.
+[phase397o] wrote phase397o_mla_recollect_raw.csv
+[rank0]:[W702 03:22:58.453707768 ProcessGroupNCCL.cpp:1553] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())
