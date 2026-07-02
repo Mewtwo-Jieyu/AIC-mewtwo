@@ -1,0 +1,19 @@
+[phase397m] collecting int4_wo MoE: tp=1 ep=8 route=power_law_eplb alphas=[1.01]
+[phase397m] num_tokens grid: [128]
+[phase397m] out=docs/iter_gap_investigation/phase397t_marlin_mechanism_gate/power_law_eplb_ep8_b128.txt
+
+===== power_law_alpha=1.01 =====
+num_tokens 128 topk 8
+[marlin_diag] idx=0 distribution=power_law_eplb_1.01 input_tokens=128 effective_m=128 topk=8 local_num_experts=48 global_num_experts=384 block_size_m=32 num_tokens_post_padded=1056 valid_blocks=33
+[marlin_diag] idx=1 distribution=power_law_eplb_1.01 input_tokens=128 effective_m=128 topk=8 local_num_experts=48 global_num_experts=384 block_size_m=32 num_tokens_post_padded=1184 valid_blocks=37
+[marlin_diag] idx=2 distribution=power_law_eplb_1.01 input_tokens=128 effective_m=128 topk=8 local_num_experts=48 global_num_experts=384 block_size_m=32 num_tokens_post_padded=1120 valid_blocks=35
+[marlin_diag] idx=3 distribution=power_law_eplb_1.01 input_tokens=128 effective_m=128 topk=8 local_num_experts=48 global_num_experts=384 block_size_m=32 num_tokens_post_padded=1120 valid_blocks=35
+[marlin_diag] idx=4 distribution=power_law_eplb_1.01 input_tokens=128 effective_m=128 topk=8 local_num_experts=48 global_num_experts=384 block_size_m=32 num_tokens_post_padded=1184 valid_blocks=37
+[marlin_diag] idx=5 distribution=power_law_eplb_1.01 input_tokens=128 effective_m=128 topk=8 local_num_experts=48 global_num_experts=384 block_size_m=32 num_tokens_post_padded=1152 valid_blocks=36
+[marlin_diag] idx=6 distribution=power_law_eplb_1.01 input_tokens=128 effective_m=128 topk=8 local_num_experts=48 global_num_experts=384 block_size_m=32 num_tokens_post_padded=1152 valid_blocks=36
+[marlin_diag] idx=7 distribution=power_law_eplb_1.01 input_tokens=128 effective_m=128 topk=8 local_num_experts=48 global_num_experts=384 block_size_m=32 num_tokens_post_padded=1120 valid_blocks=35
+[marlin_diag] idx=8 distribution=power_law_eplb_1.01 input_tokens=128 effective_m=128 topk=8 local_num_experts=48 global_num_experts=384 block_size_m=32 num_tokens_post_padded=1120 valid_blocks=35
+[marlin_diag] idx=9 distribution=power_law_eplb_1.01 input_tokens=128 effective_m=128 topk=8 local_num_experts=48 global_num_experts=384 block_size_m=32 num_tokens_post_padded=1152 valid_blocks=36
+moe latency: 0.4299092864990234
+
+[phase397m] done -> docs/iter_gap_investigation/phase397t_marlin_mechanism_gate/power_law_eplb_ep8_b128.txt

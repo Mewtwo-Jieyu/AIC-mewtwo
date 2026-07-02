@@ -73,7 +73,13 @@ def main(argv=None):
     )
     parser.add_argument(
         "--distributed",
-        choices=("power_law", "balanced", "power_law_eplb"),
+        choices=(
+            "power_law",
+            "balanced",
+            "power_law_eplb",
+            "power_law_rank0_compact",
+            "power_law_batched_rank0",
+        ),
         default="power_law",
     )
     parser.add_argument(

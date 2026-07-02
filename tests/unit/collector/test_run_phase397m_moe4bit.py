@@ -100,3 +100,65 @@ def test_phase397s_can_request_power_law_eplb_route(tmp_path: Path, monkeypatch)
     assert calls[0]["args"][1] == [128]
     assert calls[0]["kwargs"]["distributed"] == "power_law_eplb"
     assert calls[0]["kwargs"]["power_law_alpha"] == 1.01
+
+
+def test_phase397t_can_request_rank0_compact_route(tmp_path: Path, monkeypatch) -> None:
+    calls = []
+    runner = _load_runner(monkeypatch, calls)
+    output = tmp_path / "moe4bit_rank0_compact.txt"
+
+    assert (
+        runner.main(
+            [
+                "--out",
+                str(output),
+                "--moe-tp",
+                "1",
+                "--moe-ep",
+                "8",
+                "--num-tokens",
+                "128",
+                "--alphas",
+                "1.01",
+                "--distributed",
+                "power_law_rank0_compact",
+            ]
+        )
+        == 0
+    )
+
+    assert len(calls) == 1
+    assert calls[0]["args"][1] == [128]
+    assert calls[0]["kwargs"]["distributed"] == "power_law_rank0_compact"
+    assert calls[0]["kwargs"]["power_law_alpha"] == 1.01
+
+
+def test_phase397t_can_request_batched_rank0_route(tmp_path: Path, monkeypatch) -> None:
+    calls = []
+    runner = _load_runner(monkeypatch, calls)
+    output = tmp_path / "moe4bit_batched_rank0.txt"
+
+    assert (
+        runner.main(
+            [
+                "--out",
+                str(output),
+                "--moe-tp",
+                "1",
+                "--moe-ep",
+                "8",
+                "--num-tokens",
+                "128",
+                "--alphas",
+                "1.01",
+                "--distributed",
+                "power_law_batched_rank0",
+            ]
+        )
+        == 0
+    )
+
+    assert len(calls) == 1
+    assert calls[0]["args"][1] == [128]
+    assert calls[0]["kwargs"]["distributed"] == "power_law_batched_rank0"
+    assert calls[0]["kwargs"]["power_law_alpha"] == 1.01

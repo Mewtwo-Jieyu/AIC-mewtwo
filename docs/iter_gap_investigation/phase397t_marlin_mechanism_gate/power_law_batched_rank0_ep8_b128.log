@@ -1,0 +1,19 @@
+[phase397m] collecting int4_wo MoE: tp=1 ep=8 route=power_law_batched_rank0 alphas=[1.01]
+[phase397m] num_tokens grid: [128]
+[phase397m] out=docs/iter_gap_investigation/phase397t_marlin_mechanism_gate/power_law_batched_rank0_ep8_b128.txt
+
+===== power_law_alpha=1.01 =====
+num_tokens 128 topk 8
+[marlin_batched_diag] idx=0 distribution=power_law_batched_rank0_1.01 input_tokens=128 batched_local_experts=48 max_tokens_per_expert=11 valid_expert_tokens=138 block_size_m=64 num_tokens_post_padded=2752 valid_blocks=43 rank0_num_tokens=94 rank0_total_selections=138
+[marlin_batched_diag] idx=1 distribution=power_law_batched_rank0_1.01 input_tokens=128 batched_local_experts=48 max_tokens_per_expert=11 valid_expert_tokens=154 block_size_m=64 num_tokens_post_padded=2496 valid_blocks=39 rank0_num_tokens=88 rank0_total_selections=154
+[marlin_batched_diag] idx=2 distribution=power_law_batched_rank0_1.01 input_tokens=128 batched_local_experts=48 max_tokens_per_expert=12 valid_expert_tokens=152 block_size_m=64 num_tokens_post_padded=2112 valid_blocks=33 rank0_num_tokens=93 rank0_total_selections=152
+[marlin_batched_diag] idx=3 distribution=power_law_batched_rank0_1.01 input_tokens=128 batched_local_experts=48 max_tokens_per_expert=11 valid_expert_tokens=148 block_size_m=64 num_tokens_post_padded=3072 valid_blocks=48 rank0_num_tokens=93 rank0_total_selections=148
+[marlin_batched_diag] idx=4 distribution=power_law_batched_rank0_1.01 input_tokens=128 batched_local_experts=48 max_tokens_per_expert=12 valid_expert_tokens=160 block_size_m=64 num_tokens_post_padded=2496 valid_blocks=39 rank0_num_tokens=90 rank0_total_selections=160
+[marlin_batched_diag] idx=5 distribution=power_law_batched_rank0_1.01 input_tokens=128 batched_local_experts=48 max_tokens_per_expert=12 valid_expert_tokens=157 block_size_m=64 num_tokens_post_padded=2176 valid_blocks=34 rank0_num_tokens=87 rank0_total_selections=157
+[marlin_batched_diag] idx=6 distribution=power_law_batched_rank0_1.01 input_tokens=128 batched_local_experts=48 max_tokens_per_expert=13 valid_expert_tokens=166 block_size_m=64 num_tokens_post_padded=2880 valid_blocks=45 rank0_num_tokens=93 rank0_total_selections=166
+[marlin_batched_diag] idx=7 distribution=power_law_batched_rank0_1.01 input_tokens=128 batched_local_experts=48 max_tokens_per_expert=11 valid_expert_tokens=149 block_size_m=64 num_tokens_post_padded=2112 valid_blocks=33 rank0_num_tokens=106 rank0_total_selections=149
+[marlin_batched_diag] idx=8 distribution=power_law_batched_rank0_1.01 input_tokens=128 batched_local_experts=48 max_tokens_per_expert=11 valid_expert_tokens=166 block_size_m=64 num_tokens_post_padded=2560 valid_blocks=40 rank0_num_tokens=97 rank0_total_selections=166
+[marlin_batched_diag] idx=9 distribution=power_law_batched_rank0_1.01 input_tokens=128 batched_local_experts=48 max_tokens_per_expert=12 valid_expert_tokens=159 block_size_m=64 num_tokens_post_padded=2432 valid_blocks=38 rank0_num_tokens=96 rank0_total_selections=159
+moe latency: 0.7499246215820312
+
+[phase397m] done -> docs/iter_gap_investigation/phase397t_marlin_mechanism_gate/power_law_batched_rank0_ep8_b128.txt

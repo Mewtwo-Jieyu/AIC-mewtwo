@@ -1,0 +1,10 @@
+[phase397m] collecting int4_wo MoE: tp=1 ep=8 route=balanced alphas=[1.01]
+[phase397m] num_tokens grid: [128]
+[phase397m] out=docs/iter_gap_investigation/phase397t_marlin_mechanism_gate/balanced_ep8_b128.txt
+
+===== power_law_alpha=1.01 =====
+num_tokens 128 topk 8
+[marlin_diag] idx=0 distribution=balanced input_tokens=128 effective_m=128 topk=8 local_num_experts=48 global_num_experts=384 block_size_m=32 num_tokens_post_padded=1536 valid_blocks=48
+moe latency: 0.5657360076904296
+
+[phase397m] done -> docs/iter_gap_investigation/phase397t_marlin_mechanism_gate/balanced_ep8_b128.txt
