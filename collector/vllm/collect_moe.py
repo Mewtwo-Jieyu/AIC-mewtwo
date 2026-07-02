@@ -49,6 +49,22 @@ aic_debug = int(os.getenv("aic_moe_debug", "0"))  # noqa: SIM112
 compatible_version = ["0.11.0", "0.12.0", "0.14.0", "0.19.0"]
 
 
+def _is_power_law_mode(distributed):
+    return distributed in ("power_law", "power_law_eplb")
+
+
+def _power_law_use_eplb(distributed):
+    return distributed == "power_law_eplb"
+
+
+def _distribution_label(distributed, power_law_alpha):
+    if distributed == "power_law":
+        return "power_law_" + str(power_law_alpha)
+    if distributed == "power_law_eplb":
+        return "power_law_eplb_" + str(power_law_alpha)
+    return distributed
+
+
 def get_moe_test_cases():
     """Generate MoE test cases"""
 
@@ -227,13 +243,20 @@ def run_moe_marlin_wna16(
         print("num_tokens", num_tokens, "topk", topk)
         hidden_states = torch.randn([num_tokens, hidden_size], dtype=params_dtype, device=device)
 
-        num_iter = 10 if distributed == "power_law" else 1
-        if distributed == "power_law":
+        num_iter = 10 if _is_power_law_mode(distributed) else 1
+        if _is_power_law_mode(distributed):
             topk_weights_list = []
             topk_ids_list = []
             for _ in range(num_iter):
                 logits = (
-                    power_law_logits_v3(num_tokens, num_experts, topk, moe_ep_size, power_law_alpha)
+                    power_law_logits_v3(
+                        num_tokens,
+                        num_experts,
+                        topk,
+                        moe_ep_size,
+                        power_law_alpha,
+                        use_eplb=_power_law_use_eplb(distributed),
+                    )
                     .to(params_dtype)
                     .to(device)
                 )
@@ -272,7 +295,7 @@ def run_moe_marlin_wna16(
             )
 
         def run_single_iteration():
-            if distributed == "power_law":
+            if _is_power_law_mode(distributed):
                 for tw, ti in zip(topk_weights_list, topk_ids_list):
                     _ = _marlin_call(tw, ti)
             else:
@@ -328,7 +351,7 @@ def run_moe_marlin_wna16(
                     "num_experts": num_experts,
                     "moe_tp_size": moe_tp_size,
                     "moe_ep_size": moe_ep_size,
-                    "distribution": "power_law_" + str(power_law_alpha) if distributed == "power_law" else distributed,
+                    "distribution": _distribution_label(distributed, power_law_alpha),
                     "latency": latency,
                 }
             ],
@@ -459,8 +482,8 @@ def run_moe_torch(
         hidden_states = torch.randn([num_tokens, hidden_size]).half().to(device)
 
         # Generate topk_weights and topk_ids
-        num_iter = 10 if distributed == "power_law" else 1
-        if distributed == "power_law":
+        num_iter = 10 if _is_power_law_mode(distributed) else 1
+        if _is_power_law_mode(distributed):
             topk_weights_list = []
             topk_ids_list = []
 
@@ -472,6 +495,7 @@ def run_moe_torch(
                         topk,
                         moe_ep_size,
                         power_law_alpha,
+                        use_eplb=_power_law_use_eplb(distributed),
                     )
                     .half()
                     .to(device)
@@ -492,12 +516,12 @@ def run_moe_torch(
 
         num_warmups = 3
         num_runs = 6
-        if distributed == "power_law":
+        if _is_power_law_mode(distributed):
             num_warmups = 1
             num_runs = 1
 
         def run_single_iteration():
-            if distributed == "power_law":
+            if _is_power_law_mode(distributed):
                 for i, (tw, ti) in enumerate(zip(topk_weights_list, topk_ids_list)):
                     local_num_tokens = tw.shape[0]
                     _ = fused_experts(
@@ -560,7 +584,7 @@ def run_moe_torch(
                     "num_experts": num_experts,
                     "moe_tp_size": moe_tp_size,
                     "moe_ep_size": moe_ep_size,
-                    "distribution": "power_law_" + str(power_law_alpha) if distributed == "power_law" else distributed,
+                    "distribution": _distribution_label(distributed, power_law_alpha),
                     "latency": latency,
                 }
             ],

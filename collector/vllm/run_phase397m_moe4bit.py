@@ -30,7 +30,8 @@ for _p in (_REPO_ROOT, _HERE):
 from collect_moe import run_moe_torch  # noqa: E402
 
 # K2.5 routed-expert shape (config: n_routed_experts=384, topk=8,
-# hidden_size=7168, moe_intermediate_size=2048). Decode uses moe_tp=1, moe_ep=8.
+# hidden_size=7168, moe_intermediate_size=2048). Decode serve rows use
+# moe_tp=1, moe_ep=8; Phase397s also probes moe_tp=16, moe_ep=1.
 K25_HIDDEN = 7168
 K25_INTER = 2048
 K25_TOPK = 8
@@ -51,10 +52,19 @@ NUM_TOKENS_GRID = [
 POWER_LAW_ALPHAS = [1.01, 1.2]
 
 
-def main():
+def _parse_num_tokens(value: str) -> list[int]:
+    tokens = [int(part) for part in value.split(",") if part.strip()]
+    unknown = [token for token in tokens if token not in NUM_TOKENS_GRID]
+    if unknown:
+        raise ValueError(f"--num-tokens values must be in NUM_TOKENS_GRID: {unknown}")
+    return tokens
+
+
+def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", default="/tmp/phase397m_moe4bit_k25.txt")
     parser.add_argument("--device", default="cuda:0")
+    parser.add_argument("--moe-tp", type=int, default=K25_MOE_TP)
     parser.add_argument("--moe-ep", type=int, default=K25_MOE_EP)
     parser.add_argument(
         "--alphas",
@@ -62,21 +72,34 @@ def main():
         help="comma-separated power_law alphas",
     )
     parser.add_argument(
+        "--distributed",
+        choices=("power_law", "balanced", "power_law_eplb"),
+        default="power_law",
+    )
+    parser.add_argument(
+        "--num-tokens",
+        default="",
+        help="comma-separated exact token grid points; overrides --max-num-tokens",
+    )
+    parser.add_argument(
         "--max-num-tokens",
         type=int,
         default=65536,
         help="skip grid points above this (guard against OOM at large batch)",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     # Fresh temp file so log_perf writes its own header (and optional power cols).
     if os.path.exists(args.out):
         os.remove(args.out)
 
     alphas = [float(a) for a in args.alphas.split(",") if a.strip()]
-    grid = [n for n in NUM_TOKENS_GRID if n <= args.max_num_tokens]
+    grid = _parse_num_tokens(args.num_tokens) if args.num_tokens else [n for n in NUM_TOKENS_GRID if n <= args.max_num_tokens]
 
-    print(f"[phase397m] collecting int4_wo MoE: ep={args.moe_ep} alphas={alphas}")
+    print(
+        "[phase397m] collecting int4_wo MoE: "
+        f"tp={args.moe_tp} ep={args.moe_ep} route={args.distributed} alphas={alphas}"
+    )
     print(f"[phase397m] num_tokens grid: {grid}")
     print(f"[phase397m] out={args.out}")
 
@@ -89,16 +112,17 @@ def main():
             K25_INTER,
             K25_TOPK,
             K25_NUM_EXPERTS,
-            K25_MOE_TP,
+            args.moe_tp,
             args.moe_ep,
             "moonshotai/Kimi-K2.5",
             args.out,
-            distributed="power_law",
+            distributed=args.distributed,
             power_law_alpha=alpha,
             device=args.device,
         )
 
     print(f"\n[phase397m] done -> {args.out}")
+    return 0
 
 
 if __name__ == "__main__":
