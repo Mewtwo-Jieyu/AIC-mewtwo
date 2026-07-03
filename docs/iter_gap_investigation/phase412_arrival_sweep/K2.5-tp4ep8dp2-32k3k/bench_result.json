@@ -1,0 +1,22 @@
+{
+  "endpoint": "http://127.0.0.1:20909/v1/completions",
+  "model": "kimi-k2.5",
+  "num_prompts": 512,
+  "max_concurrency": 128,
+  "input_len": 32000,
+  "output_len": 3000,
+  "warmup_requests": 0,
+  "use_prompt_token_ids": false,
+  "wall_s": 3610.213194697164,
+  "ok_requests": 512,
+  "failed_requests": 0,
+  "mean_latency_ms": 803494.8825298634,
+  "p50_latency_ms": 884602.7129809372,
+  "p99_latency_ms": 1146708.5421233438,
+  "total_prompt_tokens": 16384000,
+  "total_completion_tokens": 1536000,
+  "total_tokens": 17920000,
+  "request_rate_rps": 0.14181987943317242,
+  "output_tok_s": 425.4596382995172,
+  "total_tok_s": 4963.695780161034
+}
