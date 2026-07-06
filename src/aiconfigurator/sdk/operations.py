@@ -77,6 +77,22 @@ def _query_vllm_module(
     return PerformanceResult(float(result) * scale_factor, energy=result.energy * scale_factor)
 
 
+def _query_vllm_ep8_alltoall_fallback(
+    database: PerfDatabase,
+    *,
+    bucket_tokens: int,
+    hidden_size: int,
+    topk: int,
+    scale_factor: float,
+) -> PerformanceResult:
+    node_spec = getattr(database, "system_spec", {}).get("node", {})
+    # h200_sxm records single-direction intra-node bandwidth; dispatch+combine can use both directions.
+    bidirectional_bw = float(node_spec["intra_node_bw"]) * 2.0
+    bytes_per_token = hidden_size * topk * common.CommQuantMode.half.value.memory * 2.0
+    latency_ms = bucket_tokens * bytes_per_token / bidirectional_bw * 1000.0
+    return PerformanceResult(latency_ms * scale_factor, energy=0.0)
+
+
 class Operation:
     """
     Base operation class.
@@ -569,9 +585,14 @@ class MoE(Operation):
         """Query MoE latency with energy data."""
         # attention dp size will scale up the total input tokens.
         x = kwargs.get("x")
-        if self._is_context:
+        context_prefill_tokens = kwargs.get("context_prefill_tokens")
+        if self._is_context and context_prefill_tokens is not None:
+            x = int(context_prefill_tokens)
+        elif self._is_context:
             x = max(1, x // self._scale_num_tokens)
-        x *= self._attention_dp_size
+            x *= self._attention_dp_size
+        else:
+            x *= self._attention_dp_size
         overwrite_quant_mode = kwargs.get("quant_mode")
         quant_mode = self._quant_mode if overwrite_quant_mode is None else overwrite_quant_mode
         model_name = str(kwargs.get("model_name", ""))
@@ -774,7 +795,11 @@ class MoEDispatch(Operation):
             assert self._moe_tp_size == 1 or self._moe_ep_size == 1, (
                 "vllm does not support MoE TP and MoE EP at the same time"
             )
-            scaled_num_tokens = max(1, num_tokens // self._scale_num_tokens)
+            context_prefill_tokens = kwargs.get("context_prefill_tokens")
+            if self._is_context and context_prefill_tokens is not None:
+                scaled_num_tokens = int(context_prefill_tokens)
+            else:
+                scaled_num_tokens = max(1, num_tokens // self._scale_num_tokens)
             model_name = str(kwargs.get("model_name", ""))
             vllm_module_topology = str(kwargs.get("vllm_module_topology", ""))
             if _is_vllm_module_scope(database, model_name, vllm_module_topology) and _has_vllm_module_exact_bucket(
@@ -787,6 +812,16 @@ class MoEDispatch(Operation):
                     database,
                     bucket_tokens=scaled_num_tokens,
                     module_boundary="ep8_comm_dispatch_combine",
+                    scale_factor=self._scale_factor,
+                )
+            if _is_vllm_module_scope(database, model_name, vllm_module_topology) and self._moe_ep_size > 1:
+                if not self._pre_dispatch:
+                    return PerformanceResult(0.0, energy=0.0)
+                return _query_vllm_ep8_alltoall_fallback(
+                    database,
+                    bucket_tokens=scaled_num_tokens,
+                    hidden_size=self._hidden_size,
+                    topk=self._topk,
                     scale_factor=self._scale_factor,
                 )
 

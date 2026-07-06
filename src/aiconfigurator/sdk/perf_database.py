@@ -4694,6 +4694,25 @@ class PerfDatabase:
             )[0]
             return sol_latency * _PHASE397V_INT4_WO_MOE_SOL_SCALE
 
+        def measured_int4_wo_context_table_covers_request() -> bool:
+            if not use_phase397v_int4_wo_calibrated_sol():
+                return False
+            if not is_context or num_tokens <= 128 or self._moe_data is None:
+                return False
+            try:
+                used_workload_distribution = (
+                    workload_distribution if workload_distribution in self._moe_data[quant_mode] else "uniform"
+                )
+                moe_dict = self._moe_data[quant_mode][used_workload_distribution][topk][num_experts][hidden_size][
+                    inter_size
+                ][moe_tp_size][moe_ep_size]
+            except KeyError:
+                return False
+            tokens = list(moe_dict.keys())
+            if not tokens:
+                return False
+            return min(tokens) <= num_tokens <= max(tokens)
+
         if database_mode is None:
             database_mode = self._default_database_mode
         if database_mode == common.DatabaseMode.SOL:
@@ -4737,7 +4756,7 @@ class PerfDatabase:
             )
             return PerformanceResult(emp_latency, energy=0.0)
         else:
-            if use_phase397v_int4_wo_calibrated_sol():
+            if use_phase397v_int4_wo_calibrated_sol() and not measured_int4_wo_context_table_covers_request():
                 return PerformanceResult(get_phase397v_int4_wo_calibrated_sol(), energy=0.0)
             try:
                 if self.backend == common.BackendName.sglang.value:

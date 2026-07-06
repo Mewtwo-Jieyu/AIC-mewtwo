@@ -451,7 +451,7 @@ class TestCBSimulatorUnit:
 
 
 class _FakeBackendForIteration:
-    def run_static(self, model, database, runtime_config: RuntimeConfig, mode: str):
+    def run_static(self, model, database, runtime_config: RuntimeConfig, mode: str, **kwargs):
         summary = InferenceSummary(runtime_config)
         if mode == "static_ctx":
             summary.set_context_latency_dict(
@@ -482,7 +482,7 @@ class _TokenScaledBackendForIteration:
     not the prefill chunk alone.
     """
 
-    def run_static(self, model, database, runtime_config: RuntimeConfig, mode: str):
+    def run_static(self, model, database, runtime_config: RuntimeConfig, mode: str, **kwargs):
         summary = InferenceSummary(runtime_config)
         if mode == "static_ctx":
             isl = runtime_config.isl
@@ -741,7 +741,7 @@ class _FakePerfDbForMoEDispatch:
     version = "0.19.0"
     system_spec = {
         "gpu": {"sm_version": 90},
-        "node": {"num_gpus_per_node": 8},
+        "node": {"num_gpus_per_node": 8, "intra_node_bw": 450000000000},
     }
 
     def __init__(self) -> None:
@@ -844,6 +844,34 @@ class TestMoEDispatchScaling:
         assert float(latency) == pytest.approx(2.0)
         assert db.vllm_module_calls == []
         assert db.nccl_volumes == [("all_gather", 128 * 1024 * 4)]
+
+    def test_vllm_ep8_dispatch_non_exact_bucket_uses_combined_alltoall_model(self) -> None:
+        op = MoEDispatch(
+            "dispatch",
+            60.0,
+            hidden_size=7168,
+            topk=8,
+            num_experts=384,
+            moe_tp_size=1,
+            moe_ep_size=8,
+            attention_dp_size=2,
+            pre_dispatch=True,
+            scale_num_tokens=4,
+        )
+        db = _FakePerfDbForMoEDispatch()
+
+        latency = op.query(
+            db,
+            x=32006,
+            context_prefill_tokens=32000,
+            model_name="moonshotai/Kimi-K2.5",
+            vllm_module_topology="tp4dp2ep8",
+        )
+
+        assert float(latency) >= 489.3
+        assert db.vllm_module_calls == []
+        assert db.custom_allreduce_volumes == []
+        assert db.nccl_volumes == []
 
     def test_vllm_dispatch_post_scope_is_zero_to_avoid_double_count(self) -> None:
         op = MoEDispatch(
@@ -1056,6 +1084,29 @@ class TestMoEScaling:
 
         assert float(latency) == pytest.approx(1.0)
         assert db.calls == [30]
+
+    def test_context_moe_uses_explicit_prefill_tokens_for_mixed_steps(self) -> None:
+        op = MoE(
+            "moe",
+            1.0,
+            hidden_size=1024,
+            inter_size=2048,
+            topk=8,
+            num_experts=256,
+            moe_tp_size=1,
+            moe_ep_size=8,
+            quant_mode=common.MoEQuantMode.float16,
+            workload_distribution="uniform",
+            attention_dp_size=2,
+            is_context=True,
+            scale_num_tokens=4,
+        )
+        db = _FakePerfDbForMoE()
+
+        latency = op.query(db, x=32006, context_prefill_tokens=32000)
+
+        assert float(latency) == pytest.approx(1.0)
+        assert db.calls == [32000]
 
     def test_vllm_moe_uses_module_perf_exact_bucket(self) -> None:
         op = MoE(

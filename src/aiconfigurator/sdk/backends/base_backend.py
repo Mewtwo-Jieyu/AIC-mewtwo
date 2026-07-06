@@ -42,6 +42,7 @@ class BaseBackend(ABC):
         mode: str,
         stride: int = 32,
         latency_correction_scale: float = 1.0,
+        op_query_overrides: dict | None = None,
     ) -> InferenceSummary:
         """
         Run the static inference.
@@ -87,16 +88,18 @@ class BaseBackend(ABC):
                 else:
                     x = batch_size * isl
                 s_val = op._vision_num_tokens if hasattr(op, "_vision_num_tokens") else isl
-                result = op.query(
-                    database,
-                    x=x,
-                    batch_size=batch_size,
-                    beam_width=1,
-                    s=s_val,
-                    prefix=prefix,
-                    model_name=getattr(model, "model_name", getattr(model, "model_path", "")),
-                    vllm_module_topology=vllm_module_topology,
-                )
+                query_kwargs = {
+                    "x": x,
+                    "batch_size": batch_size,
+                    "beam_width": 1,
+                    "s": s_val,
+                    "prefix": prefix,
+                    "model_name": getattr(model, "model_name", getattr(model, "model_path", "")),
+                    "vllm_module_topology": vllm_module_topology,
+                }
+                if op_query_overrides:
+                    query_kwargs.update(op_query_overrides)
+                result = op.query(database, **query_kwargs)
 
                 # ✅ IMMEDIATELY extract values - do NOT use PerformanceResult arithmetic!
                 latency_ms = float(result)  # Extract latency in milliseconds
@@ -129,15 +132,17 @@ class BaseBackend(ABC):
                 energy_wms_dict = defaultdict(float)  # W·ms
 
                 for op in model.generation_ops:
-                    result = op.query(
-                        database,
-                        x=batch_size * beam_width,
-                        batch_size=batch_size,
-                        beam_width=beam_width,
-                        s=isl + i + 1,
-                        model_name=getattr(model, "model_name", getattr(model, "model_path", "")),
-                        vllm_module_topology=vllm_module_topology,
-                    )
+                    query_kwargs = {
+                        "x": batch_size * beam_width,
+                        "batch_size": batch_size,
+                        "beam_width": beam_width,
+                        "s": isl + i + 1,
+                        "model_name": getattr(model, "model_name", getattr(model, "model_path", "")),
+                        "vllm_module_topology": vllm_module_topology,
+                    }
+                    if op_query_overrides:
+                        query_kwargs.update(op_query_overrides)
+                    result = op.query(database, **query_kwargs)
 
                     # ✅ IMMEDIATELY extract values - do NOT accumulate PerformanceResult objects!
                     latency_ms = float(result)

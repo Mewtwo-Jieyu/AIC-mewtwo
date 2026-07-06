@@ -192,6 +192,7 @@ class IterationLatencyCalculator:
                     prefix=prefix_adj,
                 ),
                 mode="static_ctx",
+                op_query_overrides={"context_prefill_tokens": prefill_tokens} if is_mixed else None,
             )
             ctx_dict = summary.get_context_latency_dict()
             context_compute_ms, context_dispatch_ms = self._split_context_non_attention(ctx_dict)
