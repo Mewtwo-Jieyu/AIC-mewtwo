@@ -1,0 +1,1 @@
+{"decode_batch_max": 1, "decode_batch_mean": 1.0, "decode_batch_min": 1, "decode_step_count": 2, "passed": true, "prefill_step_count": 202, "reason": "prefill_step_seen", "target_concurrency": null, "window": "w0_prefill"}

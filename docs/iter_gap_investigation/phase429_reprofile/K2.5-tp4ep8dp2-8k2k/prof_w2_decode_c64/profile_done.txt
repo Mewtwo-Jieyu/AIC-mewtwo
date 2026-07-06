@@ -1,0 +1,3 @@
+files=16
+text_files=8
+trace_files=8

@@ -1,0 +1,77 @@
+vllm_version=0.19.0
+NVIDIA H200, 143771, 570.133.20
+[2026-07-06T12:30:04+00:00] baseline_gpu_pids=[]
+[2026-07-06T12:30:14+00:00] gpu_drained
+[2026-07-06T12:30:14+00:00] window=w0_prefill attempt=1 starting
+[2026-07-06T12:30:14+00:00] window=w0_prefill attempt=1 serve_command: python3 -m vllm.entrypoints.cli.main serve /mnt/shared-storage-gpfs2/gpfs2-shared-public/huggingface/zskj-hub/models--moonshotai--Kimi-K2.5 --served-model-name kimi-k2.5 --port 20929 --tensor-parallel-size 4 --data-parallel-size 2 --enable-expert-parallel --max-model-len 262144 --gpu-memory-utilization 0.80 --max-num-batched-tokens 8000 --max-num-seqs 256 --enable-chunked-prefill --no-enable-prefix-caching --enable-logging-iteration-details --cudagraph-metrics --profiler-config {"profiler":"torch","torch_profiler_dir":"/tmp/phase429_reprofile_43168/K2.5-tp4ep8dp2-8k2k/w0_prefill/attempt1/prof","torch_profiler_with_stack":false,"torch_profiler_record_shapes":true,"warmup_iterations":2,"active_iterations":35,"wait_iterations":0} --mm-encoder-tp-mode data --skip-mm-profiling --trust-remote-code --enable-auto-tool-choice --tool-call-parser kimi_k2 --reasoning-parser kimi_k2
+[2026-07-06T12:30:14+00:00] window=w0_prefill attempt=1 service_pid=43278
+[2026-07-06T12:32:50+00:00] service_ready port=20929 poll=32
+[2026-07-06T12:32:50+00:00] metrics_poller_pid=46284
+[2026-07-06T12:32:50+00:00] profile_w0_prefill_start_before_bench attempt=1
+[2026-07-06T12:32:50+00:00] bench_pid=46317 target_concurrency=128
+[2026-07-06T12:34:50+00:00] profile_w0_prefill_stop attempt=1
+curl: (22) The requested URL returned error: 500
+[2026-07-06T12:34:50+00:00] warn: w0_prefill stop_profile returned non-zero; copying profiler files if present
+[2026-07-06T12:35:10+00:00] copied_w0_prefill_profile_files=8 text_files=0 trace_files=8
+[2026-07-06T12:35:30+00:00] gpu_drained
+Terminated
+[2026-07-06T12:36:36+00:00] window=w0_prefill attempt=1 self_check_failed
+[2026-07-06T12:36:36+00:00] window=w0_prefill rejected attempt=1
+[2026-07-06T12:36:47+00:00] gpu_drained
+[2026-07-06T12:36:47+00:00] window=w0_prefill attempt=2 starting
+[2026-07-06T12:36:47+00:00] window=w0_prefill attempt=2 serve_command: python3 -m vllm.entrypoints.cli.main serve /mnt/shared-storage-gpfs2/gpfs2-shared-public/huggingface/zskj-hub/models--moonshotai--Kimi-K2.5 --served-model-name kimi-k2.5 --port 20929 --tensor-parallel-size 4 --data-parallel-size 2 --enable-expert-parallel --max-model-len 262144 --gpu-memory-utilization 0.80 --max-num-batched-tokens 8000 --max-num-seqs 256 --enable-chunked-prefill --no-enable-prefix-caching --enable-logging-iteration-details --cudagraph-metrics --profiler-config {"profiler":"torch","torch_profiler_dir":"/tmp/phase429_reprofile_43168/K2.5-tp4ep8dp2-8k2k/w0_prefill/attempt2/prof","torch_profiler_with_stack":false,"torch_profiler_record_shapes":true,"warmup_iterations":2,"active_iterations":35,"wait_iterations":0} --mm-encoder-tp-mode data --skip-mm-profiling --trust-remote-code --enable-auto-tool-choice --tool-call-parser kimi_k2 --reasoning-parser kimi_k2
+[2026-07-06T12:36:47+00:00] window=w0_prefill attempt=2 service_pid=47726
+[2026-07-06T12:39:23+00:00] service_ready port=20929 poll=32
+[2026-07-06T12:39:23+00:00] metrics_poller_pid=50076
+[2026-07-06T12:39:23+00:00] profile_w0_prefill_start_before_bench attempt=2
+[2026-07-06T12:39:23+00:00] bench_pid=50109 target_concurrency=128
+[2026-07-06T12:41:23+00:00] profile_w0_prefill_stop attempt=2
+Terminated
+[2026-07-06T12:41:53+00:00] warn: w0_prefill stop_profile returned non-zero; copying profiler files if present
+[2026-07-06T12:42:13+00:00] copied_w0_prefill_profile_files=9 text_files=0 trace_files=9
+collector/vllm/run_phase429_reprofile.sh: line 80: 47726 Killed                  nohup "${serve_cmd[@]}" > "${serve_log}" 2>&1
+[2026-07-06T12:43:12+00:00] gpu_drained
+[2026-07-06T12:43:12+00:00] window=w0_prefill attempt=2 self_check_passed {"decode_batch_max": 1, "decode_batch_mean": 1.0, "decode_batch_min": 1, "decode_step_count": 2, "passed": true, "prefill_step_count": 202, "reason": "prefill_step_seen", "target_concurrency": null, "window": "w0_prefill"}
+[2026-07-06T12:43:12+00:00] window=w0_prefill accepted attempt=2
+[2026-07-06T12:43:12+00:00] window=w1_decode_c16 attempt=1 starting
+[2026-07-06T12:43:12+00:00] window=w1_decode_c16 attempt=1 serve_command: python3 -m vllm.entrypoints.cli.main serve /mnt/shared-storage-gpfs2/gpfs2-shared-public/huggingface/zskj-hub/models--moonshotai--Kimi-K2.5 --served-model-name kimi-k2.5 --port 20929 --tensor-parallel-size 4 --data-parallel-size 2 --enable-expert-parallel --max-model-len 262144 --gpu-memory-utilization 0.80 --max-num-batched-tokens 8000 --max-num-seqs 256 --enable-chunked-prefill --no-enable-prefix-caching --enable-logging-iteration-details --cudagraph-metrics --profiler-config {"profiler":"torch","torch_profiler_dir":"/tmp/phase429_reprofile_43168/K2.5-tp4ep8dp2-8k2k/w1_decode_c16/attempt1/prof","torch_profiler_with_stack":false,"torch_profiler_record_shapes":true,"warmup_iterations":2,"active_iterations":35,"wait_iterations":0} --mm-encoder-tp-mode data --skip-mm-profiling --trust-remote-code --enable-auto-tool-choice --tool-call-parser kimi_k2 --reasoning-parser kimi_k2
+[2026-07-06T12:43:12+00:00] window=w1_decode_c16 attempt=1 service_pid=50977
+[2026-07-06T12:45:53+00:00] service_ready port=20929 poll=33
+[2026-07-06T12:45:53+00:00] metrics_poller_pid=53618
+[2026-07-06T12:45:53+00:00] bench_pid=53620 target_concurrency=16
+[2026-07-06T12:45:53+00:00] profile_w1_decode_c16_waiting=45s
+[2026-07-06T12:46:38+00:00] profile_w1_decode_c16_start attempt=1
+[2026-07-06T12:47:28+00:00] profile_w1_decode_c16_stop attempt=1
+[2026-07-06T12:47:56+00:00] copied_w1_decode_c16_profile_files=17 text_files=8 trace_files=9
+[2026-07-06T12:48:16+00:00] gpu_drained
+[2026-07-06T12:48:16+00:00] window=w1_decode_c16 attempt=1 self_check_passed {"decode_batch_max": 9, "decode_batch_mean": 7.996907088952121, "decode_batch_min": 1, "decode_step_count": 8083, "passed": true, "prefill_step_count": 58, "reason": "decode_batch_in_target_band", "target_concurrency": 16, "window": "w1_decode_c16"}
+[2026-07-06T12:48:16+00:00] window=w1_decode_c16 accepted attempt=1
+[2026-07-06T12:48:16+00:00] window=w2_decode_c64 attempt=1 starting
+[2026-07-06T12:48:16+00:00] window=w2_decode_c64 attempt=1 serve_command: python3 -m vllm.entrypoints.cli.main serve /mnt/shared-storage-gpfs2/gpfs2-shared-public/huggingface/zskj-hub/models--moonshotai--Kimi-K2.5 --served-model-name kimi-k2.5 --port 20929 --tensor-parallel-size 4 --data-parallel-size 2 --enable-expert-parallel --max-model-len 262144 --gpu-memory-utilization 0.80 --max-num-batched-tokens 8000 --max-num-seqs 256 --enable-chunked-prefill --no-enable-prefix-caching --enable-logging-iteration-details --cudagraph-metrics --profiler-config {"profiler":"torch","torch_profiler_dir":"/tmp/phase429_reprofile_43168/K2.5-tp4ep8dp2-8k2k/w2_decode_c64/attempt1/prof","torch_profiler_with_stack":false,"torch_profiler_record_shapes":true,"warmup_iterations":2,"active_iterations":35,"wait_iterations":0} --mm-encoder-tp-mode data --skip-mm-profiling --trust-remote-code --enable-auto-tool-choice --tool-call-parser kimi_k2 --reasoning-parser kimi_k2
+[2026-07-06T12:48:16+00:00] window=w2_decode_c64 attempt=1 service_pid=53852
+[2026-07-06T12:50:52+00:00] service_ready port=20929 poll=32
+[2026-07-06T12:50:52+00:00] metrics_poller_pid=56086
+[2026-07-06T12:50:52+00:00] bench_pid=56088 target_concurrency=64
+[2026-07-06T12:50:52+00:00] profile_w2_decode_c64_waiting=70s
+[2026-07-06T12:52:02+00:00] profile_w2_decode_c64_start attempt=1
+[2026-07-06T12:52:52+00:00] profile_w2_decode_c64_stop attempt=1
+curl: (22) The requested URL returned error: 500
+[2026-07-06T12:52:52+00:00] warn: w2_decode_c64 stop_profile returned non-zero; copying profiler files if present
+[2026-07-06T12:53:12+00:00] copied_w2_decode_c64_profile_files=16 text_files=8 trace_files=8
+[2026-07-06T12:53:32+00:00] gpu_drained
+[2026-07-06T12:53:32+00:00] window=w2_decode_c64 attempt=1 self_check_passed {"decode_batch_max": 36, "decode_batch_mean": 31.98477157360406, "decode_batch_min": 1, "decode_step_count": 3940, "passed": true, "prefill_step_count": 119, "reason": "decode_batch_in_target_band", "target_concurrency": 64, "window": "w2_decode_c64"}
+[2026-07-06T12:53:32+00:00] window=w2_decode_c64 accepted attempt=1
+[2026-07-06T12:53:32+00:00] window=w3_decode_c128 attempt=1 starting
+[2026-07-06T12:53:32+00:00] window=w3_decode_c128 attempt=1 serve_command: python3 -m vllm.entrypoints.cli.main serve /mnt/shared-storage-gpfs2/gpfs2-shared-public/huggingface/zskj-hub/models--moonshotai--Kimi-K2.5 --served-model-name kimi-k2.5 --port 20929 --tensor-parallel-size 4 --data-parallel-size 2 --enable-expert-parallel --max-model-len 262144 --gpu-memory-utilization 0.80 --max-num-batched-tokens 8000 --max-num-seqs 256 --enable-chunked-prefill --no-enable-prefix-caching --enable-logging-iteration-details --cudagraph-metrics --profiler-config {"profiler":"torch","torch_profiler_dir":"/tmp/phase429_reprofile_43168/K2.5-tp4ep8dp2-8k2k/w3_decode_c128/attempt1/prof","torch_profiler_with_stack":false,"torch_profiler_record_shapes":true,"warmup_iterations":2,"active_iterations":35,"wait_iterations":0} --mm-encoder-tp-mode data --skip-mm-profiling --trust-remote-code --enable-auto-tool-choice --tool-call-parser kimi_k2 --reasoning-parser kimi_k2
+[2026-07-06T12:53:32+00:00] window=w3_decode_c128 attempt=1 service_pid=56322
+[2026-07-06T12:56:07+00:00] service_ready port=20929 poll=32
+[2026-07-06T12:56:07+00:00] metrics_poller_pid=58561
+[2026-07-06T12:56:07+00:00] bench_pid=58563 target_concurrency=128
+[2026-07-06T12:56:07+00:00] profile_w3_decode_c128_waiting=90s
+[2026-07-06T12:57:37+00:00] profile_w3_decode_c128_start attempt=1
+[2026-07-06T12:58:27+00:00] profile_w3_decode_c128_stop attempt=1
+[2026-07-06T12:58:51+00:00] copied_w3_decode_c128_profile_files=17 text_files=8 trace_files=9
+[2026-07-06T12:59:13+00:00] gpu_drained
+[2026-07-06T12:59:13+00:00] window=w3_decode_c128 attempt=1 self_check_passed {"decode_batch_max": 56, "decode_batch_mean": 50.47432950191571, "decode_batch_min": 1, "decode_step_count": 3915, "passed": true, "prefill_step_count": 123, "reason": "decode_batch_in_target_band", "target_concurrency": 128, "window": "w3_decode_c128"}
+[2026-07-06T12:59:13+00:00] window=w3_decode_c128 accepted attempt=1
+[2026-07-06T12:59:14+00:00] PHASE429_DONE

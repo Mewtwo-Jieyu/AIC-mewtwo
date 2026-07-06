@@ -1,0 +1,1 @@
+{"decode_batch_max": 56, "decode_batch_mean": 50.47432950191571, "decode_batch_min": 1, "decode_step_count": 3915, "passed": true, "prefill_step_count": 123, "reason": "decode_batch_in_target_band", "target_concurrency": 128, "window": "w3_decode_c128"}
