@@ -1,0 +1,37 @@
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+progress: 8/512, ok=8, fail=0
+progress: 16/512, ok=16, fail=0
+progress: 24/512, ok=24, fail=0
+progress: 32/512, ok=32, fail=0
+progress: 40/512, ok=40, fail=0
+progress: 48/512, ok=48, fail=0
+progress: 56/512, ok=56, fail=0
+progress: 64/512, ok=64, fail=0
+progress: 72/512, ok=72, fail=0
+progress: 80/512, ok=80, fail=0
+progress: 88/512, ok=88, fail=0
+progress: 96/512, ok=96, fail=0
+progress: 104/512, ok=104, fail=0
+progress: 112/512, ok=112, fail=0

@@ -1,0 +1,106 @@
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------
+                                                   Name    Self CPU %      Self CPU   CPU total %     CPU total  CPU time avg     Self CUDA   Self CUDA %    CUDA total  CUDA time avg    # of Calls
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------
+                 execute_context_0(0)_generation_51(51)         0.00%       0.000us         0.00%       0.000us       0.000us        4.047s       281.15%        4.047s     643.028us          6294
+void cutlass::device_kernel<flash::enable_sm90_or_la...         0.00%       0.000us         0.00%       0.000us       0.000us     422.163ms        29.33%     422.163ms     193.121us          2186
+void marlin_moe_wna16::Marlin<1125899906909960l, 112...         0.00%       0.000us         0.00%       0.000us       0.000us     415.002ms        28.83%     415.002ms      96.422us          4304
+ncclDevKernel_ReduceScatter_Sum_bf16_RING_LL(ncclDev...         0.00%       0.000us         0.00%       0.000us       0.000us     165.061ms        11.47%     165.061ms      76.701us          2152
+ncclDevKernel_AllGather_RING_LL(ncclDevKernelArgsSto...         0.00%       0.000us         0.00%       0.000us       0.000us     104.135ms         7.23%     104.135ms      23.994us          4340
+              nvjet_tst_64x16_64x16_2x1_v_bz_splitK_TNT         0.00%       0.000us         0.00%       0.000us       0.000us      39.706ms         2.76%      39.706ms      18.451us          2152
+void vllm::cross_device_reduce_2stage<__nv_bfloat16,...         0.00%       0.000us         0.00%       0.000us       0.000us      29.194ms         2.03%      29.194ms      12.935us          2257
+                     nvjet_tst_64x16_64x16_4x1_v_bz_TNT         0.00%       0.000us         0.00%       0.000us       0.000us      27.672ms         1.92%      27.672ms      12.859us          2152
+              nvjet_tst_64x56_64x14_4x1_v_bz_splitK_TNT         0.00%       0.000us         0.00%       0.000us       0.000us      25.894ms         1.80%      25.894ms      11.845us          2186
+                     nvjet_tst_64x56_64x14_4x1_v_bz_TNT         0.00%       0.000us         0.00%       0.000us       0.000us      23.224ms         1.61%      23.224ms      10.452us          2222
+void at::native::reduce_kernel<128, 4, at::native::R...         0.00%       0.000us         0.00%       0.000us       0.000us      21.421ms         1.49%      21.421ms       9.954us          2152
+void router_gemm_kernel_bf16_output<__nv_bfloat16, 1...         0.00%       0.000us         0.00%       0.000us       0.000us      16.366ms         1.14%      16.366ms       7.605us          2152
+void vllm::act_and_mul_kernel<c10::BFloat16, __nv_bf...         0.00%       0.000us         0.00%       0.000us       0.000us      14.384ms         1.00%      14.384ms       6.684us          2152
+                     nvjet_tst_64x32_64x16_4x2_h_bz_TNT         0.00%       0.000us         0.00%       0.000us       0.000us      13.502ms         0.94%      13.502ms       6.177us          2186
+void cutlass::device_kernel<flash::FlashAttnFwdCombi...         0.00%       0.000us         0.00%       0.000us       0.000us      11.349ms         0.79%      11.349ms       5.189us          2187
+void cublasLt::splitKreduce_kernel<32, 16, int, floa...         0.00%       0.000us         0.00%       0.000us       0.000us       9.906ms         0.69%       9.906ms       2.284us          4338
+void at::native::vectorized_elementwise_kernel<8, at...         0.00%       0.000us         0.00%       0.000us       0.000us       9.806ms         0.68%       9.806ms       4.557us          2152
+void vllm::moe::grouped_topk_fused_small_expert_coun...         0.00%       0.000us         0.00%       0.000us       0.000us       9.786ms         0.68%       9.786ms       4.547us          2152
+triton_red_fused__to_copy_add_mean_min_latency_fused...         0.00%       0.000us         0.00%       0.000us       0.000us       8.500ms         0.59%       8.500ms       4.017us          2116
+                     nvjet_tst_64x24_64x16_2x1_v_bz_TNT         0.00%       0.000us         0.00%       0.000us       0.000us       8.388ms         0.58%       8.388ms       3.836us          2187
+                     nvjet_tst_64x56_64x14_2x1_v_bz_NNT         0.00%       0.000us         0.00%       0.000us       0.000us       8.202ms         0.57%       8.202ms       3.752us          2186
+void vllm::moe::moe_align_block_size_kernel<int>(int...         0.00%       0.000us         0.00%       0.000us       0.000us       7.464ms         0.52%       7.464ms       3.468us          2152
+                                            aten::copy_         0.11%       3.256ms         0.28%       8.099ms       8.264us       6.779ms         0.47%       6.779ms       6.918us           980
+triton_red_fused__to_copy_add_mean_mul_pow_rsqrt_seq...         0.00%       0.000us         0.00%       0.000us       0.000us       6.024ms         0.42%       6.024ms       2.799us          2152
+                     nvjet_tst_320x64_64x4_2x1_v_bz_TNT         0.00%       0.000us         0.00%       0.000us       0.000us       5.354ms         0.37%       5.354ms     148.735us            36
+                                               aten::mm         0.05%       1.574ms         0.06%       1.795ms      51.294us       5.207ms         0.36%       5.207ms     148.769us            35
+                         Memcpy HtoD (Pinned -> Device)         0.00%       0.000us         0.00%       0.000us       0.000us       4.629ms         0.32%       4.629ms      16.532us           280
+triton_poi_fused_add_clone_copy_expand_index_mul_neg...         0.00%       0.000us         0.00%       0.000us       0.000us       4.368ms         0.30%       4.368ms       2.031us          2151
+void vllm::concat_and_cache_mla_kernel<__nv_bfloat16...         0.00%       0.000us         0.00%       0.000us       0.000us       4.323ms         0.30%       4.323ms       1.978us          2186
+                                     triton_red_fused_4         0.00%       0.000us         0.00%       0.000us       0.000us       4.211ms         0.29%       4.211ms       1.958us          2151
+                                     triton_poi_fused_3         0.00%       0.000us         0.00%       0.000us       0.000us       3.668ms         0.25%       3.668ms       1.705us          2151
+                  triton_poi_fused_add_all_gather_mul_1         0.00%       0.000us         0.00%       0.000us       0.000us       3.276ms         0.23%       3.276ms       1.522us          2152
+void vllm::moe::count_and_sort_expert_tokens_kernel<...         0.00%       0.000us         0.00%       0.000us       0.000us       3.266ms         0.23%       3.266ms       1.518us          2152
+                      triton_poi_fused_mul_silu_slice_0         0.00%       0.000us         0.00%       0.000us       0.000us       3.118ms         0.22%       3.118ms       1.449us          2152
+                                          ProfilerStep*         0.00%       0.000us         0.00%       0.000us       0.000us       2.722ms         0.19%       2.722ms      38.893us            70
+                                     record_param_comms         0.07%       1.966ms         0.09%       2.620ms      74.844us       2.393ms         0.17%       2.393ms      68.368us            35
+                                  nccl:_all_gather_base         0.00%       0.000us         0.00%       0.000us       0.000us       2.393ms         0.17%       2.393ms      68.368us            35
+                     nvjet_tst_80x64_64x11_4x1_v_bz_TNN         0.00%       0.000us         0.00%       0.000us       0.000us       1.270ms         0.09%       1.270ms      36.273us            35
+                                           aten::argmax         0.02%     583.782us         0.04%       1.014ms      28.978us     802.341us         0.06%     802.341us      22.924us            35
+void at::native::unrolled_elementwise_kernel<at::nat...         0.00%       0.000us         0.00%       0.000us       0.000us     792.264us         0.06%     792.264us      22.007us            36
+void at::native::reduce_kernel<512, 1, at::native::R...         0.00%       0.000us         0.00%       0.000us       0.000us     769.029us         0.05%     769.029us      21.362us            36
+void at::native::elementwise_kernel<128, 4, at::nati...         0.00%       0.000us         0.00%       0.000us       0.000us     757.031us         0.05%     757.031us      21.029us            36
+                               _C_custom_ar::all_reduce         0.01%     236.160us         0.03%     784.268us      22.408us     618.437us         0.04%     618.437us      17.670us            35
+void at::native::unrolled_elementwise_kernel<at::nat...         0.00%       0.000us         0.00%       0.000us       0.000us     257.347us         0.02%     257.347us       1.800us           143
+                         Memcpy DtoD (Device -> Device)         0.00%       0.000us         0.00%       0.000us       0.000us     255.940us         0.02%     255.940us       1.219us           210
+                                            aten::fill_         0.04%       1.103ms         0.10%       2.727ms       5.994us     219.085us         0.02%     219.085us       0.482us           455
+triton_red_fused__to_copy_add_mean_mul_pow_rsqrt_sli...         0.00%       0.000us         0.00%       0.000us       0.000us     175.905us         0.01%     175.905us       4.886us            36
+                                            aten::index         0.05%       1.436ms         0.12%       3.358ms      47.978us     164.961us         0.01%     233.730us       3.339us            70
+void at::native::vectorized_gather_kernel<16, long>(...         0.00%       0.000us         0.00%       0.000us       0.000us     150.397us         0.01%     150.397us       2.118us            71
+                                       cuLaunchKernelEx         0.02%     598.320us         0.02%     598.320us       5.698us     148.706us         0.01%     148.706us       1.416us           105
+triton_red_fused__to_copy_add_mean_min_latency_fused...         0.00%       0.000us         0.00%       0.000us       0.000us     144.095us         0.01%     144.095us       4.117us            35
+                                  cudaStreamIsCapturing         0.00%     135.132us         0.00%     135.132us       0.552us     130.914us         0.01%     130.914us       0.534us           245
+                         Memcpy DtoH (Device -> Pinned)         0.00%       0.000us         0.00%       0.000us       0.000us     130.756us         0.01%     130.756us       3.632us            36
+                                     aten::masked_fill_         0.01%     272.827us         0.02%     503.095us      14.374us     117.986us         0.01%     117.986us       3.371us            35
+void at::native::elementwise_kernel<128, 4, at::nati...         0.00%       0.000us         0.00%       0.000us       0.000us     117.986us         0.01%     117.986us       3.371us            35
+                           _compute_slot_mapping_kernel         0.00%       0.000us         0.00%       0.000us       0.000us     108.737us         0.01%     108.737us       3.107us            35
+triton_red_fused__to_copy_add_clone_mean_min_latency...         0.00%       0.000us         0.00%       0.000us       0.000us     104.288us         0.01%     104.288us       2.980us            35
+void at::native::index_elementwise_kernel<128, 4, at...         0.00%       0.000us         0.00%       0.000us       0.000us     102.306us         0.01%     102.306us       2.842us            36
+                                              aten::add         0.02%     628.305us         0.03%     916.661us       8.730us      99.776us         0.01%      99.776us       0.950us           105
+                                 aten::_index_put_impl_         0.02%     617.271us         0.07%       1.922ms      54.922us      99.330us         0.01%     225.925us       6.455us            35
+     triton_red_fused__to_copy_add_mean_mul_pow_rsqrt_0         0.00%       0.000us         0.00%       0.000us       0.000us      99.068us         0.01%      99.068us       2.831us            35
+void at::native::index_elementwise_kernel<128, 4, at...         0.00%       0.000us         0.00%       0.000us       0.000us      92.227us         0.01%      92.227us       2.635us            35
+void at::native::vectorized_elementwise_kernel<4, at...         0.00%       0.000us         0.00%       0.000us       0.000us      85.506us         0.01%      85.506us       1.222us            70
+                                           aten::gather         0.02%     445.709us         0.02%     688.653us      19.676us      75.711us         0.01%      75.711us       2.163us            35
+triton_poi_fused_add_clone_copy_expand_index_mul_neg...         0.00%       0.000us         0.00%       0.000us       0.000us      70.563us         0.00%      70.563us       2.016us            35
+                    _vllm_fa3_C::get_scheduler_metadata         0.01%     316.015us         0.02%     709.570us      20.273us      69.471us         0.00%      69.471us       1.985us            35
+void flash::prepare_varlen_num_blocks_kernel<2, fals...         0.00%       0.000us         0.00%       0.000us       0.000us      69.471us         0.00%      69.471us       1.985us            35
+                                     triton_red_fused_2         0.00%       0.000us         0.00%       0.000us       0.000us      69.152us         0.00%      69.152us       1.976us            35
+void at::native::unrolled_elementwise_kernel<at::nat...         0.00%       0.000us         0.00%       0.000us       0.000us      68.900us         0.00%      68.900us       0.984us            70
+void at::native::unrolled_elementwise_kernel<at::nat...         0.00%       0.000us         0.00%       0.000us       0.000us      64.679us         0.00%      64.679us       0.924us            70
+                                     triton_poi_fused_1         0.00%       0.000us         0.00%       0.000us       0.000us      63.172us         0.00%      63.172us       1.805us            35
+                               cudaEventRecordWithFlags         0.00%     100.136us         0.00%     100.136us       0.954us      57.983us         0.00%      57.983us       0.552us           105
+                                        Memset (Device)         0.00%       0.000us         0.00%       0.000us       0.000us      57.408us         0.00%      57.408us       1.595us            36
+void at::native::unrolled_elementwise_kernel<at::nat...         0.00%       0.000us         0.00%       0.000us       0.000us      54.749us         0.00%      54.749us       1.521us            36
+void at::native::vectorized_elementwise_kernel<2, at...         0.00%       0.000us         0.00%       0.000us       0.000us      53.760us         0.00%      53.760us       1.536us            35
+                      triton_poi_fused_mul_silu_slice_1         0.00%       0.000us         0.00%       0.000us       0.000us      51.362us         0.00%      51.362us       1.467us            35
+triton_poi_fused_add_bitwise_and_bitwise_not_bitwise...         0.02%     632.360us         0.03%     881.244us      25.178us      49.188us         0.00%      49.188us       1.405us            35
+triton_poi_fused_add_bitwise_and_bitwise_not_bitwise...         0.00%       0.000us         0.00%       0.000us       0.000us      49.188us         0.00%      49.188us       1.405us            35
+## Call CompiledFxGraph fearurqhjfodlldpvoyyggholi2o...         0.00%       0.000us         0.00%       0.000us       0.000us      49.188us         0.00%      49.188us       1.405us            35
+void at::native::vectorized_elementwise_kernel<4, at...         0.00%       0.000us         0.00%       0.000us       0.000us      46.016us         0.00%      46.016us       1.315us            35
+                                              aten::sub         0.01%     424.258us         0.02%     594.052us       8.486us      40.254us         0.00%      40.254us       0.575us            70
+void at::native::unrolled_elementwise_kernel<at::nat...         0.00%       0.000us         0.00%       0.000us       0.000us      40.254us         0.00%      40.254us       1.150us            35
+                                         cudaEventQuery         0.01%     393.004us         0.01%     393.004us       1.995us      34.721us         0.00%      34.721us       0.176us           197
+                    cudaThreadExchangeStreamCaptureMode         0.00%      29.045us         0.00%      29.045us       0.242us      28.224us         0.00%      28.224us       0.235us           120
+                                   cudaEventSynchronize        49.95%        1.432s        49.95%        1.432s      20.168ms      19.776us         0.00%      19.776us       0.279us            71
+                                   cudaDriverGetVersion         0.00%       3.018us         0.00%       3.018us       0.086us       6.944us         0.00%       6.944us       0.198us            35
+                                        cudaEventRecord         0.01%     205.846us         0.01%     205.846us       0.980us       5.248us         0.00%       5.248us       0.025us           210
+                                    cudaStreamWaitEvent         0.01%     150.761us         0.01%     150.761us       1.077us       1.440us         0.00%       1.440us       0.010us           140
+                                        cudaGraphLaunch         3.39%      97.314ms         3.59%     103.001ms       2.943ms       1.248us         0.00%       1.248us       0.036us            35
+                                          ProfilerStep*        41.50%        1.190s        48.68%        1.395s      39.868ms       0.000us         0.00%      17.166ms     490.447us            35
+                 execute_context_0(0)_generation_51(51)         1.88%      53.809ms         6.97%     199.846ms       5.710ms       0.000us         0.00%      14.936ms     426.753us            35
+                                            aten::slice         0.13%       3.713ms         0.16%       4.528ms       2.310us       0.000us         0.00%       0.000us       0.000us          1960
+                                       aten::as_strided         0.05%       1.304ms         0.05%       1.304ms       0.438us       0.000us         0.00%       0.000us       0.000us          2975
+                                        cudaMemcpyAsync         0.13%       3.772ms         0.13%       3.772ms       7.184us       0.000us         0.00%       0.000us       0.000us           525
+                                       aten::lift_fresh         0.00%      43.429us         0.00%      43.429us       0.138us       0.000us         0.00%       0.000us       0.000us           315
+                                          aten::flatten         0.00%      85.348us         0.01%     177.142us       5.061us       0.000us         0.00%       0.000us       0.000us            35
+                                             aten::view         0.01%     340.075us         0.01%     340.275us       1.215us       0.000us         0.00%       0.000us       0.000us           280
+                                     aten::index_select         0.02%     529.932us         0.06%       1.640ms      23.434us       0.000us         0.00%      75.711us       1.082us            70
+                                           aten::detach         0.00%     118.616us         0.00%     118.616us       1.695us       0.000us         0.00%       0.000us       0.000us            70
+                                               aten::to         0.02%     475.544us         0.20%       5.779ms      11.794us       0.000us         0.00%       1.202ms       2.454us           490
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------
+Self CPU time total: 2.866s
+Self CUDA time total: 1.440s
