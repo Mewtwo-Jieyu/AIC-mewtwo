@@ -91,6 +91,7 @@ class MultiConfigKVCapacity:
     kv_cache_tokens: int
     block_size: int
     num_gpu_blocks: int
+    max_num_seqs: int
     serve_log: str
     serve_log_line_numbers: tuple[int, ...]
     override_num_gpu_blocks: int
@@ -265,6 +266,7 @@ PHASE397K_KV_CAPACITY_BY_SCENARIO = {
         kv_cache_tokens=760_160,
         block_size=KV_CACHE_BLOCK_SIZE,
         num_gpu_blocks=47_510,
+        max_num_seqs=256,
         serve_log="docs/iter_gap_investigation/phase397k_measured_0190/K2.5-tp8ep8-8k2k/serve.log",
         serve_log_line_numbers=(202,),
         override_num_gpu_blocks=512,
@@ -275,6 +277,7 @@ PHASE397K_KV_CAPACITY_BY_SCENARIO = {
         kv_cache_tokens=675_216,
         block_size=KV_CACHE_BLOCK_SIZE,
         num_gpu_blocks=42_201,
+        max_num_seqs=256,
         serve_log="docs/iter_gap_investigation/phase397k_measured_0190/K2.5-tp8ep8-32k3k/serve.log",
         serve_log_line_numbers=(195,),
         override_num_gpu_blocks=512,
@@ -285,6 +288,7 @@ PHASE397K_KV_CAPACITY_BY_SCENARIO = {
         kv_cache_tokens=672_128,
         block_size=KV_CACHE_BLOCK_SIZE,
         num_gpu_blocks=42_008,
+        max_num_seqs=256,
         serve_log="docs/iter_gap_investigation/phase397k_measured_0190/K2.5-tp4ep8dp2-8k2k/serve.log",
         serve_log_line_numbers=(210, 213),
         override_num_gpu_blocks=512,
@@ -295,6 +299,7 @@ PHASE397K_KV_CAPACITY_BY_SCENARIO = {
         kv_cache_tokens=320_800,
         block_size=KV_CACHE_BLOCK_SIZE,
         num_gpu_blocks=20_050,
+        max_num_seqs=256,
         serve_log="docs/iter_gap_investigation/phase397k_measured_0190/K2.5-tp4ep8dp2-32k3k/serve.log",
         serve_log_line_numbers=(204, 212),
         override_num_gpu_blocks=512,
@@ -305,6 +310,7 @@ PHASE397K_KV_CAPACITY_BY_SCENARIO = {
         kv_cache_tokens=343_552,
         block_size=KV_CACHE_BLOCK_SIZE,
         num_gpu_blocks=21_472,
+        max_num_seqs=256,
         serve_log="docs/iter_gap_investigation/phase397k_measured_0190/K2.5-tp8ep8-8k2k-bt65536/serve.log",
         serve_log_line_numbers=(195,),
         override_num_gpu_blocks=512,
@@ -315,6 +321,7 @@ PHASE397K_KV_CAPACITY_BY_SCENARIO = {
         kv_cache_tokens=25_744,
         block_size=KV_CACHE_BLOCK_SIZE,
         num_gpu_blocks=1_609,
+        max_num_seqs=128,
         serve_log="docs/iter_gap_investigation/phase397k_measured_0190/K2.5-tp4ep8dp2-8k2k-bt65536/serve.log",
         serve_log_line_numbers=(200, 210),
         override_num_gpu_blocks=256,
@@ -337,6 +344,10 @@ def _multi_config_kv_capacity(point: MultiConfigPoint) -> MultiConfigKVCapacity:
 
 def _multi_config_num_gpu_blocks(point: MultiConfigPoint) -> int:
     return _multi_config_kv_capacity(point).num_gpu_blocks
+
+
+def _multi_config_max_num_seqs(point: MultiConfigPoint) -> int:
+    return _multi_config_kv_capacity(point).max_num_seqs
 
 
 def _write_rows(path: Path, rows: list[object]) -> None:
@@ -655,6 +666,7 @@ def _make_cb_config(
     per_iteration_overhead_ms: float = 0.0,
     max_num_batched_tokens: int | None = None,
     num_gpu_blocks: int = 0,
+    max_num_seqs: int = 256,
 ) -> CBSimConfig:
     """Create CBSimConfig aligned with run_agg default chunk budget."""
     # Need enough requests for meaningful steady-state measurement.
@@ -667,6 +679,7 @@ def _make_cb_config(
         warmup_requests=warmup_requests,
         long_prefill_token_threshold=long_prefill_token_threshold,
         num_gpu_blocks=num_gpu_blocks,
+        max_num_seqs=max_num_seqs,
         block_size=KV_CACHE_BLOCK_SIZE,
         overlap_factor=overlap_factor,
         per_iteration_overhead_ms=per_iteration_overhead_ms,
@@ -675,6 +688,7 @@ def _make_cb_config(
 
 def _assert_multi_config_cb_config(point: MultiConfigPoint, config: CBSimConfig) -> None:
     expected_blocks = _multi_config_num_gpu_blocks(point)
+    expected_max_num_seqs = _multi_config_max_num_seqs(point)
     if config.max_num_batched_tokens != point.max_num_batched_tokens:
         raise AssertionError(
             f"{point.name}: max_num_batched_tokens={config.max_num_batched_tokens} "
@@ -684,8 +698,8 @@ def _assert_multi_config_cb_config(point: MultiConfigPoint, config: CBSimConfig)
         raise AssertionError(f"{point.name}: num_gpu_blocks={config.num_gpu_blocks} != {expected_blocks}")
     if config.block_size != KV_CACHE_BLOCK_SIZE:
         raise AssertionError(f"{point.name}: block_size={config.block_size} != {KV_CACHE_BLOCK_SIZE}")
-    if config.max_num_seqs != 256:
-        raise AssertionError(f"{point.name}: max_num_seqs={config.max_num_seqs} != 256")
+    if config.max_num_seqs != expected_max_num_seqs:
+        raise AssertionError(f"{point.name}: max_num_seqs={config.max_num_seqs} != {expected_max_num_seqs}")
 
 
 def _make_multi_config_cb_config(
@@ -701,6 +715,7 @@ def _make_multi_config_cb_config(
         overlap_factor=overlap_factor,
         per_iteration_overhead_ms=ep8_per_iteration_overhead_ms,
         num_gpu_blocks=_multi_config_num_gpu_blocks(point),
+        max_num_seqs=_multi_config_max_num_seqs(point),
     )
     _assert_multi_config_cb_config(point, config)
     return config
