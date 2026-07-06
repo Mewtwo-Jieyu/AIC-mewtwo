@@ -255,7 +255,7 @@ MULTI_CONFIG_DATA = [
         dp=2,
         moe_tp=1,
         moe_ep=8,
-        real_total_tok_s_gpu=779.76,
+        real_total_tok_s_gpu=569.5509309402136,
     ),
 ]
 
@@ -318,14 +318,14 @@ PHASE397K_KV_CAPACITY_BY_SCENARIO = {
     ),
     "K2.5-tp4ep8dp2-8k2k-bt65536": MultiConfigKVCapacity(
         scenario="K2.5-tp4ep8dp2-8k2k-bt65536",
-        kv_cache_tokens=25_744,
+        kv_cache_tokens=131_664,
         block_size=KV_CACHE_BLOCK_SIZE,
-        num_gpu_blocks=1_609,
-        max_num_seqs=128,
-        serve_log="docs/iter_gap_investigation/phase397k_measured_0190/K2.5-tp4ep8dp2-8k2k-bt65536/serve.log",
-        serve_log_line_numbers=(200, 210),
-        override_num_gpu_blocks=256,
-        override_line_numbers=(163, 165, 167, 169, 171, 173, 175, 177),
+        num_gpu_blocks=8_229,
+        max_num_seqs=256,
+        serve_log="docs/iter_gap_investigation/phase424_bt65536_recollect/K2.5-tp4ep8dp2-8k2k-bt65536/serve.log",
+        serve_log_line_numbers=(203, 206),
+        override_num_gpu_blocks=512,
+        override_line_numbers=(163, 164, 167, 169, 171, 172, 175, 177),
     ),
 }
 

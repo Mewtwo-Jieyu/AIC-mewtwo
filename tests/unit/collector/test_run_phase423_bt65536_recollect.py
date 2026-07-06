@@ -15,7 +15,8 @@ def test_phase423_runner_uses_clean_dp2_bt65536_protocol() -> None:
     assert "--enable-logging-iteration-details" in text
     assert "--cudagraph-metrics" in text
     assert "--prompt-variant-mode rotating" in text
-    assert '"phase": "phase423"' in text
+    assert 'PHASE_NAME="${PHASE_NAME:-phase423}"' in text
+    assert '"phase": "${PHASE_NAME}"' in text
     assert "snapshot_process_residuals" in text
     assert "snapshot_gpu_apps \"${OUT_ROOT}/gpu_compute_apps_after.txt\"" in text
     assert "snapshot_process_residuals \"${OUT_ROOT}/process_residual_after.txt\"" in text

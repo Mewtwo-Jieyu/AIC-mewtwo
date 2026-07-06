@@ -9,6 +9,7 @@ set -euo pipefail
 WORKDIR="${WORKDIR:-/mnt/shared-storage-user/ailab-sys/zhaojieyu/aic}"
 MODEL_PATH="${MODEL_PATH:-/mnt/shared-storage-gpfs2/gpfs2-shared-public/huggingface/zskj-hub/models--moonshotai--Kimi-K2.5}"
 SERVED_MODEL_NAME="${SERVED_MODEL_NAME:-kimi-k2.5}"
+PHASE_NAME="${PHASE_NAME:-phase423}"
 OUT_ROOT="${OUT_ROOT:-docs/iter_gap_investigation/phase423_bt65536_recollect}"
 TMP_ROOT="${TMP_ROOT:-/tmp/phase423_bt65536_recollect_$$}"
 PORT="${PORT:-20923}"
@@ -241,7 +242,7 @@ main() {
   )
 
   cat >"${out_dir}/meta.json" <<EOF
-{"name": "${SCENARIO}", "phase": "phase423", "tp": ${TP}, "dp": ${DP}, "ep": ${EP}, "isl": ${ISL}, "osl": ${OSL}, "max_num_batched_tokens": ${MAX_NUM_BATCHED_TOKENS}, "batch_size": ${BENCH_MAX_CONCURRENCY}, "world_size": $((TP * DP)), "port": ${PORT}, "prefix_caching": false, "prompt_variant_mode": "rotating", "gpu_memory_utilization": ${GPU_MEMORY_UTILIZATION}, "max_model_len": ${MAX_MODEL_LEN}, "max_num_seqs": ${MAX_NUM_SEQS}, "enable_logging_iteration_details": true, "cudagraph_metrics": true, "metrics_poll_interval_s": ${METRICS_POLL_INTERVAL_S}}
+{"name": "${SCENARIO}", "phase": "${PHASE_NAME}", "tp": ${TP}, "dp": ${DP}, "ep": ${EP}, "isl": ${ISL}, "osl": ${OSL}, "max_num_batched_tokens": ${MAX_NUM_BATCHED_TOKENS}, "batch_size": ${BENCH_MAX_CONCURRENCY}, "world_size": $((TP * DP)), "port": ${PORT}, "prefix_caching": false, "prompt_variant_mode": "rotating", "gpu_memory_utilization": ${GPU_MEMORY_UTILIZATION}, "max_model_len": ${MAX_MODEL_LEN}, "max_num_seqs": ${MAX_NUM_SEQS}, "enable_logging_iteration_details": true, "cudagraph_metrics": true, "metrics_poll_interval_s": ${METRICS_POLL_INTERVAL_S}}
 EOF
 
   log "serve_command: ${serve_cmd[*]}" | tee -a "${OUT_ROOT}/driver.log"
