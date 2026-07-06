@@ -257,11 +257,9 @@ class IterationLatencyCalculator:
             # and decode attention execute serially within the fused forward.
             total_ms = context_non_attn_ms + context_attn_ms + gen_attn_ms
         elif prefill_tokens > 0:
-            # Pure prefill iteration: no decode lane to overlap with.
-            total_ms = self._combine_with_overlap(
-                context_non_attn_ms,
-                context_attn_ms,
-            )
+            # Pure prefill executes the same forward stream as mixed/pure decode:
+            # token-parallel non-attention work and attention both consume wall time.
+            total_ms = context_non_attn_ms + context_attn_ms
         else:
             # Pure decode iteration: within each transformer layer the attention
             # and the MoE/FFN non-attention ops run SERIALLY, so they add rather

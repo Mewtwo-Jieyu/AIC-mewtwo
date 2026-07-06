@@ -725,6 +725,33 @@ class TestIterationLatencyCalculator:
         assert total_no_overlap == pytest.approx(30.0)
         assert total_full_overlap == pytest.approx(30.0)
 
+    def test_pure_prefill_serial_sum_is_independent_of_overlap_factor(self) -> None:
+        calc_no_overlap = IterationLatencyCalculator(
+            backend=_FakeBackendForIteration(),
+            model=MagicMock(),
+            database=MagicMock(),
+            overlap_factor=0.0,
+        )
+        calc_full_overlap = IterationLatencyCalculator(
+            backend=_FakeBackendForIteration(),
+            model=MagicMock(),
+            database=MagicMock(),
+            overlap_factor=1.0,
+        )
+
+        args = dict(
+            prefill_tokens=1024,
+            prefill_batch_size=1,
+            prefill_seq_len=1024,
+            decode_batch_size=0,
+            decode_avg_kv_len=0,
+        )
+        total_no_overlap = calc_no_overlap.compute(**args)
+        total_full_overlap = calc_full_overlap.compute(**args)
+
+        assert total_no_overlap == pytest.approx(23.0)
+        assert total_full_overlap == pytest.approx(23.0)
+
     def test_overlap_factor_validates_range(self) -> None:
         with pytest.raises(ValueError, match="overlap_factor"):
             IterationLatencyCalculator(
