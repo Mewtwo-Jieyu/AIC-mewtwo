@@ -1,0 +1,10 @@
+{
+  "source": "phase431_perfdb_recollect",
+  "run_id": "phase431_perfdb_recollect_20260706_142922",
+  "source_root": "/tmp/phase431_committed_head",
+  "model_path": "/mnt/shared-storage-gpfs2/gpfs2-shared-public/huggingface/zskj-hub/models--moonshotai--Kimi-K2.5",
+  "output_dir": "/mnt/shared-storage-user/ailab-sys/zhaojieyu/aic/docs/iter_gap_investigation/phase431_perfdb_recollect/phase431_perfdb_recollect_20260706_142922",
+  "default_readiness": "No-Go",
+  "perf_database": true,
+  "valid_for_default": false
+}

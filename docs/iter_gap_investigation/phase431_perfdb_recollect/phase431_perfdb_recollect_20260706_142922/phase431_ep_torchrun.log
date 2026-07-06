@@ -1,0 +1,99 @@
+W0706 14:29:32.707000 61654 torch/distributed/run.py:852]
+W0706 14:29:32.707000 61654 torch/distributed/run.py:852] *****************************************
+W0706 14:29:32.707000 61654 torch/distributed/run.py:852] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed.
+W0706 14:29:32.707000 61654 torch/distributed/run.py:852] *****************************************
+INFO 07-06 14:29:38 [parallel.py:639] Using external launcher for distributed inference.
+INFO 07-06 14:29:38 [parallel.py:665] Set data_parallel_rank to 0 automatically.
+INFO 07-06 14:29:38 [parallel.py:699] Disabling V1 multiprocessing for external launcher.
+INFO 07-06 14:29:38 [parallel.py:639] Using external launcher for distributed inference.
+INFO 07-06 14:29:38 [parallel.py:665] Set data_parallel_rank to 0 automatically.
+INFO 07-06 14:29:38 [parallel.py:699] Disabling V1 multiprocessing for external launcher.
+INFO 07-06 14:29:38 [parallel.py:639] Using external launcher for distributed inference.
+INFO 07-06 14:29:38 [parallel.py:665] Set data_parallel_rank to 1 automatically.
+INFO 07-06 14:29:38 [parallel.py:699] Disabling V1 multiprocessing for external launcher.
+INFO 07-06 14:29:38 [parallel.py:639] Using external launcher for distributed inference.
+INFO 07-06 14:29:38 [parallel.py:665] Set data_parallel_rank to 0 automatically.
+INFO 07-06 14:29:38 [parallel.py:699] Disabling V1 multiprocessing for external launcher.
+INFO 07-06 14:29:38 [parallel.py:639] Using external launcher for distributed inference.
+INFO 07-06 14:29:38 [parallel.py:665] Set data_parallel_rank to 1 automatically.
+INFO 07-06 14:29:38 [parallel.py:699] Disabling V1 multiprocessing for external launcher.
+INFO 07-06 14:29:38 [parallel.py:639] Using external launcher for distributed inference.
+INFO 07-06 14:29:38 [parallel.py:665] Set data_parallel_rank to 1 automatically.
+INFO 07-06 14:29:38 [parallel.py:699] Disabling V1 multiprocessing for external launcher.
+INFO 07-06 14:29:38 [parallel.py:639] Using external launcher for distributed inference.
+INFO 07-06 14:29:38 [parallel.py:665] Set data_parallel_rank to 1 automatically.
+INFO 07-06 14:29:38 [parallel.py:699] Disabling V1 multiprocessing for external launcher.
+INFO 07-06 14:29:38 [parallel.py:639] Using external launcher for distributed inference.
+INFO 07-06 14:29:38 [parallel.py:665] Set data_parallel_rank to 0 automatically.
+INFO 07-06 14:29:38 [parallel.py:699] Disabling V1 multiprocessing for external launcher.
+INFO 07-06 14:29:38 [model.py:549] Resolved architecture: KimiK25ForConditionalGeneration
+INFO 07-06 14:29:38 [model.py:1678] Using max model len 262144
+INFO 07-06 14:29:39 [model.py:549] Resolved architecture: KimiK25ForConditionalGeneration
+INFO 07-06 14:29:39 [model.py:1678] Using max model len 262144
+INFO 07-06 14:29:39 [model.py:549] Resolved architecture: KimiK25ForConditionalGeneration
+INFO 07-06 14:29:39 [model.py:1678] Using max model len 262144
+INFO 07-06 14:29:39 [model.py:549] Resolved architecture: KimiK25ForConditionalGeneration
+INFO 07-06 14:29:39 [model.py:1678] Using max model len 262144
+INFO 07-06 14:29:39 [model.py:549] Resolved architecture: KimiK25ForConditionalGeneration
+INFO 07-06 14:29:39 [model.py:1678] Using max model len 262144
+INFO 07-06 14:29:39 [model.py:549] Resolved architecture: KimiK25ForConditionalGeneration
+INFO 07-06 14:29:39 [model.py:1678] Using max model len 262144
+INFO 07-06 14:29:39 [model.py:549] Resolved architecture: KimiK25ForConditionalGeneration
+INFO 07-06 14:29:39 [model.py:1678] Using max model len 262144
+INFO 07-06 14:29:39 [model.py:549] Resolved architecture: KimiK25ForConditionalGeneration
+INFO 07-06 14:29:39 [model.py:1678] Using max model len 262144
+INFO 07-06 14:29:39 [scheduler.py:238] Chunked prefill is enabled with max_num_batched_tokens=2048.
+INFO 07-06 14:29:39 [vllm.py:790] Asynchronous scheduling is enabled.
+INFO 07-06 14:29:39 [vllm.py:800] Disabling NCCL for DP synchronization when using async scheduling.
+INFO 07-06 14:29:39 [parallel_state.py:1400] world_size=8 rank=1 local_rank=1 distributed_init_method=env:// backend=nccl
+INFO 07-06 14:29:39 [scheduler.py:238] Chunked prefill is enabled with max_num_batched_tokens=2048.
+INFO 07-06 14:29:39 [vllm.py:790] Asynchronous scheduling is enabled.
+INFO 07-06 14:29:39 [vllm.py:800] Disabling NCCL for DP synchronization when using async scheduling.
+INFO 07-06 14:29:39 [parallel_state.py:1400] world_size=8 rank=2 local_rank=2 distributed_init_method=env:// backend=nccl
+INFO 07-06 14:29:39 [scheduler.py:238] Chunked prefill is enabled with max_num_batched_tokens=2048.
+INFO 07-06 14:29:39 [vllm.py:790] Asynchronous scheduling is enabled.
+INFO 07-06 14:29:39 [vllm.py:800] Disabling NCCL for DP synchronization when using async scheduling.
+INFO 07-06 14:29:39 [parallel_state.py:1400] world_size=8 rank=5 local_rank=5 distributed_init_method=env:// backend=nccl
+INFO 07-06 14:29:39 [scheduler.py:238] Chunked prefill is enabled with max_num_batched_tokens=2048.
+INFO 07-06 14:29:39 [vllm.py:790] Asynchronous scheduling is enabled.
+INFO 07-06 14:29:39 [vllm.py:800] Disabling NCCL for DP synchronization when using async scheduling.
+INFO 07-06 14:29:39 [parallel_state.py:1400] world_size=8 rank=7 local_rank=7 distributed_init_method=env:// backend=nccl
+INFO 07-06 14:29:39 [scheduler.py:238] Chunked prefill is enabled with max_num_batched_tokens=2048.
+INFO 07-06 14:29:39 [vllm.py:790] Asynchronous scheduling is enabled.
+INFO 07-06 14:29:39 [vllm.py:800] Disabling NCCL for DP synchronization when using async scheduling.
+INFO 07-06 14:29:39 [parallel_state.py:1400] world_size=8 rank=0 local_rank=0 distributed_init_method=env:// backend=nccl
+INFO 07-06 14:29:39 [scheduler.py:238] Chunked prefill is enabled with max_num_batched_tokens=2048.
+INFO 07-06 14:29:39 [vllm.py:790] Asynchronous scheduling is enabled.
+INFO 07-06 14:29:39 [vllm.py:800] Disabling NCCL for DP synchronization when using async scheduling.
+INFO 07-06 14:29:39 [parallel_state.py:1400] world_size=8 rank=6 local_rank=6 distributed_init_method=env:// backend=nccl
+INFO 07-06 14:29:39 [scheduler.py:238] Chunked prefill is enabled with max_num_batched_tokens=2048.
+INFO 07-06 14:29:39 [vllm.py:790] Asynchronous scheduling is enabled.
+INFO 07-06 14:29:39 [vllm.py:800] Disabling NCCL for DP synchronization when using async scheduling.
+INFO 07-06 14:29:39 [parallel_state.py:1400] world_size=8 rank=3 local_rank=3 distributed_init_method=env:// backend=nccl
+INFO 07-06 14:29:39 [scheduler.py:238] Chunked prefill is enabled with max_num_batched_tokens=2048.
+INFO 07-06 14:29:39 [vllm.py:790] Asynchronous scheduling is enabled.
+INFO 07-06 14:29:39 [vllm.py:800] Disabling NCCL for DP synchronization when using async scheduling.
+INFO 07-06 14:29:39 [parallel_state.py:1400] world_size=8 rank=4 local_rank=4 distributed_init_method=env:// backend=nccl
+<frozen importlib._bootstrap_external>:1301: FutureWarning: The cuda.cudart module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.runtime module instead.
+<frozen importlib._bootstrap_external>:1301: FutureWarning: The cuda.nvrtc module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.nvrtc module instead.
+<frozen importlib._bootstrap_external>:1301: FutureWarning: The cuda.cudart module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.runtime module instead.
+<frozen importlib._bootstrap_external>:1301: FutureWarning: The cuda.nvrtc module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.nvrtc module instead.
+<frozen importlib._bootstrap_external>:1301: FutureWarning: The cuda.cudart module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.runtime module instead.
+<frozen importlib._bootstrap_external>:1301: FutureWarning: The cuda.nvrtc module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.nvrtc module instead.
+<frozen importlib._bootstrap_external>:1301: FutureWarning: The cuda.cudart module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.runtime module instead.
+<frozen importlib._bootstrap_external>:1301: FutureWarning: The cuda.nvrtc module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.nvrtc module instead.
+<frozen importlib._bootstrap_external>:1301: FutureWarning: The cuda.cudart module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.runtime module instead.
+<frozen importlib._bootstrap_external>:1301: FutureWarning: The cuda.nvrtc module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.nvrtc module instead.
+INFO 07-06 14:29:40 [pynccl.py:111] vLLM is using nccl==2.27.5
+<frozen importlib._bootstrap_external>:1301: FutureWarning: The cuda.cudart module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.runtime module instead.
+<frozen importlib._bootstrap_external>:1301: FutureWarning: The cuda.nvrtc module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.nvrtc module instead.
+<frozen importlib._bootstrap_external>:1301: FutureWarning: The cuda.cudart module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.runtime module instead.
+<frozen importlib._bootstrap_external>:1301: FutureWarning: The cuda.nvrtc module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.nvrtc module instead.
+<frozen importlib._bootstrap_external>:1301: FutureWarning: The cuda.cudart module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.runtime module instead.
+<frozen importlib._bootstrap_external>:1301: FutureWarning: The cuda.nvrtc module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.nvrtc module instead.
+INFO 07-06 14:29:43 [cuda_communicator.py:174] Using AgRsAll2AllManager all2all manager.
+INFO 07-06 14:29:43 [parallel_state.py:1716] rank 0 in world size 8 is assigned as DP rank 0, PP rank 0, PCP rank 0, TP rank 0, EP rank 0, EPLB rank N/A
+INFO 07-06 14:29:43 [dp_utils.py:30] Using CPU all reduce to synchronize DP padding between ranks.
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  return func(*args, **kwargs)
+[rank0]:[W706 14:29:43.452143699 ProcessGroupNCCL.cpp:5138] Guessing device ID based on global rank. This can cause a hang if rank to GPU mapping is heterogeneous. You can specify device_id in init_process_group()

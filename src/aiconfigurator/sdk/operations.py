@@ -5,7 +5,7 @@ import logging
 from typing import Optional
 
 from aiconfigurator.sdk import common
-from aiconfigurator.sdk.perf_database import PerfDatabase
+from aiconfigurator.sdk.perf_database import PerfDataNotAvailableError, PerfDatabase
 from aiconfigurator.sdk.performance_result import PerformanceResult
 
 logger = logging.getLogger(__name__)
@@ -85,6 +85,17 @@ def _query_vllm_ep8_alltoall_fallback(
     topk: int,
     scale_factor: float,
 ) -> PerformanceResult:
+    try:
+        result = database.query_vllm_ep8_a2a_decode(
+            bucket_tokens=bucket_tokens,
+            hidden_size=hidden_size,
+            topk=topk,
+            moe_ep_size=8,
+        )
+        return PerformanceResult(float(result) * scale_factor, energy=result.energy * scale_factor)
+    except (AttributeError, PerfDataNotAvailableError, ValueError):
+        pass
+
     node_spec = getattr(database, "system_spec", {}).get("node", {})
     # h200_sxm records single-direction intra-node bandwidth; dispatch+combine can use both directions.
     bidirectional_bw = float(node_spec["intra_node_bw"]) * 2.0

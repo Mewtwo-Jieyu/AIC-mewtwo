@@ -1,0 +1,40 @@
+cuda:0 0 41347
+INFO 07-06 14:29:26 [parallel_state.py:1400] world_size=-1 rank=-1 local_rank=-1 distributed_init_method=env:// backend=nccl
+INFO 07-06 14:29:27 [scheduler.py:238] Chunked prefill is enabled with max_num_batched_tokens=2048.
+INFO 07-06 14:29:27 [vllm.py:790] Asynchronous scheduling is enabled.
+INFO 07-06 14:29:27 [parallel_state.py:1716] rank 0 in world size 1 is assigned as DP rank 0, PP rank 0, PCP rank 0, TP rank 0, EP rank 0, EPLB rank N/A
+INFO 07-06 14:29:27 [cuda.py:334] Using FLASH_ATTN_MLA attention backend out of potential backends: ['FLASH_ATTN_MLA', 'TRITON_MLA'].
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-06 14:29:27 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-06 14:29:27 [model.py:1678] Using max model len 8191
+INFO 07-06 14:29:28 [scheduler.py:238] Chunked prefill is enabled with max_num_batched_tokens=8192.
+INFO 07-06 14:29:28 [compilation.py:290] Enabled custom fusions: norm_quant, act_quant
+INFO 07-06 14:29:28 [mla_attention.py:2137] Using FlashAttention prefill for MLA
+MLA latency: 0.060549333691596985
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-06 14:29:28 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-06 14:29:28 [model.py:1678] Using max model len 8191
+MLA latency: 0.07607466479142506
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-06 14:29:28 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-06 14:29:28 [model.py:1678] Using max model len 8191
+MLA latency: 0.12895466883977255
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-06 14:29:28 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-06 14:29:28 [model.py:1678] Using max model len 8191
+MLA latency: 0.23467199007670084
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-06 14:29:28 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-06 14:29:28 [model.py:1678] Using max model len 8191
+MLA latency: 0.448853333791097
+num_tokens 8 topk 8
+moe latency: 0.21964559555053711
+num_tokens 16 topk 8
+moe latency: 0.27563871383666994
+num_tokens 32 topk 8
+moe latency: 0.32166847229003903
+num_tokens 64 topk 8
+moe latency: 0.38183471679687503
+num_tokens 128 topk 8
+moe latency: 0.49241985321044923
+[rank0]:[W706 14:29:31.668897048 ProcessGroupNCCL.cpp:1553] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())

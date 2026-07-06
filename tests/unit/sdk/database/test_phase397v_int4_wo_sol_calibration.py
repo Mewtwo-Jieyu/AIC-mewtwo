@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from aiconfigurator.sdk import common
+from aiconfigurator.sdk.operations import _query_vllm_ep8_alltoall_fallback
 from aiconfigurator.sdk.perf_database import PerfDatabase
 
 
@@ -72,11 +73,83 @@ def test_phase417_int4_wo_decode_anchor_keeps_calibrated_sol() -> None:
         moe_tp_size=1,
         moe_ep_size=8,
         quant_mode=common.MoEQuantMode.int4_wo,
-        workload_distribution="power_law_1.01",
+        workload_distribution="power_law_1.2",
         is_context=False,
     )
 
     assert float(result) == pytest.approx(PHASE397L_EP8_ANCHOR_MS_PER_LAYER, rel=1e-9)
+
+
+def test_phase431_int4_wo_decode_uses_phase431_measured_distribution_when_present() -> None:
+    db = _database()
+    workload_distribution = "unit_test_power_law"
+    phase431_distribution = f"phase431_decode_{workload_distribution}"
+    measured = db._moe_data[common.MoEQuantMode.int4_wo][phase431_distribution][8][384][7168][2048][1][8]
+    measured[8] = {"latency": 0.04, "power": 0.0, "energy": 0.0, "kernel_source": "phase431_int4_wo_decode"}
+    measured[128] = {"latency": 0.28, "power": 0.0, "energy": 0.0, "kernel_source": "phase431_int4_wo_decode"}
+
+    result = db.query_moe(
+        num_tokens=64,
+        hidden_size=7168,
+        inter_size=2048,
+        topk=8,
+        num_experts=384,
+        moe_tp_size=1,
+        moe_ep_size=8,
+        quant_mode=common.MoEQuantMode.int4_wo,
+        workload_distribution=workload_distribution,
+        is_context=False,
+    )
+
+    assert float(result) == pytest.approx(0.152, rel=1e-9)
+    assert float(result) != pytest.approx(PHASE397L_EP8_ANCHOR_MS_PER_LAYER, rel=1e-9)
+
+
+def test_phase431_int4_wo_decode_uses_committed_phase431_rows() -> None:
+    db = _database()
+
+    result = db.query_moe(
+        num_tokens=64,
+        hidden_size=7168,
+        inter_size=2048,
+        topk=8,
+        num_experts=384,
+        moe_tp_size=1,
+        moe_ep_size=8,
+        quant_mode=common.MoEQuantMode.int4_wo,
+        workload_distribution="power_law_1.01",
+        is_context=False,
+    )
+
+    assert float(result) == pytest.approx(0.38183471679687503, rel=1e-9)
+    assert float(result) > PHASE397L_EP8_ANCHOR_MS_PER_LAYER
+
+
+def test_phase431_vllm_ep8_a2a_decode_uses_measured_curve_inside_coverage() -> None:
+    db = _database()
+
+    result = db.query_vllm_ep8_a2a_decode(
+        bucket_tokens=64,
+        hidden_size=7168,
+        topk=8,
+        moe_ep_size=8,
+    )
+
+    assert float(result) == pytest.approx(0.0852, rel=1e-9)
+
+
+def test_phase431_ep8_alltoall_fallback_uses_measured_curve_before_byte_model() -> None:
+    db = _database()
+
+    measured = _query_vllm_ep8_alltoall_fallback(
+        db,
+        bucket_tokens=64,
+        hidden_size=7168,
+        topk=8,
+        scale_factor=60,
+    )
+
+    assert float(measured) == pytest.approx(0.0852 * 60, rel=1e-9)
 
 
 def test_phase397v_int4_wo_calibrated_sol_scales_tp16_ep1_from_roofline() -> None:

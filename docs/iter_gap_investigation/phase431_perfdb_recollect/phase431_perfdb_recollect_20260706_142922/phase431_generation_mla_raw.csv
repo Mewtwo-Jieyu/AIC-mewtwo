@@ -1,0 +1,6 @@
+framework,version,device,op_name,kernel_source,mla_dtype,kv_cache_dtype,num_heads,batch_size,isl,tp_size,step,latency
+VLLM,0.19.0,NVIDIA H200,generation_mla,vllm_flash_attn_mla,float16,float16,16,8,1,8,8191,0.060549333691596985
+VLLM,0.19.0,NVIDIA H200,generation_mla,vllm_flash_attn_mla,float16,float16,16,16,1,8,8191,0.07607466479142506
+VLLM,0.19.0,NVIDIA H200,generation_mla,vllm_flash_attn_mla,float16,float16,16,32,1,8,8191,0.12895466883977255
+VLLM,0.19.0,NVIDIA H200,generation_mla,vllm_flash_attn_mla,float16,float16,16,64,1,8,8191,0.23467199007670084
+VLLM,0.19.0,NVIDIA H200,generation_mla,vllm_flash_attn_mla,float16,float16,16,128,1,8,8191,0.448853333791097

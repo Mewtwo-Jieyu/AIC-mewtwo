@@ -40,6 +40,20 @@ _PHASE397V_INT4_WO_MOE_ANCHOR_SOL_MS = 0.22047402666666666
 _PHASE397V_INT4_WO_MOE_SOL_SCALE = (
     _PHASE397V_INT4_WO_MOE_ANCHOR_MS_PER_LAYER / _PHASE397V_INT4_WO_MOE_ANCHOR_SOL_MS
 )
+_PHASE431_KERNEL_SOURCE_PREFIX = "phase431_"
+_PHASE431_DECODE_DISTRIBUTION_PREFIX = "phase431_decode_"
+
+
+def _is_phase431_kernel_source(kernel_source: str) -> bool:
+    return kernel_source.startswith(_PHASE431_KERNEL_SOURCE_PREFIX)
+
+
+def _prefer_phase431_measurement(existing: dict | None, candidate: dict) -> bool:
+    if existing is None:
+        return True
+    return _is_phase431_kernel_source(str(candidate.get("kernel_source", ""))) and not _is_phase431_kernel_source(
+        str(existing.get("kernel_source", ""))
+    )
 
 
 def _normalize_systems_paths(raw_paths: str | Iterable[str] | None) -> list[str]:
@@ -745,25 +759,26 @@ def load_moe_data(moe_file):
 
         moe_data = moe_low_latency_data if kernel_source == "moe_torch_flow_min_latency" else moe_default_data
 
+        entry = {
+            "latency": latency,
+            "power": power,
+            "energy": energy,
+            "kernel_source": kernel_source,
+        }
+        table = moe_data[quant_mode][workload_distribution][topk][num_experts][hidden_size][inter_size][moe_tp_size][
+            moe_ep_size
+        ]
         try:
-            # Check for conflict
-            moe_data[quant_mode][workload_distribution][topk][num_experts][hidden_size][inter_size][moe_tp_size][
-                moe_ep_size
-            ][num_tokens]
+            existing = table[num_tokens]
             logger.debug(
                 f"value conflict in moe data: {workload_distribution} {quant_mode} {topk} "
                 f"{num_experts} {hidden_size} {inter_size} {moe_tp_size} {moe_ep_size} "
                 f"{num_tokens}"
             )
+            if _prefer_phase431_measurement(existing, entry):
+                table[num_tokens] = entry
         except KeyError:
-            # Store all three values
-            moe_data[quant_mode][workload_distribution][topk][num_experts][hidden_size][inter_size][moe_tp_size][
-                moe_ep_size
-            ][num_tokens] = {
-                "latency": latency,
-                "power": power,
-                "energy": energy,  # NEW: precomputed energy
-            }
+            table[num_tokens] = entry
 
     return moe_default_data, moe_low_latency_data
 
@@ -835,6 +850,65 @@ def load_vllm_module_data(vllm_module_file):
             }
 
     return vllm_module_data
+
+
+def load_vllm_ep8_a2a_decode_data(vllm_ep8_a2a_decode_file):
+    """
+    Load Phase431 vLLM EP8 all-to-all decode measurements.
+
+    This is not an exact-key module table. It is a small measured curve for
+    decode bucket sizes where the old byte-only fallback missed the latency
+    floor. Queries stay in-range; callers decide what to do outside coverage.
+    """
+    if not os.path.exists(vllm_ep8_a2a_decode_file):
+        logger.warning(f"vLLM EP8 A2A decode data file {vllm_ep8_a2a_decode_file} not found.")
+        return None
+
+    required_columns = {
+        "op_name",
+        "kernel_source",
+        "bucket_tokens",
+        "hidden_size",
+        "topk",
+        "moe_ep_size",
+        "backend",
+        "manager",
+        "latency",
+    }
+    data = defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))
+
+    with open(vllm_ep8_a2a_decode_file, encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        fieldnames = set(reader.fieldnames or [])
+        missing = required_columns - fieldnames
+        if missing:
+            raise ValueError(f"vLLM EP8 A2A decode perf table missing required columns: {sorted(missing)}")
+
+        for row in reader:
+            bucket_tokens = int(row["bucket_tokens"])
+            hidden_size = int(row["hidden_size"])
+            topk = int(row["topk"])
+            moe_ep_size = int(row["moe_ep_size"])
+            latency = float(row["latency"])
+            entry = {
+                "latency": latency,
+                "power": float(row.get("power") or 0.0),
+                "energy": 0.0,
+                "kernel_source": row["kernel_source"],
+                "op_name": row["op_name"],
+                "backend": row["backend"],
+                "manager": row["manager"],
+            }
+            entry["energy"] = entry["power"] * latency
+            table = data[hidden_size][topk][moe_ep_size]
+            if bucket_tokens in table:
+                raise ValueError(
+                    "duplicate vLLM EP8 A2A decode key: "
+                    f"{hidden_size=}, {topk=}, {moe_ep_size=}, {bucket_tokens=}"
+                )
+            table[bucket_tokens] = entry
+
+    return data
 
 
 def load_context_attention_data(context_attention_file):
@@ -1084,6 +1158,7 @@ def load_generation_mla_data(generation_mla_file):
         logger.debug(f"Legacy database format detected in {generation_mla_file} - power will default to 0.0")
 
     for row in rows:
+        kernel_source = row.get("kernel_source", "")
         quant_mode, kv_cache_dtype, b, s, step, latency = (  # noqa: F841
             row["mla_dtype"],
             row["kv_cache_dtype"],
@@ -1114,17 +1189,21 @@ def load_generation_mla_data(generation_mla_file):
 
         kv_cache_dtype = common.KVCacheQuantMode[kv_cache_dtype]
 
+        entry = {
+            "latency": latency,
+            "power": power,
+            "energy": energy,
+            "kernel_source": kernel_source,
+        }
+        table = generation_mla_data[kv_cache_dtype][num_heads][b]
         try:
             # Check for conflict
-            generation_mla_data[kv_cache_dtype][num_heads][b][s]
+            existing = table[s]
             logger.debug(f"value conflict in generation mla data: {kv_cache_dtype} {num_heads} {b} {s} ")
+            if _prefer_phase431_measurement(existing, entry):
+                table[s] = entry
         except KeyError:
-            # Store all three values
-            generation_mla_data[kv_cache_dtype][num_heads][b][s] = {
-                "latency": latency,
-                "power": power,
-                "energy": energy,  # NEW: precomputed energy
-            }
+            table[s] = entry
 
     return generation_mla_data
 
@@ -1920,6 +1999,7 @@ class PerfDatabase:
 
         data_dir = os.path.join(systems_root, self.system_spec["data_dir"], backend, version)
         self._vllm_module_data = None
+        self._vllm_ep8_a2a_decode_data = None
         nccl_data_dir = os.path.join(
             systems_root,
             self.system_spec["data_dir"],
@@ -1997,6 +2077,9 @@ class PerfDatabase:
             vllm_module_path = os.path.join(data_dir, common.PerfDataFilename.vllm_module.value)
             if os.path.exists(vllm_module_path):
                 self._vllm_module_data = load_vllm_module_data(vllm_module_path)
+            vllm_ep8_a2a_decode_path = os.path.join(data_dir, common.PerfDataFilename.vllm_ep8_a2a_decode.value)
+            if os.path.exists(vllm_ep8_a2a_decode_path):
+                self._vllm_ep8_a2a_decode_data = load_vllm_ep8_a2a_decode_data(vllm_ep8_a2a_decode_path)
             self._compute_scale_data = None
             self._scale_matrix_data = None
         else:  # TRTLLM
@@ -4564,6 +4647,44 @@ class PerfDatabase:
         return PerformanceResult(row["latency"], energy=row.get("energy", 0.0))
 
     @functools.lru_cache(maxsize=32768)
+    def query_vllm_ep8_a2a_decode(
+        self,
+        bucket_tokens: int,
+        hidden_size: int,
+        topk: int,
+        moe_ep_size: int,
+    ) -> PerformanceResult:
+        """
+        Query Phase431 vLLM EP8 decode all-to-all measurements.
+
+        The measured curve is only valid inside its collected bucket range.
+        """
+        if self.backend != common.BackendName.vllm.value:
+            raise ValueError(f"query_vllm_ep8_a2a_decode requires backend='vllm', got {self.backend!r}")
+        if self._vllm_ep8_a2a_decode_data is None:
+            raise PerfDataNotAvailableError(
+                f"vLLM EP8 A2A decode perf table is missing for system='{self.system}', "
+                f"backend='{self.backend}', version='{self.version}'."
+            )
+
+        try:
+            table = self._vllm_ep8_a2a_decode_data[hidden_size][topk][moe_ep_size]
+        except KeyError as exc:
+            raise PerfDataNotAvailableError(
+                f"Missing vLLM EP8 A2A decode family: {hidden_size=}, {topk=}, {moe_ep_size=}"
+            ) from exc
+        if not table:
+            raise PerfDataNotAvailableError(
+                f"Empty vLLM EP8 A2A decode family: {hidden_size=}, {topk=}, {moe_ep_size=}"
+            )
+
+        left, right = self._nearest_1d_point_helper(bucket_tokens, list(table.keys()), inner_only=True)
+        result = self._interp_1d([left, right], [table[left], table[right]], bucket_tokens)
+        if isinstance(result, dict):
+            return PerformanceResult(result["latency"], energy=result.get("energy", 0.0))
+        return PerformanceResult(result, energy=0.0)
+
+    @functools.lru_cache(maxsize=32768)
     def query_moe(
         self,
         num_tokens: int,
@@ -4713,6 +4834,25 @@ class PerfDatabase:
                 return False
             return min(tokens) <= num_tokens <= max(tokens)
 
+        def phase431_decode_distribution() -> str:
+            return f"{_PHASE431_DECODE_DISTRIBUTION_PREFIX}{workload_distribution}"
+
+        def measured_int4_wo_decode_table_covers_request() -> bool:
+            if not use_phase397v_int4_wo_calibrated_sol():
+                return False
+            if is_context or self._moe_data is None:
+                return False
+            try:
+                moe_dict = self._moe_data[quant_mode][phase431_decode_distribution()][topk][num_experts][hidden_size][
+                    inter_size
+                ][moe_tp_size][moe_ep_size]
+            except KeyError:
+                return False
+            tokens = list(moe_dict.keys())
+            if not tokens:
+                return False
+            return min(tokens) <= num_tokens <= max(tokens)
+
         if database_mode is None:
             database_mode = self._default_database_mode
         if database_mode == common.DatabaseMode.SOL:
@@ -4756,7 +4896,11 @@ class PerfDatabase:
             )
             return PerformanceResult(emp_latency, energy=0.0)
         else:
-            if use_phase397v_int4_wo_calibrated_sol() and not measured_int4_wo_context_table_covers_request():
+            if (
+                use_phase397v_int4_wo_calibrated_sol()
+                and not measured_int4_wo_context_table_covers_request()
+                and not measured_int4_wo_decode_table_covers_request()
+            ):
                 return PerformanceResult(get_phase397v_int4_wo_calibrated_sol(), energy=0.0)
             try:
                 if self.backend == common.BackendName.sglang.value:
@@ -4872,9 +5016,12 @@ class PerfDatabase:
                             f"backend='{self.backend}', version='{self.version}'. "
                             "Please use HYBRID or EMPIRICAL database mode, or provide the data file."
                         )
-                    used_workload_distribution = (
-                        workload_distribution if workload_distribution in self._moe_data[quant_mode] else "uniform"
-                    )
+                    if measured_int4_wo_decode_table_covers_request():
+                        used_workload_distribution = phase431_decode_distribution()
+                    else:
+                        used_workload_distribution = (
+                            workload_distribution if workload_distribution in self._moe_data[quant_mode] else "uniform"
+                        )
                     moe_dict = self._moe_data[quant_mode][used_workload_distribution][topk][num_experts][hidden_size][
                         inter_size
                     ][moe_tp_size][moe_ep_size]

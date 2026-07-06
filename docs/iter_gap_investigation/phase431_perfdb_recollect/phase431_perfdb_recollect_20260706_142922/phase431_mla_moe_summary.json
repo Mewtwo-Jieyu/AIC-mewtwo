@@ -1,0 +1,45 @@
+{
+  "committed_source_root": "/tmp/phase431_committed_head",
+  "mla": {
+    "attempts": [
+      {
+        "attempt": 1,
+        "complete": true,
+        "monotonic": true,
+        "values": {
+          "8": 0.060549333691596985,
+          "16": 0.07607466479142506,
+          "32": 0.12895466883977255,
+          "64": 0.23467199007670084,
+          "128": 0.448853333791097
+        }
+      }
+    ],
+    "name": "mla",
+    "ok": true,
+    "selected_attempt": 1
+  },
+  "model_path": "/mnt/shared-storage-gpfs2/gpfs2-shared-public/huggingface/zskj-hub/models--moonshotai--Kimi-K2.5",
+  "moe": {
+    "attempts": [
+      {
+        "attempt": 1,
+        "complete": true,
+        "monotonic": true,
+        "values": {
+          "8": 0.21964559555053711,
+          "16": 0.27563871383666994,
+          "32": 0.32166847229003903,
+          "64": 0.38183471679687503,
+          "128": 0.49241985321044923
+        }
+      }
+    ],
+    "name": "moe",
+    "ok": true,
+    "selected_attempt": 1
+  },
+  "source": "phase431_perfdb_recollect",
+  "timestamp_unix": 1783348166.502731,
+  "worker": "gpu-lg-cmc-h-h200-2172.host.h.pjlab.org.cn"
+}

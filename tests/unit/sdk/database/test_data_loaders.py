@@ -28,6 +28,7 @@ from aiconfigurator.sdk.perf_database import (
     load_mla_bmm_data,
     load_moe_data,
     load_nccl_data,
+    load_vllm_ep8_a2a_decode_data,
     load_wideep_moe_compute_data,
     set_systems_paths,
 )
@@ -654,6 +655,73 @@ def test_load_generation_mla_data_basic(tmp_path):
     assert 1 in data[kcd][num_heads]  # b == 1
     assert 3 in data[kcd][num_heads][1]  # s = original 2 + step 1 = 3
     assert data[kcd][num_heads][1][3]["latency"] == pytest.approx(2.222)
+
+
+def test_load_generation_mla_data_prefers_phase431_source_for_same_key(tmp_path):
+    csv_file = tmp_path / "gen_mla_phase431.csv"
+    headers = (
+        "framework,version,device,op_name,kernel_source,mla_dtype,kv_cache_dtype,"
+        "num_heads,batch_size,isl,tp_size,step,latency\n"
+    )
+    old_row = [
+        "VLLM",
+        "0.19.0",
+        "NVIDIA H200",
+        "generation_mla",
+        "vllm_flash_attn_mla",
+        "float16",
+        "float16",
+        "16",
+        "64",
+        "1",
+        "8",
+        "8191",
+        "0.25",
+    ]
+    phase431_row = [
+        "VLLM",
+        "0.19.0",
+        "NVIDIA H200",
+        "generation_mla",
+        "phase431_vllm_flash_attn_mla",
+        "float16",
+        "float16",
+        "16",
+        "64",
+        "1",
+        "8",
+        "8191",
+        "0.42",
+    ]
+    csv_file.write_text(headers + ",".join(old_row) + "\n" + ",".join(phase431_row) + "\n")
+
+    data = load_generation_mla_data(str(csv_file))
+
+    result = data[KVCacheQuantMode.float16][16][64][8192]
+    assert result["latency"] == pytest.approx(0.42)
+    assert result["kernel_source"] == "phase431_vllm_flash_attn_mla"
+
+
+def test_load_vllm_ep8_a2a_decode_data_basic(tmp_path):
+    csv_file = tmp_path / "vllm_ep8_a2a_decode_perf.txt"
+    csv_file.write_text(
+        "\n".join(
+            [
+                "framework,version,device,op_name,kernel_source,bucket_tokens,hidden_size,topk,moe_ep_size,backend,manager,latency",
+                "VLLM,0.19.0,NVIDIA H200,vllm_ep_group_dispatch_router_logits_plus_combine,phase431_AgRsAll2AllManager,8,7168,8,8,allgather_reducescatter,AgRsAll2AllManager,0.074144",
+                "VLLM,0.19.0,NVIDIA H200,vllm_ep_group_dispatch_router_logits_plus_combine,phase431_AgRsAll2AllManager,128,7168,8,8,allgather_reducescatter,AgRsAll2AllManager,0.100032",
+            ]
+        )
+        + "\n"
+    )
+
+    data = load_vllm_ep8_a2a_decode_data(str(csv_file))
+
+    result = data[7168][8][8][128]
+    assert result["latency"] == pytest.approx(0.100032)
+    assert result["kernel_source"] == "phase431_AgRsAll2AllManager"
+    assert result["backend"] == "allgather_reducescatter"
+    assert result["manager"] == "AgRsAll2AllManager"
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -503,6 +503,7 @@ class PerfDataFilename(Enum):
     scale_matrix = "scale_matrix_perf.txt"
     mamba2 = "mamba2_perf.txt"
     vllm_module = "vllm_module_perf.txt"
+    vllm_ep8_a2a_decode = "vllm_ep8_a2a_decode_perf.txt"
 
 
 QuantMapping = namedtuple("QuantMapping", ["memory", "compute", "name"])
