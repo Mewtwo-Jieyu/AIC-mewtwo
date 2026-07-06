@@ -11,6 +11,7 @@ set -euo pipefail
 WORKDIR="${WORKDIR:-/mnt/shared-storage-user/ailab-sys/zhaojieyu/aic}"
 MODEL_PATH="${MODEL_PATH:-/mnt/shared-storage-gpfs2/gpfs2-shared-public/huggingface/zskj-hub/models--moonshotai--Kimi-K2.5}"
 SERVED_MODEL_NAME="${SERVED_MODEL_NAME:-kimi-k2.5}"
+PHASE_NAME="${PHASE_NAME:-phase412}"
 OUT_ROOT="${OUT_ROOT:-docs/iter_gap_investigation/phase412_arrival_sweep}"
 TMP_ROOT="${TMP_ROOT:-/tmp/phase412_arrival_sweep_$$}"
 PORT="${PORT:-20909}"
@@ -238,7 +239,7 @@ main() {
   )
 
   cat >"${out_dir}/meta.json" <<EOF
-{"name": "${SCENARIO}", "phase": "phase412", "bench_num_prompts": ${BENCH_NUM_PROMPTS}, "tp": ${TP}, "dp": ${DP}, "ep": ${EP}, "isl": ${ISL}, "osl": ${OSL}, "max_num_batched_tokens": ${MAX_NUM_BATCHED_TOKENS}, "batch_size": ${BENCH_MAX_CONCURRENCY}, "world_size": $((TP * DP)), "port": ${PORT}, "prefix_caching": false, "gpu_memory_utilization": ${GPU_MEMORY_UTILIZATION}, "max_model_len": ${MAX_MODEL_LEN}, "max_num_seqs": ${MAX_NUM_SEQS}, "enable_logging_iteration_details": true, "cudagraph_metrics": true, "metrics_poll_interval_s": ${METRICS_POLL_INTERVAL_S}}
+{"name": "${SCENARIO}", "phase": "${PHASE_NAME}", "bench_num_prompts": ${BENCH_NUM_PROMPTS}, "tp": ${TP}, "dp": ${DP}, "ep": ${EP}, "isl": ${ISL}, "osl": ${OSL}, "max_num_batched_tokens": ${MAX_NUM_BATCHED_TOKENS}, "batch_size": ${BENCH_MAX_CONCURRENCY}, "world_size": $((TP * DP)), "port": ${PORT}, "prefix_caching": false, "gpu_memory_utilization": ${GPU_MEMORY_UTILIZATION}, "max_model_len": ${MAX_MODEL_LEN}, "max_num_seqs": ${MAX_NUM_SEQS}, "enable_logging_iteration_details": true, "cudagraph_metrics": true, "metrics_poll_interval_s": ${METRICS_POLL_INTERVAL_S}}
 EOF
 
   log "serve_command: ${serve_cmd[*]}" | tee -a "${OUT_ROOT}/driver.log"
@@ -291,8 +292,8 @@ PY
   stop_service
   wait_for_gpu_drain || { log "warn: drain timeout after point ${SCENARIO}"; }
   snapshot_gpu_apps "${OUT_ROOT}/gpu_compute_apps_after.txt"
-  pgrep -af "vllm|ray|APIServer|EngineCore|run_openai_fixed_shape_benchmark" >"${OUT_ROOT}/process_residual_after.txt" || true
-  log "PHASE412_DONE bench_exit=${bench_exit}" | tee -a "${OUT_ROOT}/driver.log"
+  pgrep -af "vllm.entrypoints.cli.main serve|ray::|raylet|gcs_server|VLLM::APIServer|VLLM::EngineCore|run_openai_fixed_shape_benchmark" >"${OUT_ROOT}/process_residual_after.txt" || true
+  log "${PHASE_NAME}_DONE bench_exit=${bench_exit}" | tee -a "${OUT_ROOT}/driver.log"
   return "${bench_exit}"
 }
 
