@@ -1,0 +1,6 @@
+[2026-07-06T16:28:15+00:00] nsys_available=false profiler_mode=torch_profiler_cpu_fallback
+[2026-07-06T16:28:18+00:00] baseline_gpu_pids=[]
+[2026-07-06T16:28:29+00:00] attempt=1 serve_command: python3 -m vllm.entrypoints.cli.main serve /mnt/shared-storage-gpfs2/gpfs2-shared-public/huggingface/zskj-hub/models--moonshotai--Kimi-K2.5 --served-model-name kimi-k2.5 --port 20933 --tensor-parallel-size 4 --data-parallel-size 2 --enable-expert-parallel --max-model-len 262144 --gpu-memory-utilization 0.80 --max-num-batched-tokens 32000 --max-num-seqs 256 --enable-chunked-prefill --no-enable-prefix-caching --enable-logging-iteration-details --cudagraph-metrics --profiler-config {"profiler":"torch","torch_profiler_dir":"/tmp/phase433_nsys_prefill_62901/K2.5-tp4ep8dp2-32k3k/attempt1/prof","torch_profiler_with_stack":false,"torch_profiler_record_shapes":true,"warmup_iterations":1,"active_iterations":24,"wait_iterations":0} --mm-encoder-tp-mode data --skip-mm-profiling --trust-remote-code --enable-auto-tool-choice --tool-call-parser kimi_k2 --reasoning-parser kimi_k2
+[2026-07-06T16:28:29+00:00] attempt=1 service_pid=63015
+[2026-07-06T16:37:58+00:00] attempt=1 accepted
+[2026-07-06T16:37:58+00:00] PHASE433_DONE

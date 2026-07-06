@@ -1,0 +1,1 @@
+{"max_ctx_tokens": 2, "min_ctx_tokens": 31000, "passed": true, "prefill_step_count": 88, "scenario": "K2.5-tp4ep8dp2-32k3k", "trace_count": 8, "window": "prefill"}
