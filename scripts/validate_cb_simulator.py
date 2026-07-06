@@ -673,6 +673,39 @@ def _make_cb_config(
     )
 
 
+def _assert_multi_config_cb_config(point: MultiConfigPoint, config: CBSimConfig) -> None:
+    expected_blocks = _multi_config_num_gpu_blocks(point)
+    if config.max_num_batched_tokens != point.max_num_batched_tokens:
+        raise AssertionError(
+            f"{point.name}: max_num_batched_tokens={config.max_num_batched_tokens} "
+            f"!= {point.max_num_batched_tokens}"
+        )
+    if config.num_gpu_blocks != expected_blocks:
+        raise AssertionError(f"{point.name}: num_gpu_blocks={config.num_gpu_blocks} != {expected_blocks}")
+    if config.block_size != KV_CACHE_BLOCK_SIZE:
+        raise AssertionError(f"{point.name}: block_size={config.block_size} != {KV_CACHE_BLOCK_SIZE}")
+    if config.max_num_seqs != 256:
+        raise AssertionError(f"{point.name}: max_num_seqs={config.max_num_seqs} != 256")
+
+
+def _make_multi_config_cb_config(
+    point: MultiConfigPoint,
+    *,
+    overlap_factor: float,
+    ep8_per_iteration_overhead_ms: float,
+) -> CBSimConfig:
+    config = _make_cb_config(
+        point.isl,
+        point.batch_size,
+        max_num_batched_tokens=point.max_num_batched_tokens,
+        overlap_factor=overlap_factor,
+        per_iteration_overhead_ms=ep8_per_iteration_overhead_ms,
+        num_gpu_blocks=_multi_config_num_gpu_blocks(point),
+    )
+    _assert_multi_config_cb_config(point, config)
+    return config
+
+
 def _rank_by_output(values: dict[str, float]) -> dict[str, int]:
     ordered = sorted(values.items(), key=lambda item: (-item[1], item[0]))
     return {name: rank for rank, (name, _) in enumerate(ordered, start=1)}
@@ -697,13 +730,10 @@ def _run_multi_config_diagnostic_raw(
             loaded[key] = (model, db)
         model, db = loaded[key]
 
-        cb_config = _make_cb_config(
-            pt.isl,
-            pt.batch_size,
-            max_num_batched_tokens=pt.max_num_batched_tokens,
+        cb_config = _make_multi_config_cb_config(
+            pt,
             overlap_factor=overlap_factor,
-            per_iteration_overhead_ms=ep8_per_iteration_overhead_ms,
-            num_gpu_blocks=_multi_config_num_gpu_blocks(pt),
+            ep8_per_iteration_overhead_ms=ep8_per_iteration_overhead_ms,
         )
         cb_summary = backend.run_agg(
             model,
@@ -971,18 +1001,16 @@ def _run_multi_config_validation(
             loaded[key] = (model, db)
         model, db = loaded[key]
 
-        cb_config = _make_cb_config(
-            pt.isl,
-            pt.batch_size,
+        cb_config = _make_multi_config_cb_config(
+            pt,
             overlap_factor=overlap_factor,
-            per_iteration_overhead_ms=ep8_per_iteration_overhead_ms,
-            num_gpu_blocks=_multi_config_num_gpu_blocks(pt),
+            ep8_per_iteration_overhead_ms=ep8_per_iteration_overhead_ms,
         )
         cb_summary = backend.run_agg(
             model,
             db,
             RuntimeConfig(batch_size=pt.batch_size, isl=pt.isl, osl=pt.osl),
-            ctx_tokens=pt.isl,
+            ctx_tokens=pt.max_num_batched_tokens,
             database_mode=common.DatabaseMode.HYBRID,
             method="cb_sim",
             cb_config=cb_config,

@@ -224,6 +224,28 @@ def _representative_prefill_step_ms(validate: ModuleType, pt: Any, initial_reqs:
     )
 
 
+def _make_trace_cb_config(validate: ModuleType, pt: Any) -> Any:
+    if hasattr(validate, "_make_multi_config_cb_config"):
+        return validate._make_multi_config_cb_config(
+            pt,
+            overlap_factor=0.0,
+            ep8_per_iteration_overhead_ms=validate.DEFAULT_EP8_PER_ITERATION_OVERHEAD_MS,
+        )
+    return validate._make_cb_config(
+        pt.isl,
+        pt.batch_size,
+        overlap_factor=0.0,
+        per_iteration_overhead_ms=validate.DEFAULT_EP8_PER_ITERATION_OVERHEAD_MS,
+        num_gpu_blocks=validate._multi_config_num_gpu_blocks(pt),
+    )
+
+
+def _trace_ctx_tokens(validate: ModuleType, pt: Any) -> int:
+    if hasattr(validate, "_make_multi_config_cb_config"):
+        return int(pt.max_num_batched_tokens)
+    return int(pt.isl)
+
+
 def collect_trace_rows(repo_root: Path = REPO_ROOT, label: str = "after") -> list[dict[str, str]]:
     label = _scenario_label(label)
     validate = _load_validate_module(repo_root)
@@ -240,18 +262,12 @@ def collect_trace_rows(repo_root: Path = REPO_ROOT, label: str = "after") -> lis
             loaded[key] = validate._load_model_and_db(tp=pt.tp, dp=pt.dp, moe_tp=pt.moe_tp, moe_ep=pt.moe_ep)[:2]
         model, db = loaded[key]
         num_gpu_blocks = validate._multi_config_num_gpu_blocks(pt)
-        cb_config = validate._make_cb_config(
-            pt.isl,
-            pt.batch_size,
-            overlap_factor=0.0,
-            per_iteration_overhead_ms=validate.DEFAULT_EP8_PER_ITERATION_OVERHEAD_MS,
-            num_gpu_blocks=num_gpu_blocks,
-        )
+        cb_config = _make_trace_cb_config(validate, pt)
         cb_summary = backend.run_agg(
             model,
             db,
             validate.RuntimeConfig(batch_size=pt.batch_size, isl=pt.isl, osl=pt.osl),
-            ctx_tokens=pt.isl,
+            ctx_tokens=_trace_ctx_tokens(validate, pt),
             database_mode=validate.common.DatabaseMode.HYBRID,
             method="cb_sim",
             cb_config=cb_config,
