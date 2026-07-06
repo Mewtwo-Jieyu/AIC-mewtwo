@@ -125,3 +125,81 @@ def test_phase416_csv_roundtrip_keeps_trace_and_summary_rows(tmp_path):
     with out.open(newline="") as f:
         loaded = list(csv.DictReader(f))
     assert [row["row_type"] for row in loaded] == ["query_trace", "summary"]
+
+
+def test_phase416_fixed_verdict_renders_fixed_diagnosis():
+    rows = phase416.build_rows_from_trace(
+        scenario=phase416.DEFAULT_SCENARIO,
+        artifact_dir="fake/artifact",
+        trace_records=[
+            {
+                "component": "moe_compute",
+                "phase": "mixed_prefill",
+                "op_input_tokens": 32006,
+                "scaled_tokens": 32000,
+                "expected_tokens": 32000,
+                "query_path": "moe_perf_lookup",
+                "perfdb_table": "moe_perf",
+                "returned_ms": 352.7,
+                "roofline_lower_bound_ms": 455.8,
+            },
+            {
+                "component": "ep_dispatch_combine",
+                "phase": "mixed_prefill",
+                "op_input_tokens": 32006,
+                "scaled_tokens": 32000,
+                "expected_tokens": 32000,
+                "query_path": "ep8_alltoall_roofline",
+                "perfdb_table": "roofline",
+                "returned_ms": 497.5,
+                "roofline_lower_bound_ms": 489.3,
+            },
+        ],
+        coverage_rows=[],
+        phase414_prefill_gap_ms=1000.0,
+    )
+
+    md = phase416.render_phase416_md(rows)
+
+    assert "now queries `moe_perf.txt`" in md
+    assert "EP8 all-to-all byte model" in md
+    assert "Component roofline gate is now clean" in md
+    assert "提前走 Phase397v" not in md
+
+
+def test_phase416_corrected_mixed_step_only_lifts_undercharged_terms():
+    rows = phase416.build_rows_from_trace(
+        scenario=phase416.DEFAULT_SCENARIO,
+        artifact_dir="fake/artifact",
+        trace_records=[
+            {
+                "component": "moe_compute",
+                "phase": "mixed_prefill",
+                "op_input_tokens": 32006,
+                "scaled_tokens": 32000,
+                "expected_tokens": 32000,
+                "query_path": "moe_perf_lookup",
+                "perfdb_table": "moe_perf",
+                "returned_ms": 352.7,
+                "roofline_lower_bound_ms": 170.8,
+            },
+            {
+                "component": "ep_dispatch_combine",
+                "phase": "mixed_prefill",
+                "op_input_tokens": 32006,
+                "scaled_tokens": 32000,
+                "expected_tokens": 32000,
+                "query_path": "ep8_alltoall_roofline",
+                "perfdb_table": "roofline",
+                "returned_ms": 497.5,
+                "roofline_lower_bound_ms": 489.3,
+            },
+        ],
+        coverage_rows=[],
+        phase414_prefill_gap_ms=1000.0,
+        phase415_mixed_step_ms=1818.6,
+    )
+
+    summary = [row for row in rows if row["row_type"] == "summary"][0]
+
+    assert summary["corrected_mixed_step_ms"] == "1818.600000"

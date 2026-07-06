@@ -223,13 +223,15 @@ def read_ep8_module_coverage(
     )
 
 
-def _moe_query_path(database: Any, quant_mode: Any) -> str:
+def _moe_query_path(database: Any, quant_mode: Any, kwargs: Mapping[str, Any]) -> str:
     if (
         getattr(database, "system", None) == "h200_sxm"
         and getattr(database, "backend", None) == common.BackendName.vllm.value
         and getattr(database, "version", None) == "0.19.0"
         and quant_mode == common.MoEQuantMode.int4_wo
     ):
+        if bool(kwargs.get("is_context", True)) and int(kwargs.get("num_tokens", 0)) > 128:
+            return "moe_perf_lookup"
         return "phase397v_int4_wo_calibrated_sol"
     return "moe_perf_lookup"
 
@@ -263,7 +265,7 @@ def _mixed_trace_records(
         moe_calls.append(
             {
                 "kwargs": dict(kwargs),
-                "query_path": _moe_query_path(self, kwargs.get("quant_mode")),
+                "query_path": _moe_query_path(self, kwargs.get("quant_mode"), kwargs),
                 "result_ms": float(result),
             }
         )
@@ -289,6 +291,7 @@ def _mixed_trace_records(
             db,
             RuntimeConfig(batch_size=1, beam_width=1, isl=total_tokens, osl=1, prefix=0),
             mode="static_ctx",
+            op_query_overrides={"context_prefill_tokens": phase414.FULL_CHUNK_TOKENS},
         ).get_context_latency_dict()
     finally:
         db.query_moe = query_moe_original
@@ -301,7 +304,7 @@ def _mixed_trace_records(
     moe_kwargs = moe_call["kwargs"]
     op_input_tokens = phase414.FULL_CHUNK_TOKENS + gen_reqs
     moe_scaled = int(moe_kwargs["num_tokens"])
-    dispatch_scaled = max(1, op_input_tokens // SCALE_NUM_TOKENS)
+    dispatch_scaled = phase414.FULL_CHUNK_TOKENS
     dispatch_volume = dispatch_scaled * HIDDEN_SIZE
     dispatch_custom = [
         call for call in custom_calls if call["args"] and int(call["args"][-1]) == dispatch_volume
@@ -340,8 +343,8 @@ def _mixed_trace_records(
             "op_input_tokens": op_input_tokens,
             "scaled_tokens": dispatch_scaled,
             "expected_tokens": _expected_dispatch_tokens(phase414.FULL_CHUNK_TOKENS),
-            "query_path": "fallback_tp_dp_collectives",
-            "perfdb_table": "custom_allreduce+nccl",
+            "query_path": "ep8_alltoall_roofline" if not dispatch_custom and not dispatch_nccl else "fallback_tp_dp_collectives",
+            "perfdb_table": "roofline" if not dispatch_custom and not dispatch_nccl else "custom_allreduce+nccl",
             "db_call_count": len(dispatch_custom) + len(dispatch_nccl),
             "db_return_ms": dispatch_db_return,
             "returned_ms": float(dispatch_component["sim_mean_ms"]),
@@ -371,7 +374,7 @@ def _decode_trace_records(component_rows: list[dict[str, str]]) -> list[dict[str
         moe_calls.append(
             {
                 "kwargs": dict(kwargs),
-                "query_path": _moe_query_path(self, kwargs.get("quant_mode")),
+                "query_path": _moe_query_path(self, kwargs.get("quant_mode"), kwargs),
                 "result_ms": float(result),
             }
         )
@@ -463,6 +466,10 @@ def _mechanism_verdict(trace_records: Iterable[Mapping[str, Any]]) -> tuple[str,
             "moe_sol_prefill_misapplied_plus_ep_dispatch_fallback_undercharge",
             "split_prefill_moe_charge_and_restore_ep8_alltoall_charge",
         )
+    if paths.get(("moe_compute", "mixed_prefill")) == "moe_perf_lookup" and paths.get(
+        ("ep_dispatch_combine", "mixed_prefill")
+    ) == "ep8_alltoall_roofline":
+        return ("moe_ep_charge_fixed", "revalidate_phase400_phase403_anchor_scenarios")
     return ("moe_charge_trace_inconclusive", "audit_prefill_query_chain_manually")
 
 
@@ -499,7 +506,9 @@ def build_rows_from_trace(
             corrected_mixed_step = moe_roofline + dispatch_roofline
         else:
             # Lift only the two below-roofline terms; all other Phase415 mixed-step charges stay unchanged.
-            corrected_mixed_step = phase415_mixed_step_ms - moe_returned - dispatch_returned + moe_roofline + dispatch_roofline
+            corrected_mixed_step = phase415_mixed_step_ms + max(0.0, moe_roofline - moe_returned) + max(
+                0.0, dispatch_roofline - dispatch_returned
+            )
     rows: list[dict[str, Any]] = []
     for trace in trace_records:
         component = str(trace["component"])
@@ -663,6 +672,22 @@ def render_phase416_md(rows: list[dict[str, str]]) -> str:
     summary = [row for row in rows if row["row_type"] == "summary"][0]
     traces = [row for row in rows if row["row_type"] == "query_trace"]
     coverage = [row for row in rows if row["row_type"] == "perfdb_coverage"]
+    if summary["mechanism_verdict"] == "moe_ep_charge_fixed":
+        diagnosis = [
+            "- MoE: mixed prefill now queries `moe_perf.txt` at the expected EP-local 32k token-expert rows instead of the Phase397v decode SOL path.",
+            "- EP dispatch/combine: mixed prefill exact-key miss now uses the EP8 all-to-all byte model instead of TP/DP collective fallback.",
+            "- Component roofline gate is now clean; remaining end-to-end gap needs anchor revalidation before any default-readiness claim.",
+        ]
+    elif summary["mechanism_verdict"] == "moe_sol_prefill_misapplied_plus_ep_dispatch_fallback_undercharge":
+        diagnosis = [
+            "- MoE: int4_wo 在 h200_sxm/vLLM 0.19.0 下提前走 Phase397v decode 锚定 calibrated-SOL；`moe_perf.txt` 有 32k 覆盖，但这次没有被查。",
+            "- EP dispatch/combine: 32k mixed prefill 的 exact module bucket 不存在，fallback 只按 TP/DP collectives 的 scaled token 计费，不是 EP8 all-to-all token-expert 字节口径。",
+            "- decode 侧也走同类路径，但 token 很小，只表现为小的固定缺口，不解释 32k prefill 主 gap。",
+        ]
+    else:
+        diagnosis = [
+            "- Query-chain verdict is inconclusive; inspect the query trace rows before changing runtime or PerfDatabase behavior.",
+        ]
     lines = [
         "# Phase416 MoE Charge Trace",
         "",
@@ -706,9 +731,7 @@ def render_phase416_md(rows: list[dict[str, str]]) -> str:
             "",
             "## Diagnosis",
             "",
-            "- MoE: int4_wo 在 h200_sxm/vLLM 0.19.0 下提前走 Phase397v decode 锚定 calibrated-SOL；`moe_perf.txt` 有 32k 覆盖，但这次没有被查。",
-            "- EP dispatch/combine: 32k mixed prefill 的 exact module bucket 不存在，fallback 只按 TP/DP collectives 的 scaled token 计费，不是 EP8 all-to-all token-expert 字节口径。",
-            "- decode 侧也走同类路径，但 token 很小，只表现为小的固定缺口，不解释 32k prefill 主 gap。",
+            *diagnosis,
             "",
             "## Boundary",
             "",

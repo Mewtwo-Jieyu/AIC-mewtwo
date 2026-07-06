@@ -113,3 +113,10 @@ def test_phase415_csv_roundtrip_keeps_component_rows(tmp_path):
         "decode_component",
         "summary",
     ]
+
+
+def test_phase415_moe_roofline_uses_ep_local_wna16_work() -> None:
+    per_step = phase415._roofline_lower_bounds(1)
+
+    assert per_step["moe_compute"] == pytest.approx(170.822563, rel=1e-6)
+    assert per_step["ep_dispatch_combine"] == pytest.approx(489.335467, rel=1e-6)

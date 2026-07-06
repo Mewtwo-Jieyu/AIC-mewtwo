@@ -35,11 +35,13 @@ HIDDEN_SIZE = 7168
 INTER_SIZE = 2048
 TOPK = 8
 MOE_LAYERS = 60
+MOE_EP_SIZE = 8
 ATTENTION_LAYERS = 61
 TP4_LOCAL_HEADS = 16
 MLA_QK_DIM = 192
 MLA_V_DIM = 128
 H200_TENSOR_TFLOPS = 1979.0
+MOE_WNA16_TENSOR_TFLOPS = 990.0
 NVLINK_GBPS = 900.0
 BYTES_FP16 = 2.0
 
@@ -140,6 +142,7 @@ def _mixed_components_for_gen_reqs(gen_reqs: int) -> dict[str, float]:
         db,
         RuntimeConfig(batch_size=1, beam_width=1, isl=total_tokens, osl=1, prefix=0),
         mode="static_ctx",
+        op_query_overrides={"context_prefill_tokens": phase414.FULL_CHUNK_TOKENS},
     ).get_context_latency_dict()
     pass2 = backend.run_static(
         model,
@@ -216,9 +219,8 @@ def _roofline_lower_bounds(prefill_step_count: int) -> dict[str, float]:
     )
     moe_flops = (
         MOE_LAYERS
-        * tokens
-        * TOPK
-        * 4.0
+        * (tokens * TOPK / MOE_EP_SIZE)
+        * 6.0
         * HIDDEN_SIZE
         * INTER_SIZE
     )
@@ -239,7 +241,7 @@ def _roofline_lower_bounds(prefill_step_count: int) -> dict[str, float]:
     )
     per_step = {
         "prefill_mla_attention": attention_flops / (H200_TENSOR_TFLOPS * 1e12) * 1000.0,
-        "moe_compute": moe_flops / (H200_TENSOR_TFLOPS * 1e12) * 1000.0,
+        "moe_compute": moe_flops / (MOE_WNA16_TENSOR_TFLOPS * 1e12) * 1000.0,
         "ep_dispatch_combine": ep_bytes / (NVLINK_GBPS * 1e9) * 1000.0,
         "tp_comm": tp_bytes / (NVLINK_GBPS * 1e9) * 1000.0,
     }
@@ -483,8 +485,9 @@ def render_phase415_md(rows: list[dict[str, str]]) -> str:
             "",
             "## Roofline Assumptions",
             "",
-            f"- hidden={HIDDEN_SIZE}, inter={INTER_SIZE}, topk={TOPK}, moe_layers={MOE_LAYERS}, attention_layers={ATTENTION_LAYERS}.",
-            f"- H200 tensor roofline={H200_TENSOR_TFLOPS} TFLOP/s, NVLink budget={NVLINK_GBPS} GB/s.",
+            f"- hidden={HIDDEN_SIZE}, inter={INTER_SIZE}, topk={TOPK}, moe_layers={MOE_LAYERS}, moe_ep={MOE_EP_SIZE}, attention_layers={ATTENTION_LAYERS}.",
+            f"- attention roofline={H200_TENSOR_TFLOPS} TFLOP/s, MoE WNA16 conservative roofline={MOE_WNA16_TENSOR_TFLOPS} TFLOP/s, NVLink budget={NVLINK_GBPS} GB/s.",
+            "- MoE lower bound uses EP-local token-expert rows and 6hi gated MLP work.",
             "- lower_bound 是物理下界，只用于找明显不可能的 undercharge，不代表真实耗时。",
             "",
             "## Boundary",
