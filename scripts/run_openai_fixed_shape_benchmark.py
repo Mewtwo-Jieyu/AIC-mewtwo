@@ -58,6 +58,12 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--ignore-eos", action="store_true", default=True)
     parser.add_argument("--disable-ignore-eos", dest="ignore_eos", action="store_false")
+    parser.add_argument(
+        "--prompt-variant-mode",
+        choices=("fixed", "rotating"),
+        default="fixed",
+        help="fixed keeps the historical single prompt; rotating changes the prompt prefix per request.",
+    )
     parser.add_argument("--result-json", type=Path, required=True)
     parser.add_argument("--records-jsonl", type=Path)
     return parser
@@ -85,18 +91,92 @@ def _roundtrip_prompt_from_token_id(
 
 def build_fixed_prompt(tokenizer_path: str, target_len: int) -> tuple[str, list[int]]:
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, trust_remote_code=True)
-    for candidate in _ONE_TOKEN_CANDIDATES:
-        ids = tokenizer.encode(candidate, add_special_tokens=False)
-        if len(ids) != 1:
-            continue
-        prompt = _roundtrip_prompt_from_token_id(tokenizer, ids[0], target_len)
-        if prompt is None:
-            continue
-        return prompt, [ids[0]] * target_len
+    safe_token_ids = _collect_safe_single_token_ids(tokenizer, target_len)
+    token_id = safe_token_ids[0]
+    prompt = _roundtrip_prompt_from_token_id(tokenizer, token_id, target_len)
+    if prompt is not None:
+        return prompt, [token_id] * target_len
     raise RuntimeError(
         "failed to build an exact-length prompt from one-token candidates; "
         "please add tokenizer-specific candidates"
     )
+
+
+def _collect_safe_single_token_ids(tokenizer: Any, target_len: int) -> list[int]:
+    safe_token_ids: list[int] = []
+    for candidate in _ONE_TOKEN_CANDIDATES:
+        ids = tokenizer.encode(candidate, add_special_tokens=False)
+        if len(ids) != 1:
+            continue
+        if _roundtrip_prompt_from_token_id(tokenizer, ids[0], target_len) is not None:
+            safe_token_ids.append(ids[0])
+    if not safe_token_ids:
+        raise RuntimeError(
+            "failed to find any exact-length one-token candidates; "
+            "please add tokenizer-specific candidates"
+        )
+    return safe_token_ids
+
+
+def _decode_exact_prompt(tokenizer: Any, prompt_token_ids: list[int]) -> str | None:
+    prompt = tokenizer.decode(
+        prompt_token_ids,
+        skip_special_tokens=False,
+        clean_up_tokenization_spaces=False,
+    )
+    actual_len = len(tokenizer.encode(prompt, add_special_tokens=False))
+    if actual_len == len(prompt_token_ids):
+        return prompt
+    return None
+
+
+def _build_rotating_prompt_variants(
+    *,
+    tokenizer: Any,
+    safe_token_ids: list[int],
+    target_len: int,
+    variant_count: int,
+) -> list[tuple[str, list[int]]]:
+    if len(safe_token_ids) < 2:
+        raise RuntimeError("rotating prompt variants require at least two safe one-token candidates")
+    variants: list[tuple[str, list[int]]] = []
+    for variant_index in range(variant_count):
+        prompt_token_ids = [
+            safe_token_ids[(pos + variant_index) % len(safe_token_ids)]
+            for pos in range(target_len)
+        ]
+        prompt = _decode_exact_prompt(tokenizer, prompt_token_ids)
+        if prompt is None:
+            raise RuntimeError(
+                "failed to build an exact-length rotating prompt variant; "
+                "please add tokenizer-specific candidates"
+            )
+        variants.append((prompt, prompt_token_ids))
+    return variants
+
+
+def build_prompt_variants(
+    tokenizer_path: str,
+    target_len: int,
+    variant_count: int,
+    mode: str,
+) -> list[tuple[str, list[int]]]:
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, trust_remote_code=True)
+    safe_token_ids = _collect_safe_single_token_ids(tokenizer, target_len)
+    if mode == "fixed":
+        token_id = safe_token_ids[0]
+        prompt = _roundtrip_prompt_from_token_id(tokenizer, token_id, target_len)
+        if prompt is None:
+            raise RuntimeError("failed to build fixed prompt from a previously validated token")
+        return [(prompt, [token_id] * target_len)]
+    if mode == "rotating":
+        return _build_rotating_prompt_variants(
+            tokenizer=tokenizer,
+            safe_token_ids=safe_token_ids,
+            target_len=target_len,
+            variant_count=variant_count,
+        )
+    raise ValueError(f"unknown prompt variant mode: {mode}")
 
 
 async def _post_completion(
@@ -200,7 +280,12 @@ async def _run_warmup(
 
 
 async def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
-    prompt, prompt_token_ids = build_fixed_prompt(args.tokenizer, args.input_len)
+    prompt_variants = build_prompt_variants(
+        args.tokenizer,
+        args.input_len,
+        max(1, args.num_prompts),
+        args.prompt_variant_mode,
+    )
     endpoint = f"{_get_base_url(args.host, args.port)}/v1/completions"
     timeout = aiohttp.ClientTimeout(total=args.timeout_s)
 
@@ -210,22 +295,25 @@ async def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
             session=session,
             endpoint=endpoint,
             model=args.model,
-            sample_prompt_token_ids=prompt_token_ids[: min(8, len(prompt_token_ids))],
+            sample_prompt_token_ids=prompt_variants[0][1][: min(8, len(prompt_variants[0][1]))],
         )
-        payload = _make_payload(
-            model=args.model,
-            output_len=args.output_len,
-            temperature=args.temperature,
-            ignore_eos=args.ignore_eos,
-            prompt=prompt,
-            prompt_token_ids=prompt_token_ids if use_prompt_token_ids else None,
-        )
+        payloads = [
+            _make_payload(
+                model=args.model,
+                output_len=args.output_len,
+                temperature=args.temperature,
+                ignore_eos=args.ignore_eos,
+                prompt=prompt,
+                prompt_token_ids=prompt_token_ids if use_prompt_token_ids else None,
+            )
+            for prompt, prompt_token_ids in prompt_variants
+        ]
 
         if args.warmup_requests > 0:
             await _run_warmup(
                 session=session,
                 endpoint=endpoint,
-                payload=payload,
+                payload=payloads[0],
                 warmup_requests=args.warmup_requests,
             )
 
@@ -244,7 +332,7 @@ async def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
                 record = await _post_completion(
                     session=session,
                     endpoint=endpoint,
-                    payload=payload,
+                    payload=payloads[request_index % len(payloads)],
                     request_index=request_index,
                 )
                 records.append(record)
@@ -272,6 +360,9 @@ async def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
         "output_len": args.output_len,
         "warmup_requests": args.warmup_requests,
         "use_prompt_token_ids": use_prompt_token_ids,
+        "prompt_variant_mode": args.prompt_variant_mode,
+        "prompt_variant_count": len(prompt_variants),
+        "unique_prompt_prefixes": len({tuple(ids[: min(64, len(ids))]) for _, ids in prompt_variants}),
         "wall_s": wall_s,
         "ok_requests": len(ok_records),
         "failed_requests": len(fail_records),
@@ -328,6 +419,8 @@ def main() -> None:
                 "ok_requests": summary["ok_requests"],
                 "failed_requests": summary["failed_requests"],
                 "use_prompt_token_ids": summary["use_prompt_token_ids"],
+                "prompt_variant_mode": summary["prompt_variant_mode"],
+                "unique_prompt_prefixes": summary["unique_prompt_prefixes"],
                 "output_tok_s": round(summary["output_tok_s"], 3),
                 "total_tok_s": round(summary["total_tok_s"], 3),
                 "mean_latency_ms": round(summary["mean_latency_ms"], 3),
