@@ -511,6 +511,66 @@ class _FakeModelForIteration:
         tp_size = 4
 
 
+class _FakeKimiDP2ModelForServingState:
+    class config:
+        tp_size = 4
+        attention_dp_size = 2
+        moe_tp_size = 1
+        moe_ep_size = 8
+
+
+class _FakeKimiTP8ModelForServingState:
+    class config:
+        tp_size = 8
+        attention_dp_size = 1
+        moe_tp_size = 1
+        moe_ep_size = 8
+
+
+class _ServingStateBackendForIteration:
+    def run_static(self, model, database, runtime_config: RuntimeConfig, mode: str, **kwargs):
+        summary = InferenceSummary(runtime_config)
+        if mode == "static_ctx":
+            summary.set_context_latency_dict(
+                {
+                    "context_moe": 10.0,
+                    "context_moe_pre_dispatch": 12.0,
+                    "context_moe_post_dispatch": 8.0,
+                    "context_dense": 5.0,
+                    "context_attention": 7.0,
+                }
+            )
+        elif mode == "static_gen":
+            summary.set_generation_latency_dict(
+                {
+                    "generation_attention": 3.0,
+                    "generation_moe": 10.0,
+                    "generation_moe_pre_dispatch": 12.0,
+                    "generation_moe_post_dispatch": 8.0,
+                }
+            )
+        else:
+            raise AssertionError(f"unexpected mode: {mode}")
+        return summary
+
+
+class _ServingStateDB:
+    system = "h200_sxm"
+    backend = "vllm"
+    version = "0.19.0"
+
+    def __init__(self) -> None:
+        self.calls = []
+
+    def query_vllm_serving_state(self, **kwargs):
+        self.calls.append(kwargs)
+        if kwargs["phase"] == "mixed_prefill" and kwargs["category"] == "moe_gemm_or_aux":
+            return PerformanceResult(50.0, energy=0.0)
+        if kwargs["phase"] == "mixed_prefill" and kwargs["category"] == "ep_a2a":
+            return PerformanceResult(100.0, energy=0.0)
+        return None
+
+
 class TestIterationLatencyCalculator:
     def test_mixed_folds_decode_non_attention_into_merged_pass(self) -> None:
         # In a mixed iteration the token-parallel non-attention ops are charged
@@ -537,6 +597,44 @@ class TestIterationLatencyCalculator:
         assert breakdown.context_attention_ms == pytest.approx(8.0)
         assert breakdown.generation_non_attention_ms == pytest.approx(0.0)
         assert breakdown.generation_attention_ms == pytest.approx(7.0)
+
+    def test_serving_state_replaces_mixed_prefill_categories_for_dp2_only(self) -> None:
+        db = _ServingStateDB()
+        calc = IterationLatencyCalculator(
+            backend=_ServingStateBackendForIteration(),
+            model=_FakeKimiDP2ModelForServingState(),
+            database=db,
+        )
+
+        total = calc.compute(
+            prefill_tokens=8000,
+            prefill_batch_size=1,
+            prefill_seq_len=8000,
+            decode_batch_size=8,
+            decode_avg_kv_len=8000,
+        )
+
+        assert total == pytest.approx(165.0)
+        assert {call["category"] for call in db.calls} >= {"moe_gemm_or_aux", "ep_a2a"}
+
+    def test_serving_state_does_not_apply_to_tp8(self) -> None:
+        db = _ServingStateDB()
+        calc = IterationLatencyCalculator(
+            backend=_ServingStateBackendForIteration(),
+            model=_FakeKimiTP8ModelForServingState(),
+            database=db,
+        )
+
+        total = calc.compute(
+            prefill_tokens=8000,
+            prefill_batch_size=1,
+            prefill_seq_len=8000,
+            decode_batch_size=8,
+            decode_avg_kv_len=8000,
+        )
+
+        assert total == pytest.approx(45.0)
+        assert db.calls == []
 
     def test_mixed_non_attention_uses_merged_total_tokens(self) -> None:
         # Mixed iterations must charge the token-parallel non-attention ops at

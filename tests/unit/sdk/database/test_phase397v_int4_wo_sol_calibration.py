@@ -152,6 +152,58 @@ def test_phase431_ep8_alltoall_fallback_uses_measured_curve_before_byte_model() 
     assert float(measured) == pytest.approx(0.0852 * 60, rel=1e-9)
 
 
+def test_phase435_serving_state_query_matches_exact_scope_inside_coverage() -> None:
+    db = _database()
+
+    result = db.query_vllm_serving_state(
+        model="kimi-k2.5",
+        topology="tp4dp2ep8",
+        phase="mixed_prefill",
+        category="ep_a2a",
+        bucket_tokens=32000,
+        decode_batch=8,
+        hidden_size=7168,
+        topk=8,
+        moe_ep_size=8,
+        quant_runtime="CompressedTensorsWNA16MarlinMoEMethod",
+    )
+
+    assert result is not None
+    assert float(result) == pytest.approx(1917.743178, rel=1e-6)
+
+
+def test_phase435_serving_state_query_returns_none_for_other_topology_or_out_of_range() -> None:
+    db = _database()
+
+    wrong_topology = db.query_vllm_serving_state(
+        model="kimi-k2.5",
+        topology="tp8ep8",
+        phase="mixed_prefill",
+        category="ep_a2a",
+        bucket_tokens=32000,
+        decode_batch=8,
+        hidden_size=7168,
+        topk=8,
+        moe_ep_size=8,
+        quant_runtime="CompressedTensorsWNA16MarlinMoEMethod",
+    )
+    out_of_range = db.query_vllm_serving_state(
+        model="kimi-k2.5",
+        topology="tp4dp2ep8",
+        phase="decode",
+        category="ep_a2a",
+        bucket_tokens=999,
+        decode_batch=999,
+        hidden_size=7168,
+        topk=8,
+        moe_ep_size=8,
+        quant_runtime="CompressedTensorsWNA16MarlinMoEMethod",
+    )
+
+    assert wrong_topology is None
+    assert out_of_range is None
+
+
 def test_phase397v_int4_wo_calibrated_sol_scales_tp16_ep1_from_roofline() -> None:
     db = _database()
     sol_ep8 = _query_int4_moe(db, moe_tp=1, moe_ep=8, mode=common.DatabaseMode.SOL_FULL)[0]

@@ -28,6 +28,15 @@ from aiconfigurator.sdk.config import RuntimeConfig
 logger = logging.getLogger(__name__)
 
 _KV_LEN_BUCKET = 512
+_SERVING_STATE_PERFDB_MODEL = "kimi-k2.5"
+_SERVING_STATE_TOPOLOGY = "tp4dp2ep8"
+_SERVING_STATE_HARDWARE = "h200_sxm"
+_SERVING_STATE_VERSION = "0.19.0"
+_SERVING_STATE_QUANT_RUNTIME = "CompressedTensorsWNA16MarlinMoEMethod"
+_SERVING_STATE_HIDDEN_SIZE = 7168
+_SERVING_STATE_TOPK = 8
+_SERVING_STATE_MOE_EP_SIZE = 8
+_SERVING_STATE_CATEGORIES = ("ep_a2a", "moe_gemm_or_aux", "other_cuda", "collective_other")
 
 
 def _bucket(value: int, size: int) -> int:
@@ -113,6 +122,98 @@ class IterationLatencyCalculator:
                 compute_ms += lat
         return compute_ms, dispatch_ms
 
+    def _serving_state_scope_enabled(self) -> bool:
+        config = getattr(self._model, "config", None)
+        return (
+            getattr(self._database, "backend", None) == "vllm"
+            and getattr(self._database, "system", None) == _SERVING_STATE_HARDWARE
+            and getattr(self._database, "version", None) == _SERVING_STATE_VERSION
+            and getattr(config, "tp_size", None) == 4
+            and getattr(config, "attention_dp_size", None) == 2
+            and getattr(config, "moe_tp_size", None) == 1
+            and getattr(config, "moe_ep_size", None) == 8
+            and hasattr(self._database, "query_vllm_serving_state")
+        )
+
+    def _serving_state_category(self, op_name: str) -> str | None:
+        name = op_name.lower()
+        if "attention" in name:
+            return None
+        if "dispatch" in name or "alltoall" in name or "all2all" in name:
+            return "ep_a2a"
+        if "moe" in name:
+            return "moe_gemm_or_aux"
+        if "allreduce" in name or "all_reduce" in name or "_ar_" in name or name.endswith("_ar"):
+            return "collective_other"
+        if "other_cuda" in name or "memcpy" in name or "memset" in name:
+            return "other_cuda"
+        return None
+
+    def _query_serving_state_category(
+        self,
+        *,
+        phase: str,
+        category: str,
+        bucket_tokens: int,
+        decode_batch: int,
+    ) -> float | None:
+        if not self._serving_state_scope_enabled():
+            return None
+        result = self._database.query_vllm_serving_state(
+            model=_SERVING_STATE_PERFDB_MODEL,
+            topology=_SERVING_STATE_TOPOLOGY,
+            phase=phase,
+            category=category,
+            bucket_tokens=bucket_tokens,
+            decode_batch=decode_batch,
+            hidden_size=_SERVING_STATE_HIDDEN_SIZE,
+            topk=_SERVING_STATE_TOPK,
+            moe_ep_size=_SERVING_STATE_MOE_EP_SIZE,
+            quant_runtime=_SERVING_STATE_QUANT_RUNTIME,
+        )
+        return None if result is None else float(result)
+
+    def _serving_state_adjusted_non_attention(
+        self,
+        latency_dict: dict[str, float],
+        *,
+        phase: str,
+        bucket_tokens: int,
+        decode_batch: int,
+    ) -> float | None:
+        if not self._serving_state_scope_enabled():
+            return None
+
+        category_sums = {category: 0.0 for category in _SERVING_STATE_CATEGORIES}
+        passthrough_ms = 0.0
+        for op_name, latency in latency_dict.items():
+            if "attention" in op_name.lower():
+                continue
+            category = self._serving_state_category(op_name)
+            if category is None:
+                passthrough_ms += float(latency)
+                continue
+            if category in category_sums:
+                category_sums[category] += float(latency)
+            else:
+                passthrough_ms += float(latency)
+
+        total_ms = passthrough_ms
+        used_any = False
+        for category in _SERVING_STATE_CATEGORIES:
+            serving_ms = self._query_serving_state_category(
+                phase=phase,
+                category=category,
+                bucket_tokens=bucket_tokens,
+                decode_batch=decode_batch,
+            )
+            if serving_ms is None:
+                total_ms += category_sums[category]
+            else:
+                total_ms += serving_ms
+                used_any = True
+        return total_ms if used_any else None
+
     def compute(
         self,
         prefill_tokens: int,
@@ -196,7 +297,15 @@ class IterationLatencyCalculator:
             )
             ctx_dict = summary.get_context_latency_dict()
             context_compute_ms, context_dispatch_ms = self._split_context_non_attention(ctx_dict)
-            context_non_attn_ms = context_compute_ms + context_dispatch_ms
+            serving_state_ms = self._serving_state_adjusted_non_attention(
+                ctx_dict,
+                phase="mixed_prefill" if is_mixed else "prefill",
+                bucket_tokens=non_attn_tokens,
+                decode_batch=decode_bs,
+            )
+            context_non_attn_ms = (
+                serving_state_ms if serving_state_ms is not None else context_compute_ms + context_dispatch_ms
+            )
         else:
             context_compute_ms = 0.0
             context_dispatch_ms = 0.0
@@ -244,7 +353,15 @@ class IterationLatencyCalculator:
                 generation_dispatch_ms = 0.0
             else:
                 generation_compute_ms, generation_dispatch_ms = self._split_generation_non_attention(gen_dict)
-                generation_non_attn_ms = generation_compute_ms + generation_dispatch_ms
+                serving_state_ms = self._serving_state_adjusted_non_attention(
+                    gen_dict,
+                    phase="decode",
+                    bucket_tokens=decode_bs,
+                    decode_batch=decode_bs,
+                )
+                generation_non_attn_ms = (
+                    serving_state_ms if serving_state_ms is not None else generation_compute_ms + generation_dispatch_ms
+                )
         else:
             generation_compute_ms = 0.0
             generation_dispatch_ms = 0.0

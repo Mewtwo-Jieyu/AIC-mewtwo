@@ -29,6 +29,7 @@ from aiconfigurator.sdk.perf_database import (
     load_moe_data,
     load_nccl_data,
     load_vllm_ep8_a2a_decode_data,
+    load_vllm_serving_state_data,
     load_wideep_moe_compute_data,
     set_systems_paths,
 )
@@ -722,6 +723,36 @@ def test_load_vllm_ep8_a2a_decode_data_basic(tmp_path):
     assert result["kernel_source"] == "phase431_AgRsAll2AllManager"
     assert result["backend"] == "allgather_reducescatter"
     assert result["manager"] == "AgRsAll2AllManager"
+
+
+def test_load_vllm_serving_state_data_basic(tmp_path):
+    csv_file = tmp_path / "vllm_serving_state_perf.txt"
+    csv_file.write_text(
+        "\n".join(
+            [
+                "framework,version,device,model,topology,phase,category,kernel_source,bucket_tokens,decode_batch,hidden_size,topk,moe_ep_size,quant_runtime,latency,provenance",
+                "VLLM,0.19.0,NVIDIA H200,kimi-k2.5,tp4dp2ep8,mixed_prefill,ep_a2a,phase435_serving_state,8000,8,7168,8,8,CompressedTensorsWNA16MarlinMoEMethod,425.0,unit",
+                "VLLM,0.19.0,NVIDIA H200,kimi-k2.5,tp4dp2ep8,mixed_prefill,ep_a2a,phase435_serving_state,32000,8,7168,8,8,CompressedTensorsWNA16MarlinMoEMethod,1917.0,unit",
+            ]
+        )
+        + "\n"
+    )
+
+    data = load_vllm_serving_state_data(str(csv_file))
+
+    key = (
+        "kimi-k2.5",
+        "tp4dp2ep8",
+        "mixed_prefill",
+        "ep_a2a",
+        7168,
+        8,
+        8,
+        "CompressedTensorsWNA16MarlinMoEMethod",
+    )
+    assert data[key][8000][8]["latency"] == pytest.approx(425.0)
+    assert data[key][32000][8]["kernel_source"] == "phase435_serving_state"
+    assert data[key][32000][8]["provenance"] == "unit"
 
 
 # ─────────────────────────────────────────────────────────────────────────────

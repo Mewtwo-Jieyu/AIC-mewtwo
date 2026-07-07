@@ -911,6 +911,74 @@ def load_vllm_ep8_a2a_decode_data(vllm_ep8_a2a_decode_file):
     return data
 
 
+def load_vllm_serving_state_data(vllm_serving_state_file):
+    """
+    Load Phase435 serving-state measurements.
+
+    Rows are measured inside real vLLM serving windows. They are keyed by the
+    exact model/topology/phase/category scope; callers must not use them as a
+    generic microbenchmark table.
+    """
+    if not os.path.exists(vllm_serving_state_file):
+        logger.warning(f"vLLM serving-state data file {vllm_serving_state_file} not found.")
+        return None
+
+    required_columns = {
+        "model",
+        "topology",
+        "phase",
+        "category",
+        "kernel_source",
+        "bucket_tokens",
+        "decode_batch",
+        "hidden_size",
+        "topk",
+        "moe_ep_size",
+        "quant_runtime",
+        "latency",
+        "provenance",
+    }
+    data = defaultdict(lambda: defaultdict(dict))
+
+    with open(vllm_serving_state_file, encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        fieldnames = set(reader.fieldnames or [])
+        missing = required_columns - fieldnames
+        if missing:
+            raise ValueError(f"vLLM serving-state perf table missing required columns: {sorted(missing)}")
+
+        for row in reader:
+            bucket_tokens = int(row["bucket_tokens"])
+            decode_batch = int(row["decode_batch"])
+            key = (
+                row["model"],
+                row["topology"],
+                row["phase"],
+                row["category"],
+                int(row["hidden_size"]),
+                int(row["topk"]),
+                int(row["moe_ep_size"]),
+                row["quant_runtime"],
+            )
+            table = data[key]
+            if decode_batch in table[bucket_tokens]:
+                raise ValueError(
+                    "duplicate vLLM serving-state key: "
+                    f"{key=}, {bucket_tokens=}, {decode_batch=}"
+                )
+            latency = float(row["latency"])
+            power = float(row.get("power") or 0.0)
+            table[bucket_tokens][decode_batch] = {
+                "latency": latency,
+                "power": power,
+                "energy": power * latency,
+                "kernel_source": row["kernel_source"],
+                "provenance": row["provenance"],
+            }
+
+    return data
+
+
 def load_context_attention_data(context_attention_file):
     """
     Load the context attention data with power support (backward compatible).
@@ -2000,6 +2068,7 @@ class PerfDatabase:
         data_dir = os.path.join(systems_root, self.system_spec["data_dir"], backend, version)
         self._vllm_module_data = None
         self._vllm_ep8_a2a_decode_data = None
+        self._vllm_serving_state_data = None
         nccl_data_dir = os.path.join(
             systems_root,
             self.system_spec["data_dir"],
@@ -2080,6 +2149,9 @@ class PerfDatabase:
             vllm_ep8_a2a_decode_path = os.path.join(data_dir, common.PerfDataFilename.vllm_ep8_a2a_decode.value)
             if os.path.exists(vllm_ep8_a2a_decode_path):
                 self._vllm_ep8_a2a_decode_data = load_vllm_ep8_a2a_decode_data(vllm_ep8_a2a_decode_path)
+            vllm_serving_state_path = os.path.join(data_dir, common.PerfDataFilename.vllm_serving_state.value)
+            if os.path.exists(vllm_serving_state_path):
+                self._vllm_serving_state_data = load_vllm_serving_state_data(vllm_serving_state_path)
             self._compute_scale_data = None
             self._scale_matrix_data = None
         else:  # TRTLLM
@@ -4680,6 +4752,90 @@ class PerfDatabase:
 
         left, right = self._nearest_1d_point_helper(bucket_tokens, list(table.keys()), inner_only=True)
         result = self._interp_1d([left, right], [table[left], table[right]], bucket_tokens)
+        if isinstance(result, dict):
+            return PerformanceResult(result["latency"], energy=result.get("energy", 0.0))
+        return PerformanceResult(result, energy=0.0)
+
+    @functools.lru_cache(maxsize=32768)
+    def query_vllm_serving_state(
+        self,
+        *,
+        model: str,
+        topology: str,
+        phase: str,
+        category: str,
+        bucket_tokens: int,
+        decode_batch: int,
+        hidden_size: int,
+        topk: int,
+        moe_ep_size: int,
+        quant_runtime: str,
+    ) -> PerformanceResult | None:
+        """
+        Query Phase435 serving-state category measurements.
+
+        The table is a scoped serving-state replacement, not a fallback. It
+        returns None when the requested scope or interpolation range is absent.
+        """
+        if self.backend != common.BackendName.vllm.value:
+            raise ValueError(f"query_vllm_serving_state requires backend='vllm', got {self.backend!r}")
+        if self._vllm_serving_state_data is None:
+            return None
+
+        key = (
+            model,
+            topology,
+            phase,
+            category,
+            hidden_size,
+            topk,
+            moe_ep_size,
+            quant_runtime,
+        )
+        table = self._vllm_serving_state_data.get(key)
+        if not table:
+            return None
+
+        def _bracket(value: int, values: list[int]) -> tuple[int, int] | None:
+            if not values:
+                return None
+            if value in values:
+                return value, value
+            if len(values) == 1:
+                only = values[0]
+                return (only, only) if value == only else None
+            try:
+                return self._nearest_1d_point_helper(value, values, inner_only=True)
+            except ValueError:
+                return None
+
+        token_bracket = _bracket(bucket_tokens, list(table.keys()))
+        if token_bracket is None:
+            return None
+        token_left, token_right = token_bracket
+
+        token_values: list[dict | float] = []
+        for token in (token_left, token_right):
+            batch_table = table[token]
+            batch_bracket = _bracket(decode_batch, list(batch_table.keys()))
+            if batch_bracket is None:
+                return None
+            batch_left, batch_right = batch_bracket
+            if batch_left == batch_right:
+                token_values.append(batch_table[batch_left])
+            else:
+                token_values.append(
+                    self._interp_1d(
+                        [batch_left, batch_right],
+                        [batch_table[batch_left], batch_table[batch_right]],
+                        decode_batch,
+                    )
+                )
+
+        if token_left == token_right:
+            result = token_values[0]
+        else:
+            result = self._interp_1d([token_left, token_right], token_values, bucket_tokens)
         if isinstance(result, dict):
             return PerformanceResult(result["latency"], energy=result.get("energy", 0.0))
         return PerformanceResult(result, energy=0.0)
