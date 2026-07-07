@@ -1,0 +1,6 @@
+stage,status,start_utc,end_utc,key_metric,detail,next_action
+gate0_service,passed,2026-07-07T14:15:52Z,2026-07-07T14:15:52Z,profiler_endpoint_available,"service ready on port 20939; profiler dir configured; start/stop endpoint path reachable via Gate1",continue
+gate1_smoke,passed,2026-07-07T14:15:52Z,2026-07-07T14:17:33Z,8_rank_traces,"idle attach + C=4 smoke produced 8 rank traces; trace_files=8; decode_batch_max=2",continue
+gate2_wa,failed,2026-07-07T14:17:33Z,2026-07-07T14:19:32Z,engine_core_fatal,"steady gate reached per-engine running=56 for 3 polls; during 60s recording EngineCore DP0/DP1 fatal at 14:18:37; stop_profile later failed with connection refused",stop_no_ingest
+extraction,skipped,,,,no_valid_wa_profile,"prof_wa_idle_attach was never copied; only Gate1 smoke trace exists; using it would pollute W-A serving-state table",b_plan
+gpu_residual,passed,2026-07-07T14:20:00Z,,empty,"nvidia-smi compute-app query empty; pgrep found no vLLM/bench/phase439 worker except the query itself",none
