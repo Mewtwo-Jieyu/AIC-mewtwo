@@ -1,0 +1,2 @@
+artifact_root,local_size,local_file_count,committed_to_git,reason
+docs/iter_gap_investigation/phase437_serving_state_collect,1.0G,190,false,trace gz/log artifacts have no LFS filter; keep local raw but do not put 1G binary payload into normal git history
