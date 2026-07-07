@@ -950,10 +950,12 @@ def load_vllm_serving_state_data(vllm_serving_state_file):
         for row in reader:
             bucket_tokens = int(row["bucket_tokens"])
             decode_batch = int(row["decode_batch"])
+            row_kind = row.get("row_kind") or "category"
             key = (
                 row["model"],
                 row["topology"],
                 row["phase"],
+                row_kind,
                 row["category"],
                 int(row["hidden_size"]),
                 int(row["topk"]),
@@ -975,6 +977,18 @@ def load_vllm_serving_state_data(vllm_serving_state_file):
                 "kernel_source": row["kernel_source"],
                 "provenance": row["provenance"],
             }
+            if row_kind == "category":
+                legacy_key = (
+                    row["model"],
+                    row["topology"],
+                    row["phase"],
+                    row["category"],
+                    int(row["hidden_size"]),
+                    int(row["topk"]),
+                    int(row["moe_ep_size"]),
+                    row["quant_runtime"],
+                )
+                data[legacy_key] = table
 
     return data
 
@@ -4764,6 +4778,7 @@ class PerfDatabase:
         topology: str,
         phase: str,
         category: str,
+        row_kind: str = "category",
         bucket_tokens: int,
         decode_batch: int,
         hidden_size: int,
@@ -4786,6 +4801,7 @@ class PerfDatabase:
             model,
             topology,
             phase,
+            row_kind,
             category,
             hidden_size,
             topk,

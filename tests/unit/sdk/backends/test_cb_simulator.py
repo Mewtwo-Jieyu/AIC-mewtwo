@@ -564,10 +564,20 @@ class _ServingStateDB:
 
     def query_vllm_serving_state(self, **kwargs):
         self.calls.append(kwargs)
+        if kwargs.get("row_kind") == "non_attn_total":
+            return None
         if kwargs["phase"] == "mixed_prefill" and kwargs["category"] == "moe_gemm_or_aux":
             return PerformanceResult(50.0, energy=0.0)
         if kwargs["phase"] == "mixed_prefill" and kwargs["category"] == "ep_a2a":
             return PerformanceResult(100.0, energy=0.0)
+        return None
+
+
+class _NonAttnTotalServingStateDB(_ServingStateDB):
+    def query_vllm_serving_state(self, **kwargs):
+        self.calls.append(kwargs)
+        if kwargs.get("row_kind") == "non_attn_total":
+            return PerformanceResult(900.0, energy=0.0)
         return None
 
 
@@ -675,6 +685,25 @@ class TestIterationLatencyCalculator:
 
         assert total == pytest.approx(165.0)
         assert {call["category"] for call in db.calls} >= {"moe_gemm_or_aux", "ep_a2a"}
+
+    def test_serving_state_non_attn_total_replaces_whole_block_when_categories_miss(self) -> None:
+        db = _NonAttnTotalServingStateDB()
+        calc = IterationLatencyCalculator(
+            backend=_ServingStateBackendForIteration(),
+            model=_FakeKimiDP2ModelForServingState(),
+            database=db,
+        )
+
+        total = calc.compute(
+            prefill_tokens=8000,
+            prefill_batch_size=1,
+            prefill_seq_len=8000,
+            decode_batch_size=64,
+            decode_avg_kv_len=8000,
+        )
+
+        assert total == pytest.approx(910.0)
+        assert any(call.get("row_kind") == "non_attn_total" for call in db.calls)
 
     def test_serving_state_does_not_apply_to_tp8(self) -> None:
         db = _ServingStateDB()

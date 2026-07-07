@@ -196,12 +196,14 @@ class IterationLatencyCalculator:
                 decode_batch=decode_batch,
                 hit=False,
                 miss_reason="scope_disabled",
+                row_kind="non_attn_total",
             )
             return None
         result = self._database.query_vllm_serving_state(
             model=_SERVING_STATE_PERFDB_MODEL,
             topology=_SERVING_STATE_TOPOLOGY,
             phase=phase,
+            row_kind="category",
             category=category,
             bucket_tokens=bucket_tokens,
             decode_batch=decode_batch,
@@ -225,7 +227,61 @@ class IterationLatencyCalculator:
         )
         return None if result is None else float(result)
 
-    def _serving_state_table_for(self, *, phase: str, category: str) -> dict | None:
+    def _query_serving_state_non_attn_total(
+        self,
+        *,
+        phase: str,
+        bucket_tokens: int,
+        decode_batch: int,
+    ) -> float | None:
+        category = "non_attn_total"
+        if not self._serving_state_scope_enabled():
+            self._record_serving_state_audit(
+                phase=phase,
+                category=category,
+                bucket_tokens=bucket_tokens,
+                decode_batch=decode_batch,
+                hit=False,
+                miss_reason="scope_disabled",
+            )
+            return None
+        result = self._database.query_vllm_serving_state(
+            model=_SERVING_STATE_PERFDB_MODEL,
+            topology=_SERVING_STATE_TOPOLOGY,
+            phase=phase,
+            row_kind="non_attn_total",
+            category=category,
+            bucket_tokens=bucket_tokens,
+            decode_batch=decode_batch,
+            hidden_size=_SERVING_STATE_HIDDEN_SIZE,
+            topk=_SERVING_STATE_TOPK,
+            moe_ep_size=_SERVING_STATE_MOE_EP_SIZE,
+            quant_runtime=_SERVING_STATE_QUANT_RUNTIME,
+        )
+        self._record_serving_state_audit(
+            phase=phase,
+            category=category,
+            bucket_tokens=bucket_tokens,
+            decode_batch=decode_batch,
+            hit=result is not None,
+            miss_reason="hit" if result is not None else self._serving_state_miss_reason(
+                phase=phase,
+                category=category,
+                bucket_tokens=bucket_tokens,
+                decode_batch=decode_batch,
+                row_kind="non_attn_total",
+            ),
+            row_kind="non_attn_total",
+        )
+        return None if result is None else float(result)
+
+    def _serving_state_table_for(
+        self,
+        *,
+        phase: str,
+        category: str,
+        row_kind: str = "category",
+    ) -> dict | None:
         data = getattr(self._database, "_vllm_serving_state_data", None)
         if data is None:
             return None
@@ -233,6 +289,7 @@ class IterationLatencyCalculator:
             _SERVING_STATE_PERFDB_MODEL,
             _SERVING_STATE_TOPOLOGY,
             phase,
+            row_kind,
             category,
             _SERVING_STATE_HIDDEN_SIZE,
             _SERVING_STATE_TOPK,
@@ -240,6 +297,20 @@ class IterationLatencyCalculator:
             _SERVING_STATE_QUANT_RUNTIME,
         )
         table = data.get(key)
+        if table is None and row_kind == "category":
+            # Pre-Phase440 tests and ad-hoc fakes used the legacy key without
+            # row_kind. Keep read compatibility; real PerfDB rows use row_kind.
+            legacy_key = (
+                _SERVING_STATE_PERFDB_MODEL,
+                _SERVING_STATE_TOPOLOGY,
+                phase,
+                category,
+                _SERVING_STATE_HIDDEN_SIZE,
+                _SERVING_STATE_TOPK,
+                _SERVING_STATE_MOE_EP_SIZE,
+                _SERVING_STATE_QUANT_RUNTIME,
+            )
+            table = data.get(legacy_key)
         return table if table else None
 
     def _serving_state_miss_reason(
@@ -249,8 +320,9 @@ class IterationLatencyCalculator:
         category: str,
         bucket_tokens: int,
         decode_batch: int,
+        row_kind: str = "category",
     ) -> str:
-        table = self._serving_state_table_for(phase=phase, category=category)
+        table = self._serving_state_table_for(phase=phase, category=category, row_kind=row_kind)
         if table is None:
             return "table_missing"
 
@@ -290,8 +362,9 @@ class IterationLatencyCalculator:
         decode_batch: int,
         hit: bool,
         miss_reason: str,
+        row_kind: str = "category",
     ) -> None:
-        table = self._serving_state_table_for(phase=phase, category=category)
+        table = self._serving_state_table_for(phase=phase, category=category, row_kind=row_kind)
         bucket_min = bucket_max = decode_batch_min = decode_batch_max = None
         if table:
             token_values = sorted(int(token) for token in table)
@@ -358,7 +431,17 @@ class IterationLatencyCalculator:
             else:
                 total_ms += serving_ms
                 used_any = True
-        return total_ms if used_any else None
+        if used_any:
+            return total_ms
+
+        non_attn_total_ms = self._query_serving_state_non_attn_total(
+            phase=phase,
+            bucket_tokens=bucket_tokens,
+            decode_batch=decode_batch,
+        )
+        if non_attn_total_ms is not None:
+            return non_attn_total_ms
+        return None
 
     def compute(
         self,

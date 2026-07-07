@@ -755,6 +755,34 @@ def test_load_vllm_serving_state_data_basic(tmp_path):
     assert data[key][32000][8]["provenance"] == "unit"
 
 
+def test_load_vllm_serving_state_data_supports_non_attn_total_row_kind(tmp_path):
+    csv_file = tmp_path / "vllm_serving_state_perf.txt"
+    csv_file.write_text(
+        "\n".join(
+            [
+                "framework,version,device,model,topology,phase,row_kind,category,kernel_source,bucket_tokens,decode_batch,hidden_size,topk,moe_ep_size,quant_runtime,latency,provenance",
+                "VLLM,0.19.0,NVIDIA H200,kimi-k2.5,tp4dp2ep8,mixed_prefill,non_attn_total,non_attn_total,phase440_nonattn_total,8000,64,7168,8,8,CompressedTensorsWNA16MarlinMoEMethod,900.0,unit",
+            ]
+        )
+        + "\n"
+    )
+
+    data = load_vllm_serving_state_data(str(csv_file))
+
+    key = (
+        "kimi-k2.5",
+        "tp4dp2ep8",
+        "mixed_prefill",
+        "non_attn_total",
+        "non_attn_total",
+        7168,
+        8,
+        8,
+        "CompressedTensorsWNA16MarlinMoEMethod",
+    )
+    assert data[key][8000][64]["latency"] == pytest.approx(900.0)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 9) load_mla_bmm_data
 # ─────────────────────────────────────────────────────────────────────────────
