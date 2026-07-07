@@ -1,0 +1,27 @@
+[2026-07-07T16:40:17+00:00] run_point label=overhead_off event_enabled=0 scenario=K2.5-tp4ep8dp2-8k2k
+vllm_version=0.19.0
+NVIDIA H200, 143771, 570.133.20
+[2026-07-07T16:40:20+00:00] baseline_gpu_pids=[]
+[2026-07-07T16:40:30+00:00] gpu_drained
+[2026-07-07T16:40:30+00:00] serve_command: python3 -m vllm.entrypoints.cli.main serve /mnt/shared-storage-gpfs2/gpfs2-shared-public/huggingface/zskj-hub/models--moonshotai--Kimi-K2.5 --served-model-name kimi-k2.5 --port 20942 --tensor-parallel-size 4 --data-parallel-size 2 --enable-expert-parallel --max-model-len 131072 --gpu-memory-utilization 0.80 --max-num-batched-tokens 8000 --max-num-seqs 256 --enable-chunked-prefill --no-enable-prefix-caching --enable-logging-iteration-details --cudagraph-metrics --mm-encoder-tp-mode data --skip-mm-profiling --trust-remote-code --enable-auto-tool-choice --tool-call-parser kimi_k2 --reasoning-parser kimi_k2
+[2026-07-07T16:40:30+00:00] service_pid=123143
+[2026-07-07T16:45:51+00:00] service_ready port=20942 poll=65
+[2026-07-07T16:45:51+00:00] metrics_poller_pid=125641
+[2026-07-07T16:58:29+00:00] benchmark_exit_code=0
+[2026-07-07T16:58:29+00:00] wrote docs/iter_gap_investigation/phase442_b2_event_timing/overhead_gate_20260708_164017/overhead_off/K2.5-tp4ep8dp2-8k2k/bench_result.json
+[2026-07-07T16:58:49+00:00] gpu_drained
+[2026-07-07T16:58:49+00:00] phase442_b2_DONE bench_exit=0
+[2026-07-07T16:58:50+00:00] run_point label=overhead_on event_enabled=1 scenario=K2.5-tp4ep8dp2-8k2k
+vllm_version=0.19.0
+NVIDIA H200, 143771, 570.133.20
+[2026-07-07T16:58:52+00:00] baseline_gpu_pids=[]
+[2026-07-07T16:59:03+00:00] gpu_drained
+[2026-07-07T16:59:03+00:00] serve_command: python3 -m vllm.entrypoints.cli.main serve /mnt/shared-storage-gpfs2/gpfs2-shared-public/huggingface/zskj-hub/models--moonshotai--Kimi-K2.5 --served-model-name kimi-k2.5 --port 20943 --tensor-parallel-size 4 --data-parallel-size 2 --enable-expert-parallel --max-model-len 131072 --gpu-memory-utilization 0.80 --max-num-batched-tokens 8000 --max-num-seqs 256 --enable-chunked-prefill --no-enable-prefix-caching --enable-logging-iteration-details --cudagraph-metrics --mm-encoder-tp-mode data --skip-mm-profiling --trust-remote-code --enable-auto-tool-choice --tool-call-parser kimi_k2 --reasoning-parser kimi_k2
+[2026-07-07T16:59:03+00:00] service_pid=126059
+[2026-07-07T17:01:38+00:00] service_ready port=20943 poll=32
+[2026-07-07T17:01:38+00:00] metrics_poller_pid=128352
+[2026-07-07T17:15:02+00:00] benchmark_exit_code=0
+[2026-07-07T17:15:02+00:00] wrote docs/iter_gap_investigation/phase442_b2_event_timing/overhead_gate_20260708_164017/overhead_on/K2.5-tp4ep8dp2-8k2k/bench_result.json
+[2026-07-07T17:15:22+00:00] gpu_drained
+[2026-07-07T17:15:22+00:00] phase442_b2_DONE bench_exit=0
+{"gate": "phase442_event_timing_overhead", "max_overhead_pct": 2.0, "metric": "output_tok_s", "off_output_tok_s": 1356.8445453862983, "on_output_tok_s": 1279.827655143875, "overhead_pct": 5.6761764274547915, "passed": false}

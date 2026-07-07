@@ -1,0 +1,2 @@
+scenario,gate,off_output_tok_s,on_output_tok_s,overhead_pct,max_overhead_pct,passed,event_lines,patch_restored,gpu_apps_after_current,verdict
+K2.5-tp4ep8dp2-8k2k,phase442_event_timing_overhead,1356.8445453862983,1279.827655143875,5.6761764274547915,2.0,false,94212,true,true,b2_event_timing_overhead_gate_failed

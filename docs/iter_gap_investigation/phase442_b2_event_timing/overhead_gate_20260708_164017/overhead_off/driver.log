@@ -1,0 +1,6 @@
+[2026-07-07T16:40:20+00:00] baseline_gpu_pids=[]
+[2026-07-07T16:40:30+00:00] serve_command: python3 -m vllm.entrypoints.cli.main serve /mnt/shared-storage-gpfs2/gpfs2-shared-public/huggingface/zskj-hub/models--moonshotai--Kimi-K2.5 --served-model-name kimi-k2.5 --port 20942 --tensor-parallel-size 4 --data-parallel-size 2 --enable-expert-parallel --max-model-len 131072 --gpu-memory-utilization 0.80 --max-num-batched-tokens 8000 --max-num-seqs 256 --enable-chunked-prefill --no-enable-prefix-caching --enable-logging-iteration-details --cudagraph-metrics --mm-encoder-tp-mode data --skip-mm-profiling --trust-remote-code --enable-auto-tool-choice --tool-call-parser kimi_k2 --reasoning-parser kimi_k2
+[2026-07-07T16:40:30+00:00] service_pid=123143
+[2026-07-07T16:58:29+00:00] benchmark_exit_code=0
+[2026-07-07T16:58:29+00:00] wrote docs/iter_gap_investigation/phase442_b2_event_timing/overhead_gate_20260708_164017/overhead_off/K2.5-tp4ep8dp2-8k2k/bench_result.json
+[2026-07-07T16:58:49+00:00] phase442_b2_DONE bench_exit=0

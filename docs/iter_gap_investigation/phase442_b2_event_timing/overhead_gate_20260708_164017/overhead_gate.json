@@ -1,0 +1,9 @@
+{
+  "gate": "phase442_event_timing_overhead",
+  "max_overhead_pct": 2.0,
+  "metric": "output_tok_s",
+  "off_output_tok_s": 1356.8445453862983,
+  "on_output_tok_s": 1279.827655143875,
+  "overhead_pct": 5.6761764274547915,
+  "passed": false
+}
