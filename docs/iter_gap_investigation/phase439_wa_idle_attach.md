@@ -4,7 +4,9 @@
 
 W-A 仍不能用 torch profiler 收到可入库的稳态窗口。空载 attach 解决了低负载路径：Gate1 低负载冒烟成功产出 8 rank trace；但正式 W-A 在 running 达到 56/engine 后 5 秒左右 EngineCore fatal，`stop_profile` 时端口已拒连。
 
-因此本轮按护栏停在 report-only：不提取、不合并、不写 `vllm_serving_state_perf.txt`、不跑 A/B。Phase438 的 GPU profiler 方案在 vLLM serving 高负载集成层仍不可用，下一步应转 B 方案：CUDA event 计时器，不走 CUPTI。
+按用户要求又重试了一次，结果完全复现：Gate1 仍过，Gate2 在 running=56/engine 的正式 W-A 录制中再次 EngineCore fatal，`stop_profile` 再次端口拒连。
+
+因此本轮按护栏停在 report-only：不提取、不合并、不写 `vllm_serving_state_perf.txt`、不跑 A/B。Phase438/439 的 GPU profiler 方案在 vLLM serving 高负载集成层仍不可用，下一步应转 B 方案：CUDA event 计时器，不走 CUPTI。
 
 ## Gate 结果
 
@@ -13,6 +15,9 @@ W-A 仍不能用 torch profiler 收到可入库的稳态窗口。空载 attach �
 | Gate 0: endpoint | 过 | service ready `2026-07-07T14:15:52Z`，profiler config 被 vLLM 接收 | profiler 端点路径可用 |
 | Gate 1: smoke | 过 | idle attach + C=4 短请求，`trace_files=8`，`window_check_passed` | 原语与低负载 vLLM attach 可用 |
 | Gate 2: W-A | 失败 | running 达到 `{"0":56,"1":56}` 连续 3 次；`14:18:37` EngineCore DP0/DP1 fatal；`14:19:32` stop_profile 端口拒连 | 正式 W-A 无可用 profile |
+| Gate 0 retry1 | 过 | service ready `2026-07-07T15:09:18Z` | 同节点同协议可启动 |
+| Gate 1 retry1 | 过 | idle attach + C=4 短请求，`trace_files=8`，`window_check_passed` | 低负载路径再次可用 |
+| Gate 2 retry1 | 失败 | running 达到 `{"0":56,"1":56}` 连续 3 次；`15:12:03` EngineCore fatal；`15:12:56` stop_profile 端口拒连 | 正式 W-A 失败可复现 |
 | 提取/入库 | 跳过 | 本地仅有 Gate1 smoke trace，没有 `prof_wa_idle_attach/` | 不能把 smoke 数据写进 serving-state 表 |
 | GPU 收尾 | 过 | `nvidia-smi --query-compute-apps` 为空，目标进程为空 | 无残留 |
 
@@ -28,12 +33,18 @@ W-A 仍不能用 torch profiler 收到可入库的稳态窗口。空载 attach �
 | `serve.log` | exception | `RuntimeError: cancelled` |
 | `serve.log` | profiler | `Requested callback is not found` |
 | `tmp_gate2/bench_result.json` | result | `ok_requests=0`, `failed_requests=192` |
+| retry1 `serve.log` | EngineCore | `EngineCore encountered a fatal error` |
+| retry1 `serve.log` | scheduler | `SchedulerStats(num_running_reqs=56, num_waiting_reqs=7, kv_cache_usage=0.984877...)` |
+| retry1 `serve.log` | profiler | `Requested callback is not found` |
+| retry1 `tmp_gate2/bench_result.json` | result | `ok_requests=0`, `failed_requests=192` |
 
 ## 解释
 
 Phase439 证伪了“只要空载 attach 就能稳定采 W-A”的假设。低负载 smoke 通过，说明节点、CUPTI、端点和基础 profiler 链路可用；正式负载失败，说明问题仍在 vLLM 高负载 serving 集成层，且失败发生在 profiler 录制期间，不是窗口自检或后处理问题。
 
-继续重试同一路径只会重复触发 EngineCore fatal。下一阶段应按既定 B 方案改成 CUDA event 分类计时器：在 vLLM MoE/EP 关键路径内做轻量计时，不使用 CUPTI attach；再用 Phase429 既有 profiler 分类数据做交叉校准门。
+smoke 过而 W-A 不过的原因很直接：smoke 是 C=4、短请求、低 KV 压力，只测 attach 管道；W-A 是 DP2/TP4/EP8、running=56/engine、KV usage 约 98.5% 的真实高压路径。后者多了高并发调度、KV 接近满、NCCL/DP/EP 和 cudagraph replay 的组合风险。
+
+同一路径已重试一次并复现。下一阶段应按既定 B 方案改成 CUDA event 分类计时器：在 vLLM MoE/EP 关键路径内做轻量计时，不使用 CUPTI attach；再用 Phase429 既有 profiler 分类数据做交叉校准门。
 
 ## 本轮不做
 
