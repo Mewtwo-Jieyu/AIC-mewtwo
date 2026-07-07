@@ -80,7 +80,37 @@ def test_phase438_window_recommendation_keeps_only_needed_windows():
     windows = phase438.recommend_gpu_windows(audit_rows)
 
     assert [row["window"] for row in windows] == ["W-A"]
-    assert windows[0]["reason"] == "8k mixed prefill decode_batch above range"
+    assert windows[0]["reason"] == "8k mixed prefill in-scope coverage miss"
+
+
+def test_phase438_window_recommendation_counts_all_8k_in_scope_misses():
+    phase438 = _load_module()
+    audit_rows = [
+        {
+            "scenario": "K2.5-tp4ep8dp2-8k2k",
+            "phase": "mixed_prefill",
+            "miss_reason": "decode_batch_above_range",
+            "count": "169",
+        },
+        {
+            "scenario": "K2.5-tp4ep8dp2-8k2k",
+            "phase": "mixed_prefill",
+            "miss_reason": "interpolation_gap",
+            "count": "300",
+        },
+        {
+            "scenario": "K2.5-tp4ep8dp2-8k2k",
+            "phase": "mixed_prefill",
+            "miss_reason": "bucket_below_range",
+            "count": "148",
+        },
+    ]
+
+    windows = phase438.recommend_gpu_windows(audit_rows)
+
+    assert len(windows) == 1
+    assert windows[0]["window"] == "W-A"
+    assert windows[0]["count"] == 617
 
 
 def test_phase438_window_recommendation_ignores_32k_bucket_below_when_ab_is_clean():

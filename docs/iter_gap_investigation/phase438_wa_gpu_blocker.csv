@@ -1,0 +1,13 @@
+item,value,source
+gpu_host,ws-faaf0de74ef9a14d-worker-9dr4q.zhaojieyu+root.ailab-sys.pod@h.pjlab.org.cn,phase438_wa_8k_steady/remote_run.log
+scenario,K2.5-tp4ep8dp2-8k2k-wa-steady,phase438_wa_8k_steady/K2.5-tp4ep8dp2-8k2k-wa-steady/meta.json
+steady_gate,passed: engine0=56 engine1=56 stable=3,phase438_wa_8k_steady/K2.5-tp4ep8dp2-8k2k-wa-steady/steady_running_checks.jsonl
+torch_profiler_start,started on ApiServer_0 at 2026-07-07T13:28:49Z,phase438_wa_8k_steady/K2.5-tp4ep8dp2-8k2k-wa-steady/serve_wa_8k2k_steady_mixed_attempt1.log
+failure_mode,ProcessGroupNCCL watchdog CUDA unspecified launch failure after profiler start,phase438_wa_8k_steady/K2.5-tp4ep8dp2-8k2k-wa-steady/serve_wa_8k2k_steady_mixed_attempt1.log
+trace_files,0,phase438_wa_8k_steady/remote_run.log
+window_check,failed: mixed_prefill_high_batch_missing because trace_files=0,phase438_wa_8k_steady/K2.5-tp4ep8dp2-8k2k-wa-steady/window_checks.jsonl
+nsys,not found in PATH or common CUDA/nsight paths,remote probe
+gpu_residual_after,empty after cleanup,remote post-cleanup probe
+perfdb_write,not attempted,phase438 guard
+validate_ab,not run because no eligible W-A trace rows,phase438 guard
+default_aic,No-Go,phase438 guard

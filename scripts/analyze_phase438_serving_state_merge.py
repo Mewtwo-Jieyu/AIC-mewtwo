@@ -155,6 +155,13 @@ def read_phase437_rows(path: Path, *, source: str = "phase437_candidate") -> lis
     return rows
 
 
+def read_candidate_rows(paths: list[Path]) -> list[ServingRow]:
+    rows: list[ServingRow] = []
+    for index, path in enumerate(paths):
+        rows.extend(read_phase437_rows(path, source=f"{path.stem}_candidate_{index}"))
+    return rows
+
+
 def _spread_pct(values: list[float]) -> float:
     if not values:
         return math.nan
@@ -503,7 +510,7 @@ def recommend_gpu_windows(audit_rows: list[dict[str, object]]) -> list[dict[str,
         for (scenario, phase, reason), count in counts.items()
         if scenario == "K2.5-tp4ep8dp2-8k2k"
         and phase == "mixed_prefill"
-        and reason in {"decode_batch_above_range", "interpolation_gap", "table_missing"}
+        and reason in {"decode_batch_above_range", "interpolation_gap", "bucket_below_range", "table_missing"}
     )
     if miss8:
         windows.append(
@@ -512,9 +519,9 @@ def recommend_gpu_windows(audit_rows: list[dict[str, object]]) -> list[dict[str,
                 "row_type": "window_recommendation",
                 "window": "W-A",
                 "scenario": "K2.5-tp4ep8dp2-8k2k",
-                "reason": "8k mixed prefill decode_batch above range",
+                "reason": "8k mixed prefill in-scope coverage miss",
                 "count": miss8,
-                "note": "steady trigger required; target decode_batch 56-64",
+                "note": "steady trigger required; extract all observed steps, not only high decode_batch rows",
             }
         )
     miss32 = sum(
@@ -668,7 +675,8 @@ def write_markdown(
 
 def run(args: argparse.Namespace) -> int:
     baseline = read_perfdb_rows(args.perfdb)
-    phase437 = read_phase437_rows(args.phase437_csv)
+    candidate_paths = [args.phase437_csv] + list(args.extra_candidate_csv or [])
+    phase437 = read_candidate_rows(candidate_paths)
     merged, conflicts = merge_rows(
         baseline,
         phase437,
@@ -700,6 +708,12 @@ def run(args: argparse.Namespace) -> int:
         validate_rows=validate_rows,
         windows=windows,
     )
+    if args.perfdb_out is not None:
+        regressions = [row for row in validate_rows if row.get("classification") == "regressed"]
+        if regressions:
+            names = ", ".join(str(row.get("scenario")) for row in regressions)
+            raise RuntimeError(f"refusing to write perfdb candidate because validate regressed: {names}")
+        write_candidate_perfdb(merged, args.perfdb_out)
     return 0
 
 
@@ -707,10 +721,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--perfdb", type=Path, default=DEFAULT_PERFDB)
     parser.add_argument("--phase437-csv", type=Path, default=DEFAULT_PHASE437_CSV)
+    parser.add_argument("--extra-candidate-csv", type=Path, action="append", default=[])
     parser.add_argument("--phase437-ab", type=Path, default=DEFAULT_PHASE437_AB)
     parser.add_argument("--axis-csv", type=Path, default=DEFAULT_AXIS_CSV)
     parser.add_argument("--csv", type=Path, default=DEFAULT_CSV)
     parser.add_argument("--md", type=Path, default=DEFAULT_MD)
+    parser.add_argument("--perfdb-out", type=Path, default=None)
     parser.add_argument("--tolerance-pct", type=float, default=DEFAULT_TOLERANCE_PCT)
     parser.add_argument("--conflict-threshold-pct", type=float, default=DEFAULT_TOLERANCE_PCT)
     return run(parser.parse_args())
