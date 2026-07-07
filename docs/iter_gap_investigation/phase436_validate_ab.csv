@@ -1,0 +1,8 @@
+source,row_type,scenario,real_out_tok_s_gpu,phase435_sim_tok_s_gpu,phase435_ratio,phase436_sim_tok_s_gpu,phase436_ratio,delta_ratio,classification,default_readiness
+phase436_serving_state_grid,validate_ab,K2.5-tp8ep8-8k2k,133.528,166.971525,1.250461,166.971525,1.250461,0.000000,unchanged,No-Go
+phase436_serving_state_grid,validate_ab,K2.5-tp8ep8-32k3k,52.469143,56.078752,1.068795,56.078752,1.068795,0.000000,unchanged,No-Go
+phase436_serving_state_grid,validate_ab,K2.5-tp4ep8dp2-8k2k,137.716000,358.060912,2.599995,358.060912,2.599995,0.000000,still_failing_grid_miss,No-Go
+phase436_serving_state_grid,validate_ab,K2.5-tp4ep8dp2-32k3k,53.277429,66.840333,1.254571,66.840333,1.254571,0.000000,unchanged,No-Go
+phase436_serving_state_grid,validate_ab,K2.5-tp8ep8-8k2k-bt65536,138.470000,155.069882,1.119881,155.069882,1.119881,0.000000,unchanged,No-Go
+phase436_serving_state_grid,validate_ab,K2.5-tp4ep8dp2-8k2k-bt65536,113.910186,142.300528,1.249234,142.300528,1.249234,0.000000,unchanged,No-Go
+phase436_serving_state_grid,validate_summary,multi_config,0.000000,0.000000,2.599995,0.000000,2.599995,0.000000,max_still_fails_mean_1.42,No-Go

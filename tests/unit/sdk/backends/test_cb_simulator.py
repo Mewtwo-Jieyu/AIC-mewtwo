@@ -571,6 +571,65 @@ class _ServingStateDB:
         return None
 
 
+class _BoundedServingStateDB(_ServingStateDB):
+    def __init__(self) -> None:
+        super().__init__()
+        scope = (
+            "kimi-k2.5",
+            "tp4dp2ep8",
+            "mixed_prefill",
+            "moe_gemm_or_aux",
+            7168,
+            8,
+            8,
+            "CompressedTensorsWNA16MarlinMoEMethod",
+        )
+        decode_scope = (
+            "kimi-k2.5",
+            "tp4dp2ep8",
+            "decode",
+            "moe_gemm_or_aux",
+            7168,
+            8,
+            8,
+            "CompressedTensorsWNA16MarlinMoEMethod",
+        )
+        self._vllm_serving_state_data = {
+            scope: {
+                8000: {
+                    1: {"latency": 50.0, "energy": 0.0},
+                    34: {"latency": 50.0, "energy": 0.0},
+                }
+            },
+            decode_scope: {
+                8: {8: {"latency": 1.0, "energy": 0.0}},
+                36: {36: {"latency": 2.0, "energy": 0.0}},
+                52: {52: {"latency": 3.0, "energy": 0.0}},
+            },
+        }
+
+    def query_vllm_serving_state(self, **kwargs):
+        self.calls.append(kwargs)
+        key = (
+            kwargs["model"],
+            kwargs["topology"],
+            kwargs["phase"],
+            kwargs["category"],
+            kwargs["hidden_size"],
+            kwargs["topk"],
+            kwargs["moe_ep_size"],
+            kwargs["quant_runtime"],
+        )
+        table = self._vllm_serving_state_data.get(key)
+        if table is None:
+            return None
+        batch_table = table.get(kwargs["bucket_tokens"])
+        if batch_table is None:
+            return None
+        result = batch_table.get(kwargs["decode_batch"])
+        return None if result is None else PerformanceResult(result["latency"], energy=0.0)
+
+
 class TestIterationLatencyCalculator:
     def test_mixed_folds_decode_non_attention_into_merged_pass(self) -> None:
         # In a mixed iteration the token-parallel non-attention ops are charged
@@ -635,6 +694,39 @@ class TestIterationLatencyCalculator:
 
         assert total == pytest.approx(45.0)
         assert db.calls == []
+
+    def test_serving_state_records_out_of_grid_misses(self) -> None:
+        db = _BoundedServingStateDB()
+        calc = IterationLatencyCalculator(
+            backend=_ServingStateBackendForIteration(),
+            model=_FakeKimiDP2ModelForServingState(),
+            database=db,
+        )
+
+        calc.compute(
+            prefill_tokens=8000,
+            prefill_batch_size=1,
+            prefill_seq_len=8000,
+            decode_batch_size=64,
+            decode_avg_kv_len=8000,
+        )
+        calc.compute(
+            prefill_tokens=0,
+            prefill_batch_size=0,
+            prefill_seq_len=1,
+            decode_batch_size=64,
+            decode_avg_kv_len=8000,
+        )
+
+        audit = [record.as_dict() for record in calc.get_serving_state_query_audit()]
+        assert {
+            (row["phase"], row["category"], row["miss_reason"])
+            for row in audit
+            if row["category"] == "moe_gemm_or_aux"
+        } >= {
+            ("mixed_prefill", "moe_gemm_or_aux", "decode_batch_above_range"),
+            ("decode", "moe_gemm_or_aux", "bucket_above_range"),
+        }
 
     def test_mixed_non_attention_uses_merged_total_tokens(self) -> None:
         # Mixed iterations must charge the token-parallel non-attention ops at

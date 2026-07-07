@@ -65,6 +65,36 @@ class IterationLatencyBreakdown:
         }
 
 
+@dataclass(frozen=True)
+class ServingStateQueryAudit:
+    """One serving-state PerfDB query attempt."""
+
+    phase: str
+    category: str
+    bucket_tokens: int
+    decode_batch: int
+    hit: bool
+    miss_reason: str
+    bucket_min: int | None = None
+    bucket_max: int | None = None
+    decode_batch_min: int | None = None
+    decode_batch_max: int | None = None
+
+    def as_dict(self) -> dict[str, int | str | bool | None]:
+        return {
+            "phase": self.phase,
+            "category": self.category,
+            "bucket_tokens": self.bucket_tokens,
+            "decode_batch": self.decode_batch,
+            "hit": self.hit,
+            "miss_reason": self.miss_reason,
+            "bucket_min": self.bucket_min,
+            "bucket_max": self.bucket_max,
+            "decode_batch_min": self.decode_batch_min,
+            "decode_batch_max": self.decode_batch_max,
+        }
+
+
 class IterationLatencyCalculator:
     """Compute per-iteration latency for mixed prefill+decode iterations."""
 
@@ -89,6 +119,7 @@ class IterationLatencyCalculator:
         self._per_iteration_overhead_ms = per_iteration_overhead_ms
         self._cache: dict[tuple, IterationLatencyBreakdown] = {}
         self._last_breakdown: IterationLatencyBreakdown | None = None
+        self._serving_state_query_audit: list[ServingStateQueryAudit] = []
 
     def _combine_with_overlap(self, a_ms: float, b_ms: float) -> float:
         return max(a_ms, b_ms) + self._overlap_factor * min(a_ms, b_ms)
@@ -158,6 +189,14 @@ class IterationLatencyCalculator:
         decode_batch: int,
     ) -> float | None:
         if not self._serving_state_scope_enabled():
+            self._record_serving_state_audit(
+                phase=phase,
+                category=category,
+                bucket_tokens=bucket_tokens,
+                decode_batch=decode_batch,
+                hit=False,
+                miss_reason="scope_disabled",
+            )
             return None
         result = self._database.query_vllm_serving_state(
             model=_SERVING_STATE_PERFDB_MODEL,
@@ -171,7 +210,114 @@ class IterationLatencyCalculator:
             moe_ep_size=_SERVING_STATE_MOE_EP_SIZE,
             quant_runtime=_SERVING_STATE_QUANT_RUNTIME,
         )
+        self._record_serving_state_audit(
+            phase=phase,
+            category=category,
+            bucket_tokens=bucket_tokens,
+            decode_batch=decode_batch,
+            hit=result is not None,
+            miss_reason="hit" if result is not None else self._serving_state_miss_reason(
+                phase=phase,
+                category=category,
+                bucket_tokens=bucket_tokens,
+                decode_batch=decode_batch,
+            ),
+        )
         return None if result is None else float(result)
+
+    def _serving_state_table_for(self, *, phase: str, category: str) -> dict | None:
+        data = getattr(self._database, "_vllm_serving_state_data", None)
+        if data is None:
+            return None
+        key = (
+            _SERVING_STATE_PERFDB_MODEL,
+            _SERVING_STATE_TOPOLOGY,
+            phase,
+            category,
+            _SERVING_STATE_HIDDEN_SIZE,
+            _SERVING_STATE_TOPK,
+            _SERVING_STATE_MOE_EP_SIZE,
+            _SERVING_STATE_QUANT_RUNTIME,
+        )
+        table = data.get(key)
+        return table if table else None
+
+    def _serving_state_miss_reason(
+        self,
+        *,
+        phase: str,
+        category: str,
+        bucket_tokens: int,
+        decode_batch: int,
+    ) -> str:
+        table = self._serving_state_table_for(phase=phase, category=category)
+        if table is None:
+            return "table_missing"
+
+        token_values = sorted(int(token) for token in table)
+        if not token_values:
+            return "table_empty"
+        if bucket_tokens < token_values[0]:
+            return "bucket_below_range"
+        if bucket_tokens > token_values[-1]:
+            return "bucket_above_range"
+
+        candidate_tokens = [token for token in token_values if token == bucket_tokens]
+        if not candidate_tokens:
+            left = [token for token in token_values if token < bucket_tokens]
+            right = [token for token in token_values if token > bucket_tokens]
+            if not left or not right:
+                return "bucket_bracket_missing"
+            candidate_tokens = [max(left), min(right)]
+
+        batch_values: list[int] = []
+        for token in candidate_tokens:
+            batch_values.extend(int(batch) for batch in table[token])
+        if not batch_values:
+            return "decode_batch_table_empty"
+        if decode_batch < min(batch_values):
+            return "decode_batch_below_range"
+        if decode_batch > max(batch_values):
+            return "decode_batch_above_range"
+        return "interpolation_gap"
+
+    def _record_serving_state_audit(
+        self,
+        *,
+        phase: str,
+        category: str,
+        bucket_tokens: int,
+        decode_batch: int,
+        hit: bool,
+        miss_reason: str,
+    ) -> None:
+        table = self._serving_state_table_for(phase=phase, category=category)
+        bucket_min = bucket_max = decode_batch_min = decode_batch_max = None
+        if table:
+            token_values = sorted(int(token) for token in table)
+            if token_values:
+                bucket_min = token_values[0]
+                bucket_max = token_values[-1]
+                batch_values: list[int] = []
+                for batch_table in table.values():
+                    batch_values.extend(int(batch) for batch in batch_table)
+                if batch_values:
+                    decode_batch_min = min(batch_values)
+                    decode_batch_max = max(batch_values)
+        self._serving_state_query_audit.append(
+            ServingStateQueryAudit(
+                phase=phase,
+                category=category,
+                bucket_tokens=bucket_tokens,
+                decode_batch=decode_batch,
+                hit=hit,
+                miss_reason=miss_reason,
+                bucket_min=bucket_min,
+                bucket_max=bucket_max,
+                decode_batch_min=decode_batch_min,
+                decode_batch_max=decode_batch_max,
+            )
+        )
 
     def _serving_state_adjusted_non_attention(
         self,
@@ -257,6 +403,10 @@ class IterationLatencyCalculator:
     def get_last_breakdown(self) -> IterationLatencyBreakdown | None:
         """Return the most recent iteration breakdown."""
         return self._last_breakdown
+
+    def get_serving_state_query_audit(self) -> list[ServingStateQueryAudit]:
+        """Return serving-state query hit/miss records from this calculator."""
+        return list(self._serving_state_query_audit)
 
     def _compute_3pass(
         self, total_tokens: int, prefill_tokens: int, prefill_bs: int,

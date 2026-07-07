@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from .datatypes import CBSimConfig, CBSimResult, Request, RequestState
-from .iteration_latency import IterationLatencyCalculator
+from .iteration_latency import IterationLatencyCalculator, ServingStateQueryAudit
 from .scheduler import CBScheduler
 
 if TYPE_CHECKING:
@@ -38,6 +38,7 @@ class CBSimulator:
         self._backend = backend
         self._model = model
         self._database = database
+        self._last_latency_calc: IterationLatencyCalculator | None = None
 
     def _create_latency_calc(self, prefix: int) -> IterationLatencyCalculator:
         """Factory hook for latency calculator. Override in tests."""
@@ -112,6 +113,7 @@ class CBSimulator:
             CBSimResult with TTFT, TPOT, throughput metrics.
         """
         latency_calc = self._create_latency_calc(prefix)
+        self._last_latency_calc = latency_calc
 
         waiting: list[Request] = []
         running: list[Request] = []
@@ -252,6 +254,12 @@ class CBSimulator:
             steady_iters, steady_time_ms, steady_output_tokens,
             peak_prefill_reqs, peak_decode_reqs, peak_tokens,
         )
+
+    def get_last_serving_state_query_audit(self) -> list[ServingStateQueryAudit]:
+        """Return serving-state query audit records from the most recent run."""
+        if self._last_latency_calc is None:
+            return []
+        return self._last_latency_calc.get_serving_state_query_audit()
 
     def _collect_metrics(
         self,
