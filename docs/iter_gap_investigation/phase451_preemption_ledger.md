@@ -4,26 +4,26 @@
 
 | section | side | engine | metric | value | target | status | note |
 |---|---|---:|---|---:|---|---|---|
-| mixed_profile | real | all | mixed_share | 0.029321 | 0.0243±0.0050 | informational | mixed_steps=2760; total_steps=94132 |
+| mixed_profile | real | all | mixed_share | 0.022518 | 0.0243±0.0050 | pass | mixed_steps=530; total_steps=23537; source=serve.log iteration lines |
 | mixed_profile | sim | all | mixed_share | 0.06326 | 0.0243±0.0050 | fail | mixed_steps=1488; total_steps=23522 |
 | preemption_ledger | real | 0 | request_success_length | 255 |  |  | delta from metrics counter |
-| preemption_ledger | real | 0 | mixed_steps_per_request | 5.411765 |  |  | mixed_steps=1380 |
+| preemption_ledger | real | 0 | mixed_steps_per_request | 1.039216 |  |  | mixed_steps=265; source=EngineCore iteration lines |
 | preemption_ledger | real | 0 | preemptions_per_request | 0.211765 |  |  | preemptions=54.0 |
 | preemption_ledger | real | 0 | prompt_tokens_recomputed_per_request | 0 |  | pass | prompt_tokens_recomputed_total=0.0 |
 | preemption_ledger | real | 0 | prefill_kv_tokens_per_request | 8000 | 8000 | pass | prompt_tokens_total=2048000.0; kv_count=255.0 |
-| preemption_gate | real | 0 | preemption_drives_mixed_steps | 0.03913 | >=0.80 and recomputed_tokens>0 | fail | mixed steps are not mostly preemption/recompute driven |
+| preemption_gate | real | 0 | preemption_drives_mixed_steps | 0.203774 | >=0.80 and recomputed_tokens>0 | fail | mixed steps are not mostly preemption/recompute driven |
 | preemption_ledger | real | 1 | request_success_length | 255 |  |  | delta from metrics counter |
-| preemption_ledger | real | 1 | mixed_steps_per_request | 5.411765 |  |  | mixed_steps=1380 |
+| preemption_ledger | real | 1 | mixed_steps_per_request | 1.039216 |  |  | mixed_steps=265; source=EngineCore iteration lines |
 | preemption_ledger | real | 1 | preemptions_per_request | 0.211765 |  |  | preemptions=54.0 |
 | preemption_ledger | real | 1 | prompt_tokens_recomputed_per_request | 0 |  | pass | prompt_tokens_recomputed_total=0.0 |
 | preemption_ledger | real | 1 | prefill_kv_tokens_per_request | 8000 | 8000 | pass | prompt_tokens_total=2048000.0; kv_count=255.0 |
-| preemption_gate | real | 1 | preemption_drives_mixed_steps | 0.03913 | >=0.80 and recomputed_tokens>0 | fail | mixed steps are not mostly preemption/recompute driven |
+| preemption_gate | real | 1 | preemption_drives_mixed_steps | 0.203774 | >=0.80 and recomputed_tokens>0 | fail | mixed steps are not mostly preemption/recompute driven |
 | preemption_ledger | sim | all | preemptions_per_request | 1.609375 |  |  | preemptions=824; request_count=512 |
 | preemption_ledger | sim | all | recompute_tokens_per_request | 14497 |  |  | recompute_tokens=7422568 |
 | preemption_ledger | sim | all | preempted_prefill_steps_per_request | 1.609375 |  |  | preempted_prefill_steps=824 |
 | preemption_ledger | sim | 0 | mixed_steps_per_request | 2.90625 |  |  | mixed_steps=744; expected_requests_per_engine=256 |
 | preemption_ledger | sim | 1 | mixed_steps_per_request | 2.90625 |  |  | mixed_steps=744; expected_requests_per_engine=256 |
-| verdict | real | all | real_preemption_explains_1380_mixed_steps | false | true | fail | real_preemptions=108; real_recomputed_tokens=0; mixed_steps=2760 |
+| verdict | real | all | real_preemption_explains_mixed_steps | false | true | fail | real_preemptions=108; real_recomputed_tokens=0; mixed_steps=530 |
 | verdict | sim | all | sim_preemption_over_real_preemption | 7.62963 | near 1.0 | fail | sim preemption/recompute is excessive relative to real counters; a runtime fix must target sim over-preemption, not assume real re-prefill |
 | decision | all | all | phase451_3_runtime_fix_gate | blocked | only after exact semantic diff is isolated | blocked | report-only ledger falsifies the original real re-prefill premise |
 | source_audit | vllm | all | running_preemption_trigger | allocate_slots_none |  |  | vllm/v1/core/sched/scheduler.py:460-508 preempts only when RUNNING allocation fails |
@@ -36,5 +36,5 @@
 ## Boundary
 
 - Report-only: no runtime, PerfDB, validate gate, or reference data changed.
-- The real side uses Phase446 B2b 8k2k event/metrics from the same run.
+- The real side uses Phase446 B2b 8k2k serve-log iteration lines plus metrics from the same run.
 - Default AIC remains No-Go until the full table meets the agreed gate.

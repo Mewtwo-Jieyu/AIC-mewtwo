@@ -1,24 +1,24 @@
 scenario,section,side,engine,metric,value,target,status,note
-K2.5-tp4ep8dp2-8k2k,mixed_profile,real,all,mixed_share,0.029320528619385545,0.0243±0.0050,informational,mixed_steps=2760; total_steps=94132
+K2.5-tp4ep8dp2-8k2k,mixed_profile,real,all,mixed_share,0.02251773802948549,0.0243±0.0050,pass,mixed_steps=530; total_steps=23537; source=serve.log iteration lines
 K2.5-tp4ep8dp2-8k2k,mixed_profile,sim,all,mixed_share,0.06325992687696624,0.0243±0.0050,fail,mixed_steps=1488; total_steps=23522
 K2.5-tp4ep8dp2-8k2k,preemption_ledger,real,0,request_success_length,255.0,,,delta from metrics counter
-K2.5-tp4ep8dp2-8k2k,preemption_ledger,real,0,mixed_steps_per_request,5.411764705882353,,,mixed_steps=1380
+K2.5-tp4ep8dp2-8k2k,preemption_ledger,real,0,mixed_steps_per_request,1.0392156862745099,,,mixed_steps=265; source=EngineCore iteration lines
 K2.5-tp4ep8dp2-8k2k,preemption_ledger,real,0,preemptions_per_request,0.21176470588235294,,,preemptions=54.0
 K2.5-tp4ep8dp2-8k2k,preemption_ledger,real,0,prompt_tokens_recomputed_per_request,0.0,,pass,prompt_tokens_recomputed_total=0.0
 K2.5-tp4ep8dp2-8k2k,preemption_ledger,real,0,prefill_kv_tokens_per_request,8000.0,8000,pass,prompt_tokens_total=2048000.0; kv_count=255.0
-K2.5-tp4ep8dp2-8k2k,preemption_gate,real,0,preemption_drives_mixed_steps,0.0391304347826087,>=0.80 and recomputed_tokens>0,fail,mixed steps are not mostly preemption/recompute driven
+K2.5-tp4ep8dp2-8k2k,preemption_gate,real,0,preemption_drives_mixed_steps,0.2037735849056604,>=0.80 and recomputed_tokens>0,fail,mixed steps are not mostly preemption/recompute driven
 K2.5-tp4ep8dp2-8k2k,preemption_ledger,real,1,request_success_length,255.0,,,delta from metrics counter
-K2.5-tp4ep8dp2-8k2k,preemption_ledger,real,1,mixed_steps_per_request,5.411764705882353,,,mixed_steps=1380
+K2.5-tp4ep8dp2-8k2k,preemption_ledger,real,1,mixed_steps_per_request,1.0392156862745099,,,mixed_steps=265; source=EngineCore iteration lines
 K2.5-tp4ep8dp2-8k2k,preemption_ledger,real,1,preemptions_per_request,0.21176470588235294,,,preemptions=54.0
 K2.5-tp4ep8dp2-8k2k,preemption_ledger,real,1,prompt_tokens_recomputed_per_request,0.0,,pass,prompt_tokens_recomputed_total=0.0
 K2.5-tp4ep8dp2-8k2k,preemption_ledger,real,1,prefill_kv_tokens_per_request,8000.0,8000,pass,prompt_tokens_total=2048000.0; kv_count=255.0
-K2.5-tp4ep8dp2-8k2k,preemption_gate,real,1,preemption_drives_mixed_steps,0.0391304347826087,>=0.80 and recomputed_tokens>0,fail,mixed steps are not mostly preemption/recompute driven
+K2.5-tp4ep8dp2-8k2k,preemption_gate,real,1,preemption_drives_mixed_steps,0.2037735849056604,>=0.80 and recomputed_tokens>0,fail,mixed steps are not mostly preemption/recompute driven
 K2.5-tp4ep8dp2-8k2k,preemption_ledger,sim,all,preemptions_per_request,1.609375,,,preemptions=824; request_count=512
 K2.5-tp4ep8dp2-8k2k,preemption_ledger,sim,all,recompute_tokens_per_request,14497.203125,,,recompute_tokens=7422568
 K2.5-tp4ep8dp2-8k2k,preemption_ledger,sim,all,preempted_prefill_steps_per_request,1.609375,,,preempted_prefill_steps=824
 K2.5-tp4ep8dp2-8k2k,preemption_ledger,sim,0,mixed_steps_per_request,2.90625,,,mixed_steps=744; expected_requests_per_engine=256
 K2.5-tp4ep8dp2-8k2k,preemption_ledger,sim,1,mixed_steps_per_request,2.90625,,,mixed_steps=744; expected_requests_per_engine=256
-K2.5-tp4ep8dp2-8k2k,verdict,real,all,real_preemption_explains_1380_mixed_steps,false,true,fail,real_preemptions=108; real_recomputed_tokens=0; mixed_steps=2760
+K2.5-tp4ep8dp2-8k2k,verdict,real,all,real_preemption_explains_mixed_steps,false,true,fail,real_preemptions=108; real_recomputed_tokens=0; mixed_steps=530
 K2.5-tp4ep8dp2-8k2k,verdict,sim,all,sim_preemption_over_real_preemption,7.62962962962963,near 1.0,fail,"sim preemption/recompute is excessive relative to real counters; a runtime fix must target sim over-preemption, not assume real re-prefill"
 K2.5-tp4ep8dp2-8k2k,decision,all,all,phase451_3_runtime_fix_gate,blocked,only after exact semantic diff is isolated,blocked,report-only ledger falsifies the original real re-prefill premise
 K2.5-tp4ep8dp2-8k2k,source_audit,vllm,all,running_preemption_trigger,allocate_slots_none,,,vllm/v1/core/sched/scheduler.py:460-508 preempts only when RUNNING allocation fails

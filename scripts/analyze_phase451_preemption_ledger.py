@@ -29,9 +29,11 @@ DEFAULT_EVENT = (
     / "overhead_gate_20260708_075726/overhead_on/event_timing.jsonl"
 )
 DEFAULT_METRICS = DEFAULT_EVENT.parent / SCENARIO / "metrics.jsonl"
+DEFAULT_SERVE_LOG = DEFAULT_EVENT.parent / SCENARIO / "serve.log"
 DEFAULT_CSV = REPO_ROOT / "docs/iter_gap_investigation/phase451_preemption_ledger.csv"
 DEFAULT_MD = REPO_ROOT / "docs/iter_gap_investigation/phase451_preemption_ledger.md"
 DEFAULT_NUM_REQUESTS = 512
+DEFAULT_TP_WIDTH = 4
 MIXED_SHARE_TARGET = 0.0243
 MIXED_SHARE_TOLERANCE = 0.005
 DEFAULT_READINESS = "No-Go"
@@ -53,6 +55,15 @@ PROM_RE = re.compile(
     r"(?P<value>[-+0-9.eE]+)$"
 )
 LABEL_RE = re.compile(r'([A-Za-z_][A-Za-z0-9_]*)="([^"]*)"')
+ITER_RE = re.compile(
+    r"EngineCore_DP(?P<engine>\d+).*?"
+    r"Iteration\((?P<iteration>\d+)\): "
+    r"(?P<ctx_req>\d+) context requests, "
+    r"(?P<ctx_tok>\d+) context tokens, "
+    r"(?P<gen_req>\d+) generation requests, "
+    r"(?P<gen_tok>\d+) generation tokens, "
+    r"iteration elapsed time: (?P<elapsed>[0-9.]+) ms"
+)
 
 
 @dataclass(frozen=True)
@@ -207,12 +218,12 @@ def summarize_sim_trace(trace: Iterable[dict[str, object]]) -> dict[str, object]
     }
 
 
-def summarize_real_events(event_path: Path) -> dict[str, object]:
+def summarize_real_events(event_path: Path, *, tp_width: int = DEFAULT_TP_WIDTH) -> dict[str, object]:
     import scripts.analyze_phase446_b2b_ingest as phase446
 
     steps = phase446.group_event_steps(
         phase446.read_event_records(event_path),
-        tp_width=1,
+        tp_width=tp_width,
     )
     mixed_by_engine: Counter[str] = Counter()
     phase_counts: Counter[str] = Counter()
@@ -221,6 +232,39 @@ def summarize_real_events(event_path: Path) -> dict[str, object]:
         if step.phase == "mixed_prefill":
             mixed_by_engine[str(step.dp_rank)] += 1
     total = len(steps)
+    mixed = phase_counts["mixed_prefill"]
+    return {
+        "total_steps": total,
+        "mixed_steps": mixed,
+        "mixed_share": mixed / total if total else 0.0,
+        "phase_counts": dict(phase_counts),
+        "mixed_steps_by_engine": dict(sorted(mixed_by_engine.items())),
+    }
+
+
+def summarize_real_iterations(serve_log: Path) -> dict[str, object]:
+    """Summarize real EngineCore iteration lines without counting internal event rows."""
+    mixed_by_engine: Counter[str] = Counter()
+    phase_counts: Counter[str] = Counter()
+    with _open_text(serve_log) as f:
+        for line in f:
+            match = ITER_RE.search(line)
+            if not match:
+                continue
+            ctx_tokens = int(match.group("ctx_tok"))
+            gen_reqs = int(match.group("gen_req"))
+            if ctx_tokens > 0 and gen_reqs > 0:
+                phase = "mixed_prefill"
+            elif ctx_tokens > 0:
+                phase = "prefill"
+            elif gen_reqs > 0:
+                phase = "decode"
+            else:
+                phase = "empty"
+            phase_counts[phase] += 1
+            if phase == "mixed_prefill":
+                mixed_by_engine[match.group("engine")] += 1
+    total = sum(phase_counts.values())
     mixed = phase_counts["mixed_prefill"]
     return {
         "total_steps": total,
@@ -344,9 +388,11 @@ def build_reports(
     scenario: str = SCENARIO,
     event_path: Path = DEFAULT_EVENT,
     metrics_path: Path = DEFAULT_METRICS,
+    serve_log: Path = DEFAULT_SERVE_LOG,
     num_requests: int = DEFAULT_NUM_REQUESTS,
+    tp_width: int = DEFAULT_TP_WIDTH,
 ) -> list[dict[str, object]]:
-    real_events = summarize_real_events(event_path)
+    real_events = summarize_real_iterations(serve_log)
     deltas = collect_metric_deltas(metrics_path)
     sim = run_sim_preemption_ledger(scenario=scenario, num_requests=num_requests)
 
@@ -363,7 +409,10 @@ def build_reports(
                 status="pass"
                 if abs(float(real_events["mixed_share"]) - MIXED_SHARE_TARGET) <= MIXED_SHARE_TOLERANCE
                 else "informational",
-                note=f"mixed_steps={real_events['mixed_steps']}; total_steps={real_events['total_steps']}",
+                note=(
+                    f"mixed_steps={real_events['mixed_steps']}; "
+                    f"total_steps={real_events['total_steps']}; source=serve.log iteration lines"
+                ),
             ),
             _row(
                 section="mixed_profile",
@@ -410,7 +459,7 @@ def build_reports(
                     engine=engine,
                     metric="mixed_steps_per_request",
                     value=mixed_steps / requests if requests else math.nan,
-                    note=f"mixed_steps={mixed_steps}",
+                    note=f"mixed_steps={mixed_steps}; source=EngineCore iteration lines",
                 ),
                 _row(
                     section="preemption_ledger",
@@ -508,7 +557,7 @@ def build_reports(
                 section="verdict",
                 side="real",
                 engine="all",
-                metric="real_preemption_explains_1380_mixed_steps",
+                metric="real_preemption_explains_mixed_steps",
                 value="false",
                 target="true",
                 status="fail",
@@ -631,7 +680,7 @@ def write_md(path: Path, rows: list[dict[str, object]]) -> None:
             "## Boundary",
             "",
             "- Report-only: no runtime, PerfDB, validate gate, or reference data changed.",
-            "- The real side uses Phase446 B2b 8k2k event/metrics from the same run.",
+            "- The real side uses Phase446 B2b 8k2k serve-log iteration lines plus metrics from the same run.",
             "- Default AIC remains No-Go until the full table meets the agreed gate.",
             "",
         ]
@@ -643,7 +692,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--event", type=Path, default=DEFAULT_EVENT)
     parser.add_argument("--metrics", type=Path, default=DEFAULT_METRICS)
+    parser.add_argument("--serve-log", type=Path, default=DEFAULT_SERVE_LOG)
     parser.add_argument("--num-requests", type=int, default=DEFAULT_NUM_REQUESTS)
+    parser.add_argument("--tp-width", type=int, default=DEFAULT_TP_WIDTH)
     parser.add_argument("--csv-out", type=Path, default=DEFAULT_CSV)
     parser.add_argument("--md-out", type=Path, default=DEFAULT_MD)
     args = parser.parse_args()
@@ -652,7 +703,9 @@ def main() -> int:
         scenario=SCENARIO,
         event_path=args.event,
         metrics_path=args.metrics,
+        serve_log=args.serve_log,
         num_requests=args.num_requests,
+        tp_width=args.tp_width,
     )
     write_csv(args.csv_out, rows)
     write_md(args.md_out, rows)

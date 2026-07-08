@@ -84,7 +84,66 @@ def test_sim_trace_summary_counts_mixed_share() -> None:
     assert summary["mixed_steps_by_replica"] == {"0": 1, "1": 1}
 
 
+def test_real_event_summary_dedupes_tp_rows(tmp_path: Path) -> None:
+    phase451 = _load_module()
+    event_path = tmp_path / "event_timing.jsonl"
+    mixed = {
+        "schema": "phase446_graph_outer_event_v2",
+        "dp_rank": "0",
+        "ctx_tokens": 7999,
+        "generation_requests": 1,
+        "generation_tokens": 1,
+        "num_tokens_unpadded": 8000,
+        "num_tokens_padded": 8000,
+        "forward_busy_ms": 10.0,
+        "cudagraph_mode": "FULL",
+    }
+    decode = {
+        "schema": "phase446_graph_outer_event_v2",
+        "dp_rank": "0",
+        "ctx_tokens": 0,
+        "generation_requests": 42,
+        "generation_tokens": 42,
+        "num_tokens_unpadded": 42,
+        "num_tokens_padded": 42,
+        "forward_busy_ms": 2.0,
+        "cudagraph_mode": "FULL",
+    }
+    rows = [mixed] * 4 + [decode] * 4
+    event_path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+
+    summary = phase451.summarize_real_events(event_path, tp_width=4)
+
+    assert summary["total_steps"] == 2
+    assert summary["mixed_steps"] == 1
+    assert summary["mixed_steps_by_engine"] == {"0": 1}
+
+
+def test_real_iteration_summary_uses_enginecore_steps(tmp_path: Path) -> None:
+    phase451 = _load_module()
+    serve_log = tmp_path / "serve.log"
+    serve_log.write_text(
+        "\n".join(
+            [
+                "(EngineCore_DP0 pid=1) Iteration(0): 1 context requests, 8000 context tokens, 0 generation requests, 0 generation tokens, iteration elapsed time: 1.0 ms",
+                "(EngineCore_DP0 pid=1) Iteration(1): 1 context requests, 7999 context tokens, 1 generation requests, 1 generation tokens, iteration elapsed time: 1.0 ms",
+                "(EngineCore_DP1 pid=2) Iteration(0): 0 context requests, 0 context tokens, 42 generation requests, 42 generation tokens, iteration elapsed time: 1.0 ms",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    summary = phase451.summarize_real_iterations(serve_log)
+
+    assert summary["total_steps"] == 3
+    assert summary["mixed_steps"] == 1
+    assert summary["mixed_steps_by_engine"] == {"0": 1}
+
+
 if __name__ == "__main__":
     test_counter_deltas_keep_recompute_separate_from_preemption(Path("/tmp/phase451_test"))
     test_preemption_driver_gate_requires_recomputed_tokens()
     test_sim_trace_summary_counts_mixed_share()
+    test_real_event_summary_dedupes_tp_rows(Path("/tmp/phase451_test"))
+    test_real_iteration_summary_uses_enginecore_steps(Path("/tmp/phase451_test"))
