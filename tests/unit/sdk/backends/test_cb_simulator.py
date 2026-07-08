@@ -11,6 +11,10 @@ from aiconfigurator.sdk import common
 from aiconfigurator.sdk.backends.cb_simulator.datatypes import (
     CBSimConfig, Request, RequestState,
 )
+from aiconfigurator.sdk.backends.cb_simulator.dp_admission import (
+    DPAdmissionRouter,
+    DPReplicaCounts,
+)
 from aiconfigurator.sdk.backends.cb_simulator.iteration_latency import IterationLatencyCalculator
 from aiconfigurator.sdk.backends.cb_simulator.scheduler import CBScheduler
 from aiconfigurator.sdk.backends.cb_simulator.simulator import CBSimulator
@@ -273,6 +277,50 @@ class TestCBScheduler:
         assert result.prefill_tokens[1] == 16
 
 
+class TestDPAdmissionRouter:
+    def test_score_routing_uses_waiting_four_plus_running(self) -> None:
+        router = DPAdmissionRouter(2)
+
+        replica = router.route(
+            now_ms=0.0,
+            actual_counts=[
+                DPReplicaCounts(waiting=1, running=0),
+                DPReplicaCounts(waiting=0, running=3),
+            ],
+        )
+
+        assert replica == 1
+
+    def test_router_uses_stale_counts_until_refresh_interval(self) -> None:
+        router = DPAdmissionRouter(2, stats_update_interval_ms=100.0)
+
+        first = router.route(
+            now_ms=0.0,
+            actual_counts=[
+                DPReplicaCounts(waiting=0, running=0),
+                DPReplicaCounts(waiting=0, running=10),
+            ],
+        )
+        second = router.route(
+            now_ms=50.0,
+            actual_counts=[
+                DPReplicaCounts(waiting=100, running=100),
+                DPReplicaCounts(waiting=0, running=0),
+            ],
+        )
+        third = router.route(
+            now_ms=100.0,
+            actual_counts=[
+                DPReplicaCounts(waiting=100, running=100),
+                DPReplicaCounts(waiting=0, running=0),
+            ],
+        )
+
+        assert first == 0
+        assert second == 1
+        assert third == 1
+
+
 # --- Simulator tests with mocked latency calculator ---
 
 
@@ -386,6 +434,45 @@ class TestCBSimulatorUnit:
         r.generated_tokens = 9
         r.state = RequestState.DONE
         assert r.state == RequestState.DONE
+
+    def test_multi_replica_dp1_matches_single_replica(self) -> None:
+        cfg = CBSimConfig(num_requests=20, warmup_requests=5)
+        single = _make_testable_sim(cfg).run(
+            isl=1000, osl=50, concurrency=4, num_gpus=1,
+        )
+        multi = _make_testable_sim(cfg).run_multi_replica(
+            isl=1000,
+            osl=50,
+            concurrency=4,
+            data_parallel_size=1,
+            num_gpus=1,
+        )
+
+        assert multi.throughput_tok_s == pytest.approx(single.throughput_tok_s)
+        assert multi.mean_ttft_ms == pytest.approx(single.mean_ttft_ms)
+        assert multi.total_iterations == single.total_iterations
+
+    def test_multi_replica_keeps_independent_replica_state(self) -> None:
+        cfg = CBSimConfig(
+            max_num_batched_tokens=1000,
+            num_requests=12,
+            warmup_requests=2,
+        )
+        sim = _make_testable_sim(cfg)
+
+        result = sim.run_multi_replica(
+            isl=1000,
+            osl=8,
+            concurrency=4,
+            data_parallel_size=2,
+            num_gpus=2,
+        )
+        replicas_seen = {
+            int(row["replica_id"]) for row in sim.get_last_schedule_trace()
+        }
+
+        assert replicas_seen == {0, 1}
+        assert result.throughput_tok_s > 0
 
     def test_kv_cache_len_tracks_progress(self) -> None:
         r = Request(request_id=0, isl=1000, osl=100, arrival_time_ms=0.0)

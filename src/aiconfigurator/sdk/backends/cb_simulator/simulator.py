@@ -7,11 +7,13 @@ WAITING/PREEMPTED -> PREFILLING -> DECODING -> DONE.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import numpy as np
 
 from .datatypes import CBSimConfig, CBSimResult, Request, RequestState
+from .dp_admission import DPAdmissionRouter, DPReplicaCounts
 from .iteration_latency import IterationLatencyCalculator, ServingStateQueryAudit
 from .scheduler import CBScheduler
 
@@ -21,6 +23,18 @@ if TYPE_CHECKING:
     from aiconfigurator.sdk.perf_database import PerfDatabase
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class _ReplicaState:
+    """Mutable state owned by one DP replica."""
+
+    replica_id: int
+    scheduler: CBScheduler
+    waiting: list[Request] = field(default_factory=list)
+    running: list[Request] = field(default_factory=list)
+    clock_ms: float = 0.0
+    total_iters: int = 0
 
 
 class CBSimulator:
@@ -39,6 +53,7 @@ class CBSimulator:
         self._model = model
         self._database = database
         self._last_latency_calc: IterationLatencyCalculator | None = None
+        self._last_schedule_trace: list[dict[str, float | int | bool]] = []
 
     def _create_latency_calc(self, prefix: int) -> IterationLatencyCalculator:
         """Factory hook for latency calculator. Override in tests."""
@@ -114,6 +129,7 @@ class CBSimulator:
         """
         latency_calc = self._create_latency_calc(prefix)
         self._last_latency_calc = latency_calc
+        self._last_schedule_trace = []
 
         waiting: list[Request] = []
         running: list[Request] = []
@@ -255,11 +271,205 @@ class CBSimulator:
             peak_prefill_reqs, peak_decode_reqs, peak_tokens,
         )
 
+    def run_multi_replica(
+        self,
+        isl: int,
+        osl: int,
+        concurrency: int,
+        data_parallel_size: int,
+        prefix: int = 0,
+        num_gpus: int = 1,
+    ) -> CBSimResult:
+        """Run global closed-loop simulation across DP replicas.
+
+        ``run`` intentionally remains the single-replica primitive.  This method
+        adds only the architecture missing from the DP path: independent
+        schedulers/clocks/KV states plus a global admission router.
+        """
+        if data_parallel_size <= 1:
+            return self.run(
+                isl=isl,
+                osl=osl,
+                concurrency=concurrency,
+                prefix=prefix,
+                num_gpus=num_gpus,
+            )
+
+        latency_calc = self._create_latency_calc(prefix)
+        self._last_latency_calc = latency_calc
+        self._last_schedule_trace = []
+
+        replicas = [
+            _ReplicaState(
+                replica_id=idx,
+                scheduler=CBScheduler(self._config),
+            )
+            for idx in range(data_parallel_size)
+        ]
+        router = DPAdmissionRouter(data_parallel_size)
+        completed: list[Request] = []
+        next_id = 0
+
+        def actual_counts() -> list[DPReplicaCounts]:
+            return [
+                DPReplicaCounts(waiting=len(replica.waiting), running=len(replica.running))
+                for replica in replicas
+            ]
+
+        def route_request(now_ms: float) -> None:
+            nonlocal next_id
+            replica_idx = router.route(
+                now_ms=now_ms,
+                actual_counts=actual_counts(),
+            )
+            replicas[replica_idx].waiting.append(
+                Request(
+                    request_id=next_id,
+                    isl=isl,
+                    osl=osl,
+                    arrival_time_ms=now_ms,
+                )
+            )
+            next_id += 1
+
+        for _ in range(min(concurrency, self._config.num_requests)):
+            route_request(0.0)
+
+        max_iters = self._config.num_requests * data_parallel_size * (
+            osl + isl // self._config.max_num_batched_tokens + 10
+        )
+        total_iters = 0
+        sum_prefill_reqs = 0
+        sum_decode_reqs = 0
+        sum_tokens = 0
+        steady_iters = 0
+        steady_start_ms: float | None = None
+        steady_end_ms = 0.0
+        steady_output_tokens = 0
+        peak_prefill_reqs = 0
+        peak_decode_reqs = 0
+        peak_tokens = 0
+
+        while len(completed) < self._config.num_requests and total_iters < max_iters:
+            active = [
+                replica for replica in replicas
+                if replica.waiting or replica.running
+            ]
+            if not active:
+                break
+            replica = min(active, key=lambda item: (item.clock_ms, item.replica_id))
+            has_external_supply = next_id < self._config.num_requests
+            schedule = replica.scheduler.schedule(replica.waiting, replica.running)
+            if schedule.is_empty:
+                break
+
+            avg_kv = int(np.mean([r.kv_cache_len for r in schedule.decode_reqs])) \
+                if schedule.decode_reqs else 0
+            iter_lat = latency_calc.compute(
+                prefill_tokens=schedule.total_prefill_tokens,
+                prefill_batch_size=len(schedule.prefill_reqs),
+                prefill_seq_len=isl,
+                decode_batch_size=len(schedule.decode_reqs),
+                decode_avg_kv_len=avg_kv,
+            )
+            step_start_ms = replica.clock_ms
+            step_end_ms = step_start_ms + iter_lat
+            in_steady_state = (
+                len(completed) >= self._config.warmup_requests and has_external_supply
+            )
+
+            replica.clock_ms = step_end_ms
+            replica.total_iters += 1
+            total_iters += 1
+            sum_prefill_reqs += len(schedule.prefill_reqs)
+            sum_decode_reqs += len(schedule.decode_reqs)
+            sum_tokens += schedule.total_tokens
+            peak_prefill_reqs = max(peak_prefill_reqs, len(schedule.prefill_reqs))
+            peak_decode_reqs = max(peak_decode_reqs, len(schedule.decode_reqs))
+            peak_tokens = max(peak_tokens, schedule.total_tokens)
+            if in_steady_state:
+                steady_iters += 1
+                if steady_start_ms is None:
+                    steady_start_ms = step_start_ms
+                steady_end_ms = max(steady_end_ms, step_end_ms)
+
+            self._last_schedule_trace.append(
+                {
+                    "replica_id": replica.replica_id,
+                    "local_iter": replica.total_iters,
+                    "start_ms": step_start_ms,
+                    "end_ms": step_end_ms,
+                    "prefill_reqs": len(schedule.prefill_reqs),
+                    "prefill_tokens": schedule.total_prefill_tokens,
+                    "decode_reqs": len(schedule.decode_reqs),
+                    "total_tokens": schedule.total_tokens,
+                    "is_mixed": bool(schedule.prefill_reqs and schedule.decode_reqs),
+                }
+            )
+
+            for req in schedule.prefill_reqs:
+                tokens = schedule.prefill_tokens[req.request_id]
+                if req.state in {RequestState.WAITING, RequestState.PREEMPTED}:
+                    req.state = RequestState.PREFILLING
+                    if req.prefill_start_ms < 0:
+                        req.prefill_start_ms = step_start_ms
+                    if req in replica.waiting:
+                        replica.waiting.remove(req)
+                    replica.running.append(req)
+
+                req.prefill_tokens_remaining -= tokens
+                if req.prefill_tokens_remaining <= 0:
+                    req.prefill_tokens_remaining = 0
+                    if req.first_token_ms < 0:
+                        req.first_token_ms = step_end_ms
+                    req.state = RequestState.DECODING
+
+            newly_done: list[Request] = []
+            for req in schedule.decode_reqs:
+                req.generated_tokens += 1
+                if in_steady_state:
+                    steady_output_tokens += 1
+                if req.generated_tokens >= req.osl - 1:
+                    req.state = RequestState.DONE
+                    req.finish_ms = step_end_ms
+                    newly_done.append(req)
+
+            for req in newly_done:
+                replica.running.remove(req)
+                completed.append(req)
+                if next_id < self._config.num_requests:
+                    route_request(step_end_ms)
+
+        completed.sort(key=lambda req: req.finish_ms)
+        steady_time_ms = (
+            steady_end_ms - steady_start_ms
+            if steady_start_ms is not None and steady_end_ms > steady_start_ms
+            else 0.0
+        )
+        return self._collect_metrics(
+            completed,
+            num_gpus,
+            total_iters,
+            sum_prefill_reqs,
+            sum_decode_reqs,
+            sum_tokens,
+            steady_iters,
+            steady_time_ms,
+            steady_output_tokens,
+            peak_prefill_reqs,
+            peak_decode_reqs,
+            peak_tokens,
+        )
+
     def get_last_serving_state_query_audit(self) -> list[ServingStateQueryAudit]:
         """Return serving-state query audit records from the most recent run."""
         if self._last_latency_calc is None:
             return []
         return self._last_latency_calc.get_serving_state_query_audit()
+
+    def get_last_schedule_trace(self) -> list[dict[str, float | int | bool]]:
+        """Return per-replica schedule trace from the most recent multi run."""
+        return list(self._last_schedule_trace)
 
     def _collect_metrics(
         self,

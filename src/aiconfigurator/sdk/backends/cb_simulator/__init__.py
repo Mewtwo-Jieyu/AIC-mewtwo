@@ -41,6 +41,7 @@ from .holdout_budget_mechanism_candidate import (
     load_holdout_budget_mechanism_candidates,
 )
 from .datatypes import CBSimConfig, CBSimResult, Request, ScheduleResult
+from .dp_admission import DPAdmissionRouter, DPReplicaCounts
 from .forward_descriptor import (
     AttentionRuntimeShapeKey,
     ForwardWrapperShapeKey,
@@ -63,6 +64,8 @@ __all__ = [
     "CBSimulator",
     "Request",
     "ScheduleResult",
+    "DPAdmissionRouter",
+    "DPReplicaCounts",
     "AttentionRuntimeShapeKey",
     "ForwardWrapperShapeKey",
     "KVRuntimeShapeKey",

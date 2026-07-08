@@ -1,0 +1,8 @@
+section,scenario,metric,value,target,status,note
+fingerprint,K2.5-tp4ep8dp2-8k2k,mixed_decode_batch_p50,62.0,34..52,fail,multi-replica admission still over-decodes 8k mixed steps
+fingerprint,K2.5-tp4ep8dp2-8k2k,mixed_bucket_tokens_p50,8000,8000,pass,budget bucket matches real
+fingerprint,K2.5-tp4ep8dp2-32k3k,mixed_decode_batch_p50,8.0,6..9,pass,32k mixed composition matches real band
+fingerprint,K2.5-tp4ep8dp2-32k3k,mixed_bucket_tokens_p50,32000,67..32000,pass,32k bucket gate passes
+decision,all,runtime_lockstep_allowed,false,true,blocked,8k2k fingerprint gate failed
+decision,all,default_run_agg_multi_replica_enabled,false,false,pass,failed multi-replica default path was withdrawn
+validate,all,multi_config_max_ratio,2.12,<=1.50,fail,default validation remains Phase448-floor No-Go
