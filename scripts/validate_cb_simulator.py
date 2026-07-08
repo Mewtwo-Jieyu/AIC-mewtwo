@@ -118,6 +118,27 @@ class MultiConfigTopKRow:
 
 
 @dataclass(frozen=True)
+class MultiConfigABRow:
+    name: str
+    tp: int
+    dp: int
+    ep: int
+    max_bt: int
+    baseline_real_output_tok_s_gpu: float
+    baseline_sim_output_tok_s_gpu: float
+    baseline_error_ratio: float
+    current_real_output_tok_s_gpu: float
+    current_sim_output_tok_s_gpu: float
+    current_error_ratio: float
+    delta_error_ratio: float
+    delta_sim_output_tok_s_gpu: float
+    classification: str
+    diagnostic_only: bool
+    valid_for_default: bool
+    perf_database: bool
+
+
+@dataclass(frozen=True)
 class MultiConfigBudgetBreakdownRow:
     name: str
     tp: int
@@ -356,10 +377,138 @@ def _write_rows(path: Path, rows: list[object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = list(asdict(rows[0]).keys())
     with path.open("w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer = csv.DictWriter(f, fieldnames=fieldnames, lineterminator="\n")
         writer.writeheader()
         for row in rows:
             writer.writerow(asdict(row))
+
+
+def _classify_ab_delta(
+    baseline_error_ratio: float,
+    current_error_ratio: float,
+    *,
+    threshold: float,
+) -> str:
+    delta = current_error_ratio - baseline_error_ratio
+    if delta > threshold:
+        return "regressed"
+    if delta < -threshold:
+        return "improved"
+    return "unchanged"
+
+
+def load_multi_config_ab_baseline(path: Path) -> dict[str, dict[str, float | str]]:
+    required = {"name", "sim_output_tok_s_gpu", "real_output_tok_s_gpu", "error_ratio"}
+    with path.open(newline="") as f:
+        reader = csv.DictReader(f)
+        if reader.fieldnames is None or not required.issubset(set(reader.fieldnames)):
+            raise ValueError(f"{path} must contain columns: {', '.join(sorted(required))}")
+        rows: dict[str, dict[str, float | str]] = {}
+        for row in reader:
+            name = str(row["name"])
+            rows[name] = {
+                "name": name,
+                "sim_output_tok_s_gpu": float(row["sim_output_tok_s_gpu"]),
+                "real_output_tok_s_gpu": float(row["real_output_tok_s_gpu"]),
+                "error_ratio": float(row["error_ratio"]),
+            }
+    if not rows:
+        raise ValueError(f"no baseline rows in {path}")
+    return rows
+
+
+def build_multi_config_ab_rows(
+    baseline_by_name: dict[str, dict[str, float | str]],
+    current_rows: list[MultiConfigTopKRow],
+    *,
+    delta_threshold: float,
+) -> list[MultiConfigABRow]:
+    rows: list[MultiConfigABRow] = []
+    for current in current_rows:
+        baseline = baseline_by_name.get(current.name)
+        if baseline is None:
+            raise ValueError(f"missing baseline row for {current.name}")
+        baseline_error = float(baseline["error_ratio"])
+        baseline_sim = float(baseline["sim_output_tok_s_gpu"])
+        baseline_real = float(baseline["real_output_tok_s_gpu"])
+        rows.append(
+            MultiConfigABRow(
+                name=current.name,
+                tp=current.tp,
+                dp=current.dp,
+                ep=current.ep,
+                max_bt=current.max_bt,
+                baseline_real_output_tok_s_gpu=baseline_real,
+                baseline_sim_output_tok_s_gpu=baseline_sim,
+                baseline_error_ratio=baseline_error,
+                current_real_output_tok_s_gpu=current.real_output_tok_s_gpu,
+                current_sim_output_tok_s_gpu=current.sim_output_tok_s_gpu,
+                current_error_ratio=current.error_ratio,
+                delta_error_ratio=current.error_ratio - baseline_error,
+                delta_sim_output_tok_s_gpu=current.sim_output_tok_s_gpu - baseline_sim,
+                classification=_classify_ab_delta(
+                    baseline_error,
+                    current.error_ratio,
+                    threshold=delta_threshold,
+                ),
+                diagnostic_only=True,
+                valid_for_default=False,
+                perf_database=False,
+            )
+        )
+    return rows
+
+
+def multi_config_ab_has_regression(rows: list[MultiConfigABRow]) -> bool:
+    return any(row.classification == "regressed" for row in rows)
+
+
+def run_multi_config_ab(
+    baseline_csv: Path,
+    *,
+    out_csv: Path | None = None,
+    delta_threshold: float = 0.005,
+    overlap_factor: float = 0.0,
+    ep8_per_iteration_overhead_ms: float = DEFAULT_EP8_PER_ITERATION_OVERHEAD_MS,
+    verbose: bool = True,
+) -> list[MultiConfigABRow]:
+    baseline = load_multi_config_ab_baseline(baseline_csv)
+    current = run_diagnostic_multi_config_topk(
+        overlap_factor=overlap_factor,
+        ep8_per_iteration_overhead_ms=ep8_per_iteration_overhead_ms,
+        verbose=False,
+    )
+    rows = build_multi_config_ab_rows(
+        baseline,
+        current,
+        delta_threshold=delta_threshold,
+    )
+    if out_csv is not None:
+        _write_rows(out_csv, rows)
+    if verbose:
+        print()
+        print("=" * 118)
+        print("MULTI-CONFIG A/B (diagnostic_only=true valid_for_default=false)")
+        print(
+            f"{'Scenario':<34} {'BaseErr':>8} {'CurrErr':>8} {'Delta':>8} "
+            f"{'BaseSim':>8} {'CurrSim':>8} {'Class':>10}"
+        )
+        print("-" * 118)
+        for row in rows:
+            print(
+                f"{row.name:<34} {row.baseline_error_ratio:>7.3f}x "
+                f"{row.current_error_ratio:>7.3f}x {row.delta_error_ratio:>8.3f} "
+                f"{row.baseline_sim_output_tok_s_gpu:>8.1f} "
+                f"{row.current_sim_output_tok_s_gpu:>8.1f} {row.classification:>10}"
+            )
+        print("-" * 118)
+        print(
+            "A/B: "
+            f"{sum(row.classification == 'improved' for row in rows)} improved, "
+            f"{sum(row.classification == 'unchanged' for row in rows)} unchanged, "
+            f"{sum(row.classification == 'regressed' for row in rows)} regressed"
+        )
+    return rows
 
 
 def run_experimental_forward_descriptor(out_csv: Path) -> None:
@@ -1244,6 +1393,27 @@ def main() -> None:
         default=DEFAULT_EP8_PER_ITERATION_OVERHEAD_MS,
     )
     parser.add_argument(
+        "--ab-baseline",
+        type=Path,
+        default=None,
+        help=(
+            "Compare current multi-config diagnostics against a baseline CSV. "
+            "Regressed rows make the command exit non-zero."
+        ),
+    )
+    parser.add_argument(
+        "--ab-out",
+        type=Path,
+        default=None,
+        help="Optional CSV path for --ab-baseline comparison rows.",
+    )
+    parser.add_argument(
+        "--ab-delta-threshold",
+        type=float,
+        default=0.005,
+        help="Minimum error-ratio delta before A/B classifies a row as changed.",
+    )
+    parser.add_argument(
         "--diagnostic-multi-config-topk",
         action="store_true",
         help=(
@@ -1377,6 +1547,18 @@ def main() -> None:
         ),
     )
     args = parser.parse_args()
+
+    if args.ab_baseline is not None:
+        rows = run_multi_config_ab(
+            args.ab_baseline,
+            out_csv=args.ab_out,
+            delta_threshold=args.ab_delta_threshold,
+            overlap_factor=args.overlap_factor,
+            ep8_per_iteration_overhead_ms=args.ep8_per_iteration_overhead_ms,
+        )
+        if multi_config_ab_has_regression(rows):
+            raise SystemExit(1)
+        return
 
     if args.diagnostic_multi_config_topk:
         rows = run_diagnostic_multi_config_topk(
