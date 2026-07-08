@@ -1,0 +1,23 @@
+section,scenario,metric,value,target,status,note
+f1_loop,K2.5-tp4ep8dp2-8k2k,total_preemptions,824,,,
+f1_loop,K2.5-tp4ep8dp2-8k2k,repeat_share,0.9053398058252428,dominant repeat-victim signature,,
+f1_loop,K2.5-tp4ep8dp2-8k2k,near_mixed_share,1.0,>=0.80 supports H2,,
+f1_loop,K2.5-tp4ep8dp2-8k2k,nearest_mixed_distance_median,1.0,,,
+f1_loop,K2.5-tp4ep8dp2-8k2k,loop_interval_count,674,,,
+f1_loop,K2.5-tp4ep8dp2-8k2k,loop_interval_median,2.0,,,
+f1_loop,K2.5-tp4ep8dp2-8k2k,loop_interval_cv,1.8996645648738455,low supports H1; high supports H2,,
+f1_loop,K2.5-tp4ep8dp2-8k2k,over_blocks_median,26.5,,,
+f1_loop,K2.5-tp4ep8dp2-8k2k,over_blocks_p90,72.0,,,
+f2_ledger,K2.5-tp4ep8dp2-8k2k,sim_capacity_blocks,28633,28633,,
+f2_ledger,K2.5-tp4ep8dp2-8k2k,real_capacity_blocks,28633,28633,,
+f2_ledger,K2.5-tp4ep8dp2-8k2k,capacity_ratio,1.0,1.0,,
+f2_ledger,K2.5-tp4ep8dp2-8k2k,prefill_chunk_blocks,500,8000/16=500,,
+f2_ledger,K2.5-tp4ep8dp2-8k2k,decode_growth_blocks,125,about 120-125,,
+f2_ledger,K2.5-tp4ep8dp2-8k2k,full_request_blocks,625,(8000+2000)/16=625,,
+f2_ledger,K2.5-tp4ep8dp2-8k2k,capacity_full_request_ceiling,45.8128,,,
+f2_ledger,K2.5-tp4ep8dp2-8k2k,block_deficit_detected,False,false for H2,,
+f3_counterfactual,K2.5-tp4ep8dp2-8k2k,staggered_preemptions,0,0 supports H2,,
+f3_counterfactual,K2.5-tp4ep8dp2-8k2k,staggered_preemptions_per_request_slot,0.0,<=0.05 supports H2; >=0.20 supports H1,,
+decision,K2.5-tp4ep8dp2-8k2k,hypothesis,H2_wave_overshoot,,pass,preemptions cluster near mixed waves and disappear when lifecycle is staggered
+decision,K2.5-tp4ep8dp2-8k2k,phase451f_fix_gate,blocked_pending_wave_model,,blocked,
+decision,K2.5-tp4ep8dp2-8k2k,phase451e_runtime_patch,not_applied,,blocked,report-only F1-F3; H2 requires wave model design before runtime changes
