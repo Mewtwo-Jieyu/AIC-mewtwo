@@ -1,0 +1,25 @@
+section,scenario,num_requests,metric,value,target,status,note
+closed_set_run,K2.5-tp4ep8dp2-8k2k,128,total_wall_output_tok_s_gpu,102.326013,,,"wall_ms=312569.592; completed_by_replica=[64, 64]"
+closed_set_run,K2.5-tp4ep8dp2-8k2k,128,request_split_ratio,1.000000,,,"completed_by_replica=[64, 64]"
+closed_set_run,K2.5-tp4ep8dp2-8k2k,128,lockstep_padded_extra_share,0.000000,,,padded_extra_ms=0.000; wall_ms=312569.592
+phase_joint,K2.5-tp4ep8dp2-8k2k,128,decode+decode,0.951990,,,
+phase_joint,K2.5-tp4ep8dp2-8k2k,128,mixed_prefill+mixed_prefill,0.047761,,,
+phase_joint,K2.5-tp4ep8dp2-8k2k,128,prefill+prefill,0.000249,,,
+distribution,K2.5-tp4ep8dp2-8k2k,128,mixed_decode_batch_p50,46.000000,,,samples=384
+distribution,K2.5-tp4ep8dp2-8k2k,128,mixed_decode_batch_p10,19.000000,,,samples=384
+distribution,K2.5-tp4ep8dp2-8k2k,128,mixed_decode_batch_p90,52.000000,,,samples=384
+distribution,K2.5-tp4ep8dp2-8k2k,128,mixed_running_before_p50,47.000000,,,samples=384
+closed_set_run,K2.5-tp4ep8dp2-8k2k,512,total_wall_output_tok_s_gpu,113.171667,,,"wall_ms=1130459.628; completed_by_replica=[256, 256]"
+closed_set_run,K2.5-tp4ep8dp2-8k2k,512,request_split_ratio,1.000000,,,"completed_by_replica=[256, 256]"
+closed_set_run,K2.5-tp4ep8dp2-8k2k,512,lockstep_padded_extra_share,0.000000,,,padded_extra_ms=0.000; wall_ms=1130459.628
+phase_joint,K2.5-tp4ep8dp2-8k2k,512,decode+decode,0.936655,,,
+phase_joint,K2.5-tp4ep8dp2-8k2k,512,mixed_prefill+mixed_prefill,0.063260,,,
+phase_joint,K2.5-tp4ep8dp2-8k2k,512,prefill+prefill,0.000085,,,
+distribution,K2.5-tp4ep8dp2-8k2k,512,mixed_decode_batch_p50,47.000000,,,samples=1488
+distribution,K2.5-tp4ep8dp2-8k2k,512,mixed_decode_batch_p10,43.000000,,,samples=1488
+distribution,K2.5-tp4ep8dp2-8k2k,512,mixed_decode_batch_p90,52.000000,,,samples=1488
+distribution,K2.5-tp4ep8dp2-8k2k,512,mixed_running_before_p50,47.000000,,,samples=1488
+gate,K2.5-tp4ep8dp2-8k2k,128->512,artifact_multiplier,1.105991,1.301787±0.10,fail,artifact_error=0.150405
+gate,K2.5-tp4ep8dp2-8k2k,128->512,n128_request_split,1.000000,1.723404±0.10,fail,split_error=0.419753
+gate,K2.5-tp4ep8dp2-8k2k,128->512,n512_request_split,1.000000,1.007843±0.10,pass,split_error=0.007782
+decision,K2.5-tp4ep8dp2-8k2k,128->512,phase450_b_start_closed_set_validate_metric,false,only_if_closed_set_gate_passes,blocked,closed-set artifact direction did not match Phase425; do not wire closed-set validate metric

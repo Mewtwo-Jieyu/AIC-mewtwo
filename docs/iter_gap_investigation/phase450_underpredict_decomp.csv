@@ -1,0 +1,14 @@
+section,scenario,num_requests,metric,value,target,status,note
+underpredict_summary,K2.5-tp4ep8dp2-8k2k,,phase449_error_ratio,1.416000,<=1.15,open,current validate ratio is real/sim underprediction
+underpredict_summary,K2.5-tp4ep8dp2-8k2k,,closed_set_n128_error_ratio,1.345855,direction check,informational,real_n128=137.716000; sim_closed_n128=102.326013
+lockstep,K2.5-tp4ep8dp2-8k2k,,padded_extra_share_n512,0.000000,diagnostic_only,informational,mixed_decode_share=0.000000
+underpredict_verdict,K2.5-tp4ep8dp2-8k2k,,lockstep_reverse_phase_padding,ruled_out,padded_extra_share>0,fail,"sim has no mixed+decode cycles, so peer padding is zero"
+underpredict_verdict,K2.5-tp4ep8dp2-8k2k,,mixed_mixed_oversync_ratio,2.600232,near 1.0,open,sim over-synchronizes mixed waves relative to real fingerprint
+underpredict_verdict,K2.5-tp4ep8dp2-8k2k,,mixed_decode_missing_share,0.000000,real=0.009923,open,phase-joint tolerance was too loose for rare phase pairs
+phase_joint,K2.5-tp4ep8dp2-8k2k,,decode+decode,0.936655,real=0.965600,informational,abs_delta=0.028945
+phase_joint,K2.5-tp4ep8dp2-8k2k,,decode+mixed_prefill,0.000000,real=0.004929,informational,abs_delta=0.004929
+phase_joint,K2.5-tp4ep8dp2-8k2k,,decode+prefill,0.000000,real=0.000064,informational,abs_delta=0.000064
+phase_joint,K2.5-tp4ep8dp2-8k2k,,mixed_prefill+decode,0.000000,real=0.004993,informational,abs_delta=0.004993
+phase_joint,K2.5-tp4ep8dp2-8k2k,,mixed_prefill+mixed_prefill,0.063260,real=0.024329,informational,abs_delta=0.038931
+phase_joint,K2.5-tp4ep8dp2-8k2k,,prefill+mixed_prefill,0.000000,real=0.000064,informational,abs_delta=0.000064
+phase_joint,K2.5-tp4ep8dp2-8k2k,,prefill+prefill,0.000085,real=0.000021,informational,abs_delta=0.000064
