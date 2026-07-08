@@ -1,0 +1,37 @@
+section,scenario,metric,value,target,status,note
+g1_groundtruth,K2.5-tp4ep8dp2-8k2k,bench_records,512,all ok records,,
+g1_groundtruth,K2.5-tp4ep8dp2-8k2k,max_concurrency,128,,,
+g1_groundtruth,K2.5-tp4ep8dp2-8k2k,reconstructed_wall_error,6.069991518621366e-06,<=0.02,pass,reconstructed=754.860s; bench=754.864s
+g1_groundtruth,K2.5-tp4ep8dp2-8k2k,wave_count,4,,,
+g1_groundtruth,K2.5-tp4ep8dp2-8k2k,start_gap_p50_ms,35.972775891423225,,,
+g1_groundtruth,K2.5-tp4ep8dp2-8k2k,start_gap_p90_ms,1133.700681105256,,,
+g1_wave,K2.5-tp4ep8dp2-8k2k,wave_0_start_span_ms,0.0,,,count=128
+g1_wave,K2.5-tp4ep8dp2-8k2k,wave_0_finish_span_ms,164497.5753352046,,,growth_vs_wave0=1
+g1_wave,K2.5-tp4ep8dp2-8k2k,wave_1_start_span_ms,157724.88276846707,,,count=128
+g1_wave,K2.5-tp4ep8dp2-8k2k,wave_1_finish_span_ms,162721.04052081704,,,growth_vs_wave0=0.9892
+g1_wave,K2.5-tp4ep8dp2-8k2k,wave_2_start_span_ms,155997.47745506465,,,count=128
+g1_wave,K2.5-tp4ep8dp2-8k2k,wave_2_finish_span_ms,161503.23725957423,,,growth_vs_wave0=0.981797
+g1_wave,K2.5-tp4ep8dp2-8k2k,wave_3_start_span_ms,161503.23725957423,,,count=128
+g1_wave,K2.5-tp4ep8dp2-8k2k,wave_3_finish_span_ms,138453.2306212932,,,growth_vs_wave0=0.841673
+g2_puzzle,K2.5-tp4ep8dp2-8k2k,bench_ok_request_count,512.0,,,
+g2_puzzle,K2.5-tp4ep8dp2-8k2k,metrics_success_count_delta,510.0,,,metrics polling can miss already-finished requests at the first sample
+g2_puzzle,K2.5-tp4ep8dp2-8k2k,num_preemptions_total,108.0,explain 54-style counter,,vllm/v1/core/sched/scheduler.py:957-973 increments request.num_preemptions
+g2_puzzle,K2.5-tp4ep8dp2-8k2k,engine_0_num_preemptions_total,54.0,54-style per-engine counter,,
+g2_puzzle,K2.5-tp4ep8dp2-8k2k,engine_1_num_preemptions_total,54.0,54-style per-engine counter,,
+g2_puzzle,K2.5-tp4ep8dp2-8k2k,preemptions_per_request,0.2109375,,,
+g2_puzzle,K2.5-tp4ep8dp2-8k2k,prompt_tokens_recomputed_total,0.0,not full preemption recompute,,vllm/v1/metrics/stats.py:249-296 defines recomputed as cached-token accounting
+g2_puzzle,K2.5-tp4ep8dp2-8k2k,prompt_tokens_total_per_request,8000.0,~8000 if no full prompt replay is visible in counters,,
+g2_puzzle,K2.5-tp4ep8dp2-8k2k,prefill_kv_computed_tokens_per_request,7968.75,~8000,,
+g2_puzzle,K2.5-tp4ep8dp2-8k2k,mixed_steps_per_request,1.03515625,~1.04,,mixed_steps=530
+g2_puzzle,K2.5-tp4ep8dp2-8k2k,serve_preemption_log_lines,0,victim context unavailable if 0,blocked,
+g2_puzzle,K2.5-tp4ep8dp2-8k2k,puzzle_resolution,partial_counter_semantics_only,,blocked,"preemption counter and recomputed-token counter measure different things; serve.log lacks victim context, so recovery path remains unproven"
+g3_replay,K2.5-tp4ep8dp2-8k2k,closed_loop_preemptions,824,,,
+g3_replay,K2.5-tp4ep8dp2-8k2k,closed_loop_mixed_share,0.06325992687696624,,,
+g3_replay,K2.5-tp4ep8dp2-8k2k,real_arrival_replay_preemptions,824,,,
+g3_replay,K2.5-tp4ep8dp2-8k2k,real_arrival_replay_preemptions_per_request,1.609375,,,
+g3_replay,K2.5-tp4ep8dp2-8k2k,real_arrival_replay_mixed_share,0.06325992687696624,,,
+g3_replay,K2.5-tp4ep8dp2-8k2k,real_arrival_replay_completed,512,512,pass,"completed_by_replica={0: 256, 1: 256}"
+g3_replay,K2.5-tp4ep8dp2-8k2k,responsibility,scheduler_dynamics_internal,,pass,real reconstructed arrivals still preserve most thrash or mixed-share error
+g4_decision,K2.5-tp4ep8dp2-8k2k,wave_model_gate,blocked_pending_scheduler_mechanism,,blocked,
+g4_decision,K2.5-tp4ep8dp2-8k2k,runtime_patch,not_applied,,blocked,Phase451-G is report-only until a non-parametric mechanism passes declared gates
+g4_decision,K2.5-tp4ep8dp2-8k2k,default_aic,No-Go,,blocked,
