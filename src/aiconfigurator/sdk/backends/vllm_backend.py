@@ -718,19 +718,36 @@ class VLLMBackend(BaseBackend):
         # bit-for-bit unchanged.
         per_replica_concurrency = int(np.ceil(b / dp))
 
-        # Simulator returns TP-group throughput. Pass tp so the reported
-        # per-GPU throughput is tp-normalized, then scale only across pp/dp.
+        # Simulator returns TP-group throughput for dp=1. For dp>1, use the
+        # multi-replica path only in the one-chunk regime whose DP composition
+        # fingerprint was validated in Phase449. Larger batched-token regimes
+        # (for example bt65536) keep the legacy per-replica path until they have
+        # their own fingerprint gate, otherwise a small unvalidated regression
+        # leaks into the six-point table.
         sim = CBSimulator(self, model, database, cb_config)
-        result = sim.run(
-            isl=isl, osl=osl, concurrency=per_replica_concurrency,
-            prefix=prefix, num_gpus=tp,
-        )
+        use_dp_lockstep = dp > 1 and ctx_tokens == isl
+        if use_dp_lockstep:
+            result = sim.run_multi_replica(
+                isl=isl,
+                osl=osl,
+                concurrency=b,
+                data_parallel_size=dp,
+                prefix=prefix,
+                num_gpus=tp * dp,
+                lockstep=True,
+            )
+            scale_factor = pp
+        else:
+            result = sim.run(
+                isl=isl, osl=osl, concurrency=per_replica_concurrency,
+                prefix=prefix, num_gpus=tp,
+            )
+            scale_factor = pp * dp
 
         # CB sim throughput validated against real benchmarks (Phase 2).
         # Output-only throughput now comes directly from the simulator.
-        # result.throughput_tok_s is per-replica (concurrency=b/dp); scale across
-        # the dp replicas and pp stages to recover the full-deployment throughput.
-        scale_factor = pp * dp
+        # Legacy path: result is per TP group, so scale across pp/dp stages.
+        # DP lockstep path: result already includes all DP replicas, so scale pp only.
         raw_output_throughput = result.throughput_tok_s * scale_factor
         output_throughput = raw_output_throughput
         # `b` is already the global concurrency; only pp adds pipeline replicas.

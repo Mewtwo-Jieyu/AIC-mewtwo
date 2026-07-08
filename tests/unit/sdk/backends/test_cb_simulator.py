@@ -474,6 +474,34 @@ class TestCBSimulatorUnit:
         assert replicas_seen == {0, 1}
         assert result.throughput_tok_s > 0
 
+    def test_multi_replica_lockstep_aligns_replica_clocks(self) -> None:
+        cfg = CBSimConfig(
+            max_num_batched_tokens=1000,
+            num_requests=12,
+            warmup_requests=2,
+        )
+        sim = _make_testable_sim(cfg)
+
+        result = sim.run_multi_replica(
+            isl=1000,
+            osl=8,
+            concurrency=4,
+            data_parallel_size=2,
+            num_gpus=2,
+            lockstep=True,
+        )
+        by_iter: dict[int, list[dict]] = defaultdict(list)
+        for row in sim.get_last_schedule_trace():
+            by_iter[int(row["local_iter"])].append(row)
+
+        paired_iters = [rows for rows in by_iter.values() if len(rows) == 2]
+
+        assert paired_iters
+        assert result.throughput_tok_s > 0
+        for rows in paired_iters[:4]:
+            assert rows[0]["start_ms"] == pytest.approx(rows[1]["start_ms"])
+            assert rows[0]["end_ms"] == pytest.approx(rows[1]["end_ms"])
+
     def test_kv_cache_len_tracks_progress(self) -> None:
         r = Request(request_id=0, isl=1000, osl=100, arrival_time_ms=0.0)
         assert r.kv_cache_len == 0
@@ -1826,6 +1854,88 @@ class TestVLLMCBSimBoundary:
         )
         assert per_ops["cb_sim_boundary"]["throughput_source"] == "cb_sim"
         assert per_ops["cb_sim_boundary"]["cb_sim_tokens_s"] == pytest.approx(1234.0)
+
+    def test_run_agg_cb_sim_dp_lockstep_only_for_validated_one_chunk_regime(
+        self,
+        monkeypatch,
+    ) -> None:
+        calls = []
+
+        class _Result:
+            mean_ttft_ms = 111.0
+            mean_tpot_ms = 2.0
+            throughput_tok_s = 800.0
+            peak_tokens_per_iter = 700
+            avg_prefill_reqs_per_iter = 1.5
+            avg_decode_reqs_per_iter = 14.0
+            avg_tokens_per_iter = 600.0
+            peak_prefill_reqs_per_iter = 2
+            peak_decode_reqs_per_iter = 16
+            steady_state_iterations = 100
+            steady_state_time_ms = 5000.0
+            total_iterations = 120
+
+        class _CBSimWithBranches:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def run(self, **kwargs):
+                calls.append(("run", kwargs))
+                return _Result()
+
+            def run_multi_replica(self, **kwargs):
+                calls.append(("run_multi_replica", kwargs))
+                return _Result()
+
+        backend = VLLMBackend()
+        model = MagicMock()
+        model.model_path = "fake-model"
+        model.config.tp_size = 4
+        model.config.pp_size = 1
+        model.config.attention_dp_size = 2
+        model.config.moe_tp_size = 1
+        model.config.moe_ep_size = 8
+        model.config.gemm_quant_mode.name = "fp16"
+        model.config.kvcache_quant_mode.name = "fp16"
+        model.config.fmha_quant_mode.name = "fp16"
+        model.config.moe_quant_mode.name = "fp16"
+        model.config.comm_quant_mode.name = "fp16"
+
+        database = MagicMock()
+        database.backend = "vllm"
+        database.version = "0.19.0"
+        database.system = "h200_sxm"
+        database.system_spec = {"gpu": {"mem_capacity": 80 << 30}}
+
+        monkeypatch.setattr(
+            "aiconfigurator.sdk.backends.cb_simulator.CBSimulator",
+            _CBSimWithBranches,
+        )
+        monkeypatch.setattr(
+            backend,
+            "_get_memory_usage",
+            lambda *args, **kwargs: {"total": 1.0},
+        )
+
+        backend._run_agg_cb_sim(
+            model=model,
+            database=database,
+            runtime_config=RuntimeConfig(batch_size=128, isl=8000, osl=2000),
+            ctx_tokens=8000,
+        )
+        backend._run_agg_cb_sim(
+            model=model,
+            database=database,
+            runtime_config=RuntimeConfig(batch_size=128, isl=8000, osl=2000),
+            ctx_tokens=65536,
+        )
+
+        assert calls[0][0] == "run_multi_replica"
+        assert calls[0][1]["concurrency"] == 128
+        assert calls[0][1]["data_parallel_size"] == 2
+        assert calls[0][1]["lockstep"] is True
+        assert calls[1][0] == "run"
+        assert calls[1][1]["concurrency"] == 64
 
     def test_run_agg_cb_sim_cache_distinguishes_parallel_config(self, monkeypatch) -> None:
         calls = []

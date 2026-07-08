@@ -306,14 +306,18 @@ PHASE397K_KV_CAPACITY_BY_SCENARIO = {
     ),
     "K2.5-tp4ep8dp2-8k2k": MultiConfigKVCapacity(
         scenario="K2.5-tp4ep8dp2-8k2k",
-        kv_cache_tokens=672_128,
+        kv_cache_tokens=458_128,
         block_size=KV_CACHE_BLOCK_SIZE,
-        num_gpu_blocks=42_008,
+        num_gpu_blocks=28_633,
         max_num_seqs=256,
-        serve_log="docs/iter_gap_investigation/phase397k_measured_0190/K2.5-tp4ep8dp2-8k2k/serve.log",
-        serve_log_line_numbers=(210, 213),
-        override_num_gpu_blocks=512,
-        override_line_numbers=(170, 172, 174, 175, 176, 180, 182, 184),
+        serve_log=(
+            "docs/iter_gap_investigation/phase446_b2b_event_timing/"
+            "overhead_gate_20260708_075726/overhead_on/"
+            "K2.5-tp4ep8dp2-8k2k/serve.log"
+        ),
+        serve_log_line_numbers=(209, 212),
+        override_num_gpu_blocks=0,
+        override_line_numbers=(),
     ),
     "K2.5-tp4ep8dp2-32k3k": MultiConfigKVCapacity(
         scenario="K2.5-tp4ep8dp2-32k3k",

@@ -1,0 +1,13 @@
+section,scenario,metric,before,after,gate,status,note
+capacity,K2.5-tp4ep8dp2-8k2k,kv_cache_tokens,672128,458128,match_real_log,pass,"Phase446 serve.log lines 209/212 report 458128 tokens per engine"
+capacity,K2.5-tp4ep8dp2-8k2k,num_gpu_blocks,42008,28633,match_real_log,pass,"block_size=16"
+fingerprint,K2.5-tp4ep8dp2-8k2k,mixed_decode_batch_p50,62,46,34..52,pass,"Phase449 capacity fix closes the 8k2k composition gate"
+fingerprint,K2.5-tp4ep8dp2-32k3k,mixed_decode_batch_p50,8,8,6..9,pass,"32k3k remains inside the existing gate"
+validate,K2.5-tp8ep8-8k2k,error_ratio,1.250,1.250,<=1.50,pass,"tp8 path unchanged"
+validate,K2.5-tp8ep8-32k3k,error_ratio,1.070,1.069,<=1.50,pass,"tp8 path unchanged"
+validate,K2.5-tp4ep8dp2-8k2k,error_ratio,2.120,1.416,<=1.50,pass,"validated one-chunk DP regime now uses multi-replica lockstep"
+validate,K2.5-tp4ep8dp2-32k3k,error_ratio,1.090,1.071,<=1.50,pass,"validated one-chunk DP regime now uses multi-replica lockstep"
+validate,K2.5-tp8ep8-8k2k-bt65536,error_ratio,1.120,1.120,<=1.50,pass,"tp8 path unchanged"
+validate,K2.5-tp4ep8dp2-8k2k-bt65536,error_ratio,1.230,1.234,<=1.50,pass,"bt65536 keeps legacy per-replica path until its own fingerprint gate"
+summary,MULTI_CONFIG,max_error,2.120,1.416,<=1.50,pass,"full validate reports max=1.42x mean=1.19x"
+summary,MULTI_CONFIG,mean_error,1.310,1.190,<=1.50,pass,"legacy throughput and TTFT surfaces remain legacy_skip"
