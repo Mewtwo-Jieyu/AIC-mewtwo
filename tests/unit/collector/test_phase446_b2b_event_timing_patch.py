@@ -55,6 +55,7 @@ def test_phase446_patch_records_events_without_runtime_sync_or_step_io():
     assert "aic_phase446_forward_end.record()" in patched
     assert "aic_phase446_records.append(" in patched
     assert "atexit.register(self._aic_phase446_flush_event_timing)" in patched
+    assert "signal.SIGUSR1" in patched
     assert ".synchronize()" not in patched
     assert "with path_obj.open(\"a\"" not in patched
 

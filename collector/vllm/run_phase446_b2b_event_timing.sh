@@ -72,9 +72,19 @@ run_point() {
 
   local label_root="${OUT_ROOT}/${label}"
   mkdir -p "${label_root}"
+  local pre_stop_hook=""
   if [[ "${event_enabled}" == "1" ]]; then
     export AIC_PHASE446_EVENT_JSONL="${label_root}/event_timing.jsonl"
     : >"${AIC_PHASE446_EVENT_JSONL}"
+    pre_stop_hook="${label_root}/flush_phase446_events.sh"
+    cat >"${pre_stop_hook}" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+pkill -USR1 -f "VLLM::EngineCore" 2>/dev/null || true
+pkill -USR1 -f "VLLM::Worker" 2>/dev/null || true
+sleep "${AIC_PHASE446_SIGNAL_FLUSH_WAIT_S:-10}"
+SH
+    chmod +x "${pre_stop_hook}"
   else
     unset AIC_PHASE446_EVENT_JSONL
   fi
@@ -92,6 +102,7 @@ run_point() {
   BENCH_NUM_PROMPTS="${prompts}" \
   BENCH_MAX_CONCURRENCY="${concurrency}" \
   MAX_MODEL_LEN="${max_model_len}" \
+  PRE_STOP_HOOK_SCRIPT="${pre_stop_hook}" \
   "$(dirname "$0")/run_phase425_8k2k_sweep.sh"
 
   if [[ "${event_enabled}" == "1" ]]; then

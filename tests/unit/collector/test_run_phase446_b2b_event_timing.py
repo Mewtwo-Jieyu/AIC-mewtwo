@@ -19,6 +19,8 @@ def test_phase446_b2b_runner_sets_required_hardware_env_and_patch_lifecycle():
     assert "--restore" in text
     assert "AIC_PHASE446_EVENT_JSONL" in text
     assert "AIC_PHASE446_FLUSH_INTERVAL" in text
+    assert "PRE_STOP_HOOK_SCRIPT" in text
+    assert "USR1" in text
 
 
 def test_phase446_b2b_runner_has_overhead_and_two_collection_modes_without_cupti():

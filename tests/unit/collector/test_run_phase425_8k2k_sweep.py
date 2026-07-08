@@ -25,3 +25,18 @@ def test_phase412_runner_allows_phase_name_override_for_wrappers():
 
     assert 'PHASE_NAME="${PHASE_NAME:-phase412}"' in text
     assert '"phase": "${PHASE_NAME}"' in text
+
+
+def test_phase412_runner_has_optional_pre_stop_hook_before_teardown():
+    runner = REPO_ROOT / "collector/vllm/run_phase412_arrival_sweep.sh"
+    text = runner.read_text(encoding="utf-8")
+
+    assert 'PRE_STOP_HOOK_SCRIPT="${PRE_STOP_HOOK_SCRIPT:-}"' in text
+    assert "run_pre_stop_hook" in text
+    assert text.index("run_pre_stop_hook") < text.rindex("stop_service")
+
+
+if __name__ == "__main__":
+    test_phase425_runner_wraps_phase412_with_8k2k_defaults()
+    test_phase412_runner_allows_phase_name_override_for_wrappers()
+    test_phase412_runner_has_optional_pre_stop_hook_before_teardown()

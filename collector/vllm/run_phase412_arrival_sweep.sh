@@ -39,6 +39,7 @@ DRAIN_POLL_SECONDS="${DRAIN_POLL_SECONDS:-5}"
 DRAIN_STABLE_POLLS="${DRAIN_STABLE_POLLS:-3}"
 DRAIN_TIMEOUT_SECONDS="${DRAIN_TIMEOUT_SECONDS:-600}"
 GRACEFUL_TERM_SECONDS="${GRACEFUL_TERM_SECONDS:-120}"
+PRE_STOP_HOOK_SCRIPT="${PRE_STOP_HOOK_SCRIPT:-}"
 
 export PATH="/usr/local/nvidia/bin:${PATH}"
 export LD_LIBRARY_PATH="/usr/local/nvidia/lib64:/usr/local/cuda/lib64:${LD_LIBRARY_PATH:-}"
@@ -110,6 +111,19 @@ stop_service() {
     kill -KILL ${leftover} 2>/dev/null || true
   fi
   SERVICE_PID=""
+}
+
+run_pre_stop_hook() {
+  if [[ -z "${PRE_STOP_HOOK_SCRIPT}" ]]; then
+    return 0
+  fi
+  if [[ ! -x "${PRE_STOP_HOOK_SCRIPT}" ]]; then
+    log "pre_stop_hook_not_executable=${PRE_STOP_HOOK_SCRIPT}"
+    return 1
+  fi
+  log "pre_stop_hook_start=${PRE_STOP_HOOK_SCRIPT}"
+  "${PRE_STOP_HOOK_SCRIPT}"
+  log "pre_stop_hook_done=${PRE_STOP_HOOK_SCRIPT}"
 }
 
 trap stop_service EXIT
@@ -289,6 +303,10 @@ PY
     log "missing_bench_json=${bench_json}" | tee -a "${OUT_ROOT}/driver.log"
   fi
 
+  if ! run_pre_stop_hook; then
+    log "pre_stop_hook_failed=${PRE_STOP_HOOK_SCRIPT}"
+    bench_exit=1
+  fi
   stop_service
   wait_for_gpu_drain || { log "warn: drain timeout after point ${SCENARIO}"; }
   snapshot_gpu_apps "${OUT_ROOT}/gpu_compute_apps_after.txt"
