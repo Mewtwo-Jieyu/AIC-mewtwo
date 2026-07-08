@@ -581,6 +581,16 @@ class _NonAttnTotalServingStateDB(_ServingStateDB):
         return None
 
 
+class _ForwardTotalServingStateDB(_ServingStateDB):
+    def query_vllm_serving_state(self, **kwargs):
+        self.calls.append(kwargs)
+        if kwargs.get("row_kind") == "forward_total" and kwargs["phase"] == "mixed_prefill":
+            return PerformanceResult(1100.0, energy=0.0)
+        if kwargs.get("row_kind") == "forward_total" and kwargs["phase"] == "decode":
+            return PerformanceResult(40.0, energy=0.0)
+        raise AssertionError(f"forward_total should short-circuit before category queries: {kwargs}")
+
+
 class _BoundedServingStateDB(_ServingStateDB):
     def __init__(self) -> None:
         super().__init__()
@@ -704,6 +714,44 @@ class TestIterationLatencyCalculator:
 
         assert total == pytest.approx(910.0)
         assert any(call.get("row_kind") == "non_attn_total" for call in db.calls)
+
+    def test_serving_state_forward_total_replaces_mixed_step_before_category_queries(self) -> None:
+        db = _ForwardTotalServingStateDB()
+        calc = IterationLatencyCalculator(
+            backend=_ServingStateBackendForIteration(),
+            model=_FakeKimiDP2ModelForServingState(),
+            database=db,
+        )
+
+        total = calc.compute(
+            prefill_tokens=8000,
+            prefill_batch_size=1,
+            prefill_seq_len=8000,
+            decode_batch_size=64,
+            decode_avg_kv_len=8000,
+        )
+
+        assert total == pytest.approx(1100.0)
+        assert [call["row_kind"] for call in db.calls] == ["forward_total"]
+
+    def test_serving_state_forward_total_replaces_decode_step_before_category_queries(self) -> None:
+        db = _ForwardTotalServingStateDB()
+        calc = IterationLatencyCalculator(
+            backend=_ServingStateBackendForIteration(),
+            model=_FakeKimiDP2ModelForServingState(),
+            database=db,
+        )
+
+        total = calc.compute(
+            prefill_tokens=0,
+            prefill_batch_size=0,
+            prefill_seq_len=1,
+            decode_batch_size=64,
+            decode_avg_kv_len=8000,
+        )
+
+        assert total == pytest.approx(40.0)
+        assert [call["row_kind"] for call in db.calls] == ["forward_total"]
 
     def test_serving_state_does_not_apply_to_tp8(self) -> None:
         db = _ServingStateDB()

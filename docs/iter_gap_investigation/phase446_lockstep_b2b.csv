@@ -1,0 +1,15 @@
+section,scenario,metric,before,after,status,note
+step0,phase442_94k_event_trace,steady_replay_error_pct,,0.575712,passed,max-coupled measured busy reconstructs measured wall within 10pct
+step2,K2.5-tp4ep8dp2-8k2k,b2b_overhead_pct,,0.000000,passed,overhead_on faster than overhead_off; event rows=94132
+step2,K2.5-tp4ep8dp2-32k3k,event_rows,,360244,passed,short 32k run collected successfully
+step3,K2.5-tp4ep8dp2-8k2k,forward_total_candidate_rows,,157,partial,decode rows=56 mixed rows=101
+step3,K2.5-tp4ep8dp2-32k3k,forward_total_candidate_rows,,36,passed,mixed rows=27; decode candidates excluded from perfdb export
+audit,K2.5-tp4ep8dp2-8k2k,mixed_forward_total_miss_decode_batch_above_range,,15,failed,steady mixed decode_batch 56-64 remains out of range
+audit,K2.5-tp4ep8dp2-8k2k,lockstep_single_vs_joint_gpu_tput,291.672980,291.672980,failed,deterministic symmetric replicas produce identical schedule; max coupling has no effect
+validate,K2.5-tp8ep8-8k2k,ratio,1.250461,1.250000,unchanged,rounding-only
+validate,K2.5-tp8ep8-32k3k,ratio,1.068795,1.070000,unchanged,rounding-only
+validate,K2.5-tp4ep8dp2-8k2k,ratio,2.117931,2.120000,failed,still above 1.50 gate
+validate,K2.5-tp4ep8dp2-32k3k,ratio,1.254571,1.090000,improved,32k mixed forward_total rows hit
+validate,K2.5-tp8ep8-8k2k-bt65536,ratio,1.119881,1.120000,unchanged,TP8 out of serving-state scope
+validate,K2.5-tp4ep8dp2-8k2k-bt65536,ratio,1.252313,1.230000,improved,no regression
+summary,MULTI_CONFIG,max_ratio,2.117931,2.120000,failed,Default AIC remains No-Go

@@ -70,6 +70,7 @@ class ServingStateQueryAudit:
     """One serving-state PerfDB query attempt."""
 
     phase: str
+    row_kind: str
     category: str
     bucket_tokens: int
     decode_batch: int
@@ -83,6 +84,7 @@ class ServingStateQueryAudit:
     def as_dict(self) -> dict[str, int | str | bool | None]:
         return {
             "phase": self.phase,
+            "row_kind": self.row_kind,
             "category": self.category,
             "bucket_tokens": self.bucket_tokens,
             "decode_batch": self.decode_batch,
@@ -275,6 +277,44 @@ class IterationLatencyCalculator:
         )
         return None if result is None else float(result)
 
+    def _query_serving_state_forward_total(
+        self,
+        *,
+        phase: str,
+        bucket_tokens: int,
+        decode_batch: int,
+    ) -> float | None:
+        category = "forward_total"
+        result = self._database.query_vllm_serving_state(
+            model=_SERVING_STATE_PERFDB_MODEL,
+            topology=_SERVING_STATE_TOPOLOGY,
+            phase=phase,
+            row_kind="forward_total",
+            category=category,
+            bucket_tokens=bucket_tokens,
+            decode_batch=decode_batch,
+            hidden_size=_SERVING_STATE_HIDDEN_SIZE,
+            topk=_SERVING_STATE_TOPK,
+            moe_ep_size=_SERVING_STATE_MOE_EP_SIZE,
+            quant_runtime=_SERVING_STATE_QUANT_RUNTIME,
+        )
+        self._record_serving_state_audit(
+            phase=phase,
+            category=category,
+            bucket_tokens=bucket_tokens,
+            decode_batch=decode_batch,
+            hit=result is not None,
+            miss_reason="hit" if result is not None else self._serving_state_miss_reason(
+                phase=phase,
+                category=category,
+                bucket_tokens=bucket_tokens,
+                decode_batch=decode_batch,
+                row_kind="forward_total",
+            ),
+            row_kind="forward_total",
+        )
+        return None if result is None else float(result)
+
     def _serving_state_table_for(
         self,
         *,
@@ -380,6 +420,7 @@ class IterationLatencyCalculator:
         self._serving_state_query_audit.append(
             ServingStateQueryAudit(
                 phase=phase,
+                row_kind=row_kind,
                 category=category,
                 bucket_tokens=bucket_tokens,
                 decode_batch=decode_batch,
@@ -500,6 +541,25 @@ class IterationLatencyCalculator:
         See vllm_backend.py lines 149-230 for the original pattern.
         """
         is_mixed = prefill_tokens > 0 and decode_bs > 0
+        phase = "mixed_prefill" if is_mixed else "prefill" if prefill_tokens > 0 else "decode"
+        forward_bucket_tokens = total_tokens if prefill_tokens > 0 else decode_bs
+        overhead_ms = self._per_iteration_overhead_ms if decode_bs > 0 else 0.0
+        if self._serving_state_scope_enabled():
+            forward_total_ms = self._query_serving_state_forward_total(
+                phase=phase,
+                bucket_tokens=forward_bucket_tokens,
+                decode_batch=decode_bs,
+            )
+            if forward_total_ms is not None:
+                total_ms = forward_total_ms + overhead_ms
+                return IterationLatencyBreakdown(
+                    total_ms=total_ms,
+                    context_non_attention_ms=forward_total_ms if prefill_tokens > 0 else 0.0,
+                    context_attention_ms=0.0,
+                    generation_non_attention_ms=forward_total_ms if prefill_tokens == 0 else 0.0,
+                    generation_attention_ms=0.0,
+                    iteration_overhead_ms=overhead_ms,
+                )
 
         # --- Pass 1: Non-attention ops (GEMM, MoE, EP8 comm) ---
         # These ops are token-parallel: a decode token costs the same as a
@@ -601,7 +661,6 @@ class IterationLatencyCalculator:
 
         # Non-attention and attention phases share fixed GPU setup cost and can
         # overlap via overlap_factor.
-        overhead_ms = self._per_iteration_overhead_ms if decode_bs > 0 else 0.0
         if is_mixed:
             # Mixed iteration: the merged non-attention pass, context attention,
             # and decode attention execute serially within the fused forward.
