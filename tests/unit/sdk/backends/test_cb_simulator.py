@@ -108,6 +108,23 @@ class TestCBScheduler:
         assert len(result.decode_reqs) == 80
         assert result.prefill_tokens[100] == 20  # 100 - 80
 
+    def test_running_order_interleaves_prefill_before_later_decodes(self) -> None:
+        cfg = CBSimConfig(max_num_batched_tokens=4)
+        sched = CBScheduler(cfg)
+        early_decode = [_make_decoding(0), _make_decoding(1)]
+        partial = _make_prefilling(2, isl=10, remaining=3)
+        late_decode = [_make_decoding(3), _make_decoding(4)]
+
+        result = sched.schedule(
+            waiting=[],
+            running=[*early_decode, partial, *late_decode],
+        )
+
+        assert result.decode_reqs == early_decode
+        assert result.prefill_tokens[2] == 2
+        assert late_decode[0] not in result.decode_reqs
+        assert late_decode[1] not in result.decode_reqs
+
     def test_max_seqs_blocks_new_prefill(self) -> None:
         cfg = CBSimConfig(max_num_batched_tokens=8192, max_num_seqs=2)
         sched = CBScheduler(cfg)

@@ -1,0 +1,8 @@
+section,scenario,metric,value,real_low,real_high,passed,notes
+fingerprint_gate,K2.5-tp4ep8dp2-8k2k,sim_mixed_decode_batch_p50,62.0,34.0,52.0,False,stop before runtime lockstep
+validate,K2.5-tp8ep8-8k2k,sim_real_ratio,1.25,,,True,no regression
+validate,K2.5-tp8ep8-32k3k,sim_real_ratio,1.07,,,True,no regression
+validate,K2.5-tp4ep8dp2-8k2k,sim_real_ratio,2.12,,,False,main residual remains
+validate,K2.5-tp4ep8dp2-32k3k,sim_real_ratio,1.09,,,True,no regression
+validate,K2.5-tp8ep8-8k2k-bt65536,sim_real_ratio,1.12,,,True,no regression
+validate,K2.5-tp4ep8dp2-8k2k-bt65536,sim_real_ratio,1.23,,,True,no regression

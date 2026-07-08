@@ -1,0 +1,3 @@
+scenario,metric,sim_value,real_low,real_high,passed,reason,runtime_lockstep_allowed
+K2.5-tp4ep8dp2-8k2k,mixed_decode_batch_p50,62.0,34.0,52.0,False,sim_mixed_decode_batch_outside_real_band,False
+K2.5-tp4ep8dp2-8k2k,mixed_step_count,206,,,False,sim_mixed_decode_batch_outside_real_band,False

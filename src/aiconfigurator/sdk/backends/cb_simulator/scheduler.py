@@ -161,13 +161,15 @@ class CBScheduler:
         result = ScheduleResult()
         preempted_ids: set[int] = set()
 
-        # Step 1: Reserve 1 token per DECODING request, capped by token budget.
-        # This keeps the schedule physically feasible instead of allowing
-        # decode demand to silently exceed max_num_batched_tokens.
+        # Step 1: Schedule RUNNING requests in queue order. vLLM v1 does not
+        # have a separate decode-first phase; each running request consumes the
+        # next tokens it needs until the per-step token budget is exhausted.
         for req in list(running):
             if req not in running:
                 continue
-            if req.state == RequestState.DECODING and budget > 0:
+            if budget <= 0:
+                break
+            if req.state == RequestState.DECODING:
                 result.decode_reqs.append(req)
                 budget -= 1
                 fits, released = self._ensure_block_capacity(
@@ -176,29 +178,23 @@ class CBScheduler:
                 budget += released
                 if not fits:
                     return result
-
-        # Step 2: Continue PREFILLING requests already in running set.
-        if budget > 0:
-            for req in list(running):
-                if req not in running:
+            elif req.state == RequestState.PREFILLING:
+                chunk = self._cap_prefill_chunk(
+                    req.prefill_tokens_remaining, max(budget, 0),
+                )
+                if chunk <= 0:
                     continue
-                if req.state == RequestState.PREFILLING:
-                    chunk = self._cap_prefill_chunk(
-                        req.prefill_tokens_remaining, max(budget, 0),
-                    )
-                    if chunk > 0:
-                        result.prefill_reqs.append(req)
-                        result.prefill_tokens[req.request_id] = chunk
-                        budget -= chunk
-                        fits, released = self._ensure_block_capacity(
-                            req, waiting, running, result, preempted_ids,
-                        )
-                        budget += released
-                        if not fits:
-                            return result
-                    break  # at most one continuing partial prefill
+                result.prefill_reqs.append(req)
+                result.prefill_tokens[req.request_id] = chunk
+                budget -= chunk
+                fits, released = self._ensure_block_capacity(
+                    req, waiting, running, result, preempted_ids,
+                )
+                budget += released
+                if not fits:
+                    return result
 
-        # Step 3: Admit new requests from waiting queue.
+        # Step 2: Admit new requests from waiting queue.
         while budget > 0:
             num_seqs = len(running) + sum(
                 1 for req in result.prefill_reqs if req not in running
