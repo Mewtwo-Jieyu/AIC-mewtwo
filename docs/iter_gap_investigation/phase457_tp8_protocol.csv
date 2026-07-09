@@ -1,0 +1,16 @@
+section,scenario,metric,value,target,status,source,note
+protocol_projection,K2.5-tp8ep8-8k2k,n128_reference_real_output_tok_s_gpu,133.528000,,,docs/iter_gap_investigation/phase456_validate_ab.csv,current validate reference; N=128 closed-set
+protocol_projection,K2.5-tp8ep8-8k2k,current_sim_output_tok_s_gpu,166.117025,,,docs/iter_gap_investigation/phase456_validate_ab.csv,Phase456 current sim after TP8 capacity wiring
+protocol_projection,K2.5-tp8ep8-8k2k,n512_proxy_overhead_off_output_tok_s_gpu,146.376535,,,docs/iter_gap_investigation/phase454_gpu_batch_scope/b2b_tp8_8k2k/overhead_off/K2.5-tp8ep8-8k2k/bench_result.json,"N=512; C=128; B2b overhead-off proxy, not a replacement reference"
+protocol_projection,K2.5-tp8ep8-8k2k,n512_proxy_overhead_on_output_tok_s_gpu,146.315921,,,docs/iter_gap_investigation/phase454_gpu_batch_scope/b2b_tp8_8k2k/overhead_on/K2.5-tp8ep8-8k2k/bench_result.json,used only as patch-overhead cross-check
+protocol_projection,K2.5-tp8ep8-8k2k,error_vs_n128_reference,1.244061,<=1.15,fail,,existing mixed-protocol validation point
+protocol_projection,K2.5-tp8ep8-8k2k,error_vs_n512_proxy_overhead_off,1.134861,<=1.15,pass,,predicts the vanilla N=512 recollect payoff
+protocol_projection,K2.5-tp8ep8-8k2k,error_vs_n512_proxy_overhead_on,1.135331,<=1.15,pass,,patch on/off agrees if close to overhead_off
+protocol_projection,K2.5-tp8ep8-8k2k,n512_protocol_gain_vs_n128,1.096224,>1,pass,,real reference throughput gain from N=128 to N=512 proxy
+dynamics_check,K2.5-tp8ep8-8k2k,real_mixed_decode_batch_p50,51.000000,,,docs/iter_gap_investigation/phase454_gpu_batch_scope/b2b_tp8_8k2k/overhead_on/event_timing.jsonl,count=4192; mean=50.213740; p10=50.000000; p90=60.000000
+dynamics_check,K2.5-tp8ep8-8k2k,sim_avg_decode_batch,54.576000,within 15% of real mixed p50,pass,docs/iter_gap_investigation/phase456_tp8_dynamics.csv,relative_delta=0.070
+dynamics_check,K2.5-tp8ep8-8k2k,real_decode_batch_p50,59.000000,,,docs/iter_gap_investigation/phase454_gpu_batch_scope/b2b_tp8_8k2k/overhead_on/event_timing.jsonl,count=140600; mean=56.744865; p10=32.000000; p90=65.000000
+dynamics_check,K2.5-tp8ep8-8k2k,real_running_p50,56.000000,,,docs/iter_gap_investigation/phase454_gpu_batch_scope/b2b_tp8_8k2k/overhead_off/K2.5-tp8ep8-8k2k/serve.log,p10=52.000000; p90=64.300000; n=88
+dynamics_check,K2.5-tp8ep8-8k2k,real_preemption_delta,110.000000,compare with sim,informational,docs/iter_gap_investigation/phase454_gpu_batch_scope/b2b_tp8_8k2k/overhead_off/K2.5-tp8ep8-8k2k/metrics.jsonl,engine 0: 110
+dynamics_check,K2.5-tp8ep8-8k2k,sim_preemptions,189.000000,real×1.50,warn,current CBSimulator trace,real_preemptions=110; ratio=1.718; sim_recompute_tokens=1588814; sim_trace_tput=169.156
+decision,K2.5-tp8ep8-8k2k,phase457_verdict,tp8_protocol_unification_closes_gate_with_secondary_preemption_residual,6/6 <=15%,pass,,N=512 protocol unification is enough to reach <=15% by proxy; sim preemption remains higher than real and is stored as a secondary residual.
