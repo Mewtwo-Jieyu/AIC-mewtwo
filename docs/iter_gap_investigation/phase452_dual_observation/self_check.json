@@ -1,0 +1,11 @@
+{
+  "passed": true,
+  "preempt_after_free_rows": 24,
+  "preempt_decision_rows": 24,
+  "route_gate_passed": true,
+  "route_rows": 128,
+  "stats_gate_passed": true,
+  "stats_overwrite_rows": 274,
+  "victim_gate_passed": true,
+  "victim_reschedule_rows": 24
+}
