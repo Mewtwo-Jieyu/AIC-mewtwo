@@ -158,6 +158,7 @@ def test_phase435_serving_state_query_matches_exact_scope_inside_coverage() -> N
     result = db.query_vllm_serving_state(
         model="kimi-k2.5",
         topology="tp4dp2ep8",
+        max_num_batched_tokens=32000,
         phase="mixed_prefill",
         category="ep_a2a",
         bucket_tokens=32000,
@@ -178,6 +179,7 @@ def test_phase435_serving_state_query_returns_none_for_other_topology_or_out_of_
     wrong_topology = db.query_vllm_serving_state(
         model="kimi-k2.5",
         topology="tp8ep8",
+        max_num_batched_tokens=32000,
         phase="mixed_prefill",
         category="ep_a2a",
         bucket_tokens=32000,
@@ -190,6 +192,7 @@ def test_phase435_serving_state_query_returns_none_for_other_topology_or_out_of_
     out_of_range = db.query_vllm_serving_state(
         model="kimi-k2.5",
         topology="tp4dp2ep8",
+        max_num_batched_tokens=8000,
         phase="decode",
         category="ep_a2a",
         bucket_tokens=999,

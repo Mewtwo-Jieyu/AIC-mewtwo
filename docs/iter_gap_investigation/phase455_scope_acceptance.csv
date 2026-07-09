@@ -1,0 +1,11 @@
+section,scenario,metric,before,trial,after_withdrawal,status,note
+scoped_trial,K2.5-tp8ep8-8k2k,error_ratio,1.438569,1.454572,1.438569,rejected,"TP8 rows hit target regime but worsened the target point"
+scoped_trial,K2.5-tp8ep8-8k2k,sim_output_tok_s_gpu,192.089213,194.226103,192.089213,rejected,"higher sim throughput increased overprediction"
+pollution_guard,K2.5-tp8ep8-32k3k,error_ratio,1.163036,1.163036,1.163036,pass,"max_num_batched_tokens=32000 did not hit TP8-8k rows"
+pollution_guard,K2.5-tp8ep8-8k2k-bt65536,error_ratio,1.119881,1.119881,1.119881,pass,"max_num_batched_tokens=65536 did not hit TP8-8k rows"
+hit_audit,K2.5-tp8ep8-8k2k,trial_hits,0,145,0,rejected,"145 hits during trial, then 0 after withdrawal"
+hit_audit,K2.5-tp8ep8-32k3k,trial_hits,0,0,0,pass,"no cross-regime hit"
+hit_audit,K2.5-tp8ep8-8k2k-bt65536,trial_hits,0,0,0,pass,"no cross-regime hit"
+ingest_decision,K2.5-tp8ep8-8k2k,phase454_b2b_rows,0,193,0,withdrawn,"rows removed from PerfDB after A/B regression"
+floor_ab,ALL,regression_count,0,0,0,pass,"phase453 same-reference A/B: 1 improved, 5 unchanged, 0 regressed"
+floor_ab,K2.5-tp4ep8dp2-8k2k-bt65536,error_ratio,1.233619,,1.121856,improved,"DP2 legacy scope kept old behavior and retained bt65536 improvement"

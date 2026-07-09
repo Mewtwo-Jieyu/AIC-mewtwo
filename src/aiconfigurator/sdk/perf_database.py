@@ -926,6 +926,7 @@ def load_vllm_serving_state_data(vllm_serving_state_file):
     required_columns = {
         "model",
         "topology",
+        "max_num_batched_tokens",
         "phase",
         "category",
         "kernel_source",
@@ -950,10 +951,12 @@ def load_vllm_serving_state_data(vllm_serving_state_file):
         for row in reader:
             bucket_tokens = int(row["bucket_tokens"])
             decode_batch = int(row["decode_batch"])
+            max_num_batched_tokens = int(row["max_num_batched_tokens"])
             row_kind = row.get("row_kind") or "category"
             key = (
                 row["model"],
                 row["topology"],
+                max_num_batched_tokens,
                 row["phase"],
                 row_kind,
                 row["category"],
@@ -977,10 +980,25 @@ def load_vllm_serving_state_data(vllm_serving_state_file):
                 "kernel_source": row["kernel_source"],
                 "provenance": row["provenance"],
             }
+            if row["topology"] != "tp8ep8":
+                unscoped_key = (
+                    row["model"],
+                    row["topology"],
+                    None,
+                    row["phase"],
+                    row_kind,
+                    row["category"],
+                    int(row["hidden_size"]),
+                    int(row["topk"]),
+                    int(row["moe_ep_size"]),
+                    row["quant_runtime"],
+                )
+                data[unscoped_key][bucket_tokens][decode_batch] = table[bucket_tokens][decode_batch]
             if row_kind == "category":
                 legacy_key = (
                     row["model"],
                     row["topology"],
+                    max_num_batched_tokens,
                     row["phase"],
                     row["category"],
                     int(row["hidden_size"]),
@@ -989,6 +1007,19 @@ def load_vllm_serving_state_data(vllm_serving_state_file):
                     row["quant_runtime"],
                 )
                 data[legacy_key] = table
+                if row["topology"] != "tp8ep8":
+                    unscoped_legacy_key = (
+                        row["model"],
+                        row["topology"],
+                        None,
+                        row["phase"],
+                        row["category"],
+                        int(row["hidden_size"]),
+                        int(row["topk"]),
+                        int(row["moe_ep_size"]),
+                        row["quant_runtime"],
+                    )
+                    data[unscoped_legacy_key] = data[unscoped_key]
 
     return data
 
@@ -4776,6 +4807,7 @@ class PerfDatabase:
         *,
         model: str,
         topology: str,
+        max_num_batched_tokens: int | None,
         phase: str,
         category: str,
         row_kind: str = "category",
@@ -4800,6 +4832,7 @@ class PerfDatabase:
         key = (
             model,
             topology,
+            max_num_batched_tokens,
             phase,
             row_kind,
             category,

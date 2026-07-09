@@ -61,6 +61,7 @@ PERFDB_FIELDS = [
     "row_kind",
     "category",
     "kernel_source",
+    "max_num_batched_tokens",
     "bucket_tokens",
     "decode_batch",
     "hidden_size",
@@ -70,12 +71,22 @@ PERFDB_FIELDS = [
     "latency",
     "provenance",
 ]
+
+SCENARIO_MAX_BT = {
+    "K2.5-tp8ep8-8k2k": 8000,
+    "K2.5-tp8ep8-32k3k": 32000,
+    "K2.5-tp4ep8dp2-8k2k": 8000,
+    "K2.5-tp4ep8dp2-32k3k": 32000,
+    "K2.5-tp8ep8-8k2k-bt65536": 65536,
+    "K2.5-tp4ep8dp2-8k2k-bt65536": 65536,
+}
 CANDIDATE_FIELDS = [
     "scenario",
     "topology",
     "phase",
     "row_kind",
     "category",
+    "max_num_batched_tokens",
     "bucket_tokens",
     "decode_batch",
     "latency_ms",
@@ -325,9 +336,11 @@ def extract_b2b_rows(specs: Iterable[B2BSpec]) -> list[PerfDBCandidate]:
 
 
 def _candidate_key(row: PerfDBCandidate | dict[str, object]) -> tuple[object, ...]:
+    scenario = row["scenario"] if isinstance(row, dict) else row.scenario
     return (
         MODEL,
         row["topology"] if isinstance(row, dict) else row.topology,
+        SCENARIO_MAX_BT[str(scenario)],
         row["phase"] if isinstance(row, dict) else row.phase,
         row["row_kind"] if isinstance(row, dict) else row.row_kind,
         row["category"] if isinstance(row, dict) else row.category,
@@ -348,6 +361,7 @@ def _existing_perfdb_rows(path: Path) -> dict[tuple[object, ...], dict[str, str]
         key = (
             row["model"],
             row["topology"],
+            int(row["max_num_batched_tokens"]),
             row["phase"],
             row.get("row_kind") or "category",
             row["category"],
@@ -403,6 +417,7 @@ def classify_perfdb_candidates(
                 "phase": row.phase,
                 "row_kind": row.row_kind,
                 "category": row.category,
+                "max_num_batched_tokens": SCENARIO_MAX_BT[row.scenario],
                 "bucket_tokens": row.bucket_tokens,
                 "decode_batch": row.decode_batch,
                 "latency_ms": row.latency_ms,
@@ -426,6 +441,7 @@ def perfdb_row(row: dict[str, object]) -> dict[str, object]:
         "row_kind": row["row_kind"],
         "category": row["category"],
         "kernel_source": KERNEL_SOURCE,
+        "max_num_batched_tokens": SCENARIO_MAX_BT[str(row["scenario"])],
         "bucket_tokens": row["bucket_tokens"],
         "decode_batch": row["decode_batch"],
         "hidden_size": HIDDEN_SIZE,

@@ -780,6 +780,7 @@ class _BoundedServingStateDB(_ServingStateDB):
         scope = (
             "kimi-k2.5",
             "tp4dp2ep8",
+            None,
             "mixed_prefill",
             "moe_gemm_or_aux",
             7168,
@@ -790,6 +791,7 @@ class _BoundedServingStateDB(_ServingStateDB):
         decode_scope = (
             "kimi-k2.5",
             "tp4dp2ep8",
+            None,
             "decode",
             "moe_gemm_or_aux",
             7168,
@@ -816,6 +818,7 @@ class _BoundedServingStateDB(_ServingStateDB):
         key = (
             kwargs["model"],
             kwargs["topology"],
+            kwargs["max_num_batched_tokens"],
             kwargs["phase"],
             kwargs["category"],
             kwargs["hidden_size"],
@@ -866,6 +869,7 @@ class TestIterationLatencyCalculator:
             backend=_ServingStateBackendForIteration(),
             model=_FakeKimiDP2ModelForServingState(),
             database=db,
+            serving_state_max_num_batched_tokens=8000,
         )
 
         total = calc.compute(
@@ -885,6 +889,7 @@ class TestIterationLatencyCalculator:
             backend=_ServingStateBackendForIteration(),
             model=_FakeKimiDP2ModelForServingState(),
             database=db,
+            serving_state_max_num_batched_tokens=8000,
         )
 
         total = calc.compute(
@@ -904,6 +909,7 @@ class TestIterationLatencyCalculator:
             backend=_ServingStateBackendForIteration(),
             model=_FakeKimiDP2ModelForServingState(),
             database=db,
+            serving_state_max_num_batched_tokens=8000,
         )
 
         total = calc.compute(
@@ -923,6 +929,7 @@ class TestIterationLatencyCalculator:
             backend=_ServingStateBackendForIteration(),
             model=_FakeKimiDP2ModelForServingState(),
             database=db,
+            serving_state_max_num_batched_tokens=8000,
         )
 
         total = calc.compute(
@@ -942,6 +949,7 @@ class TestIterationLatencyCalculator:
             backend=_ServingStateBackendForIteration(),
             model=_FakeKimiTP8ModelForServingState(),
             database=db,
+            serving_state_max_num_batched_tokens=8000,
         )
 
         total = calc.compute(
@@ -954,6 +962,27 @@ class TestIterationLatencyCalculator:
 
         assert total == pytest.approx(42.0)
         assert [call["topology"] for call in db.calls] == ["tp8ep8"]
+        assert [call["max_num_batched_tokens"] for call in db.calls] == [8000]
+
+    def test_serving_state_uses_legacy_scope_for_dp2(self) -> None:
+        db = _ForwardTotalServingStateDB()
+        calc = IterationLatencyCalculator(
+            backend=_ServingStateBackendForIteration(),
+            model=_FakeKimiDP2ModelForServingState(),
+            database=db,
+            serving_state_max_num_batched_tokens=8000,
+        )
+
+        calc.compute(
+            prefill_tokens=0,
+            prefill_batch_size=0,
+            prefill_seq_len=1,
+            decode_batch_size=64,
+            decode_avg_kv_len=8000,
+        )
+
+        assert [call["topology"] for call in db.calls] == ["tp4dp2ep8"]
+        assert [call["max_num_batched_tokens"] for call in db.calls] == [None]
 
     def test_serving_state_records_out_of_grid_misses(self) -> None:
         db = _BoundedServingStateDB()
@@ -961,6 +990,7 @@ class TestIterationLatencyCalculator:
             backend=_ServingStateBackendForIteration(),
             model=_FakeKimiDP2ModelForServingState(),
             database=db,
+            serving_state_max_num_batched_tokens=8000,
         )
 
         calc.compute(

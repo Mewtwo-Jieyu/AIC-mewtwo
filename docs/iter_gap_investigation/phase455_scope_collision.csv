@@ -1,0 +1,9 @@
+section,scenario,phase,row_kind,category,bucket_min,bucket_max,decode_batch_min,decode_batch_max,rows,baseline_error_ratio,no_scope_error_ratio,delta_error_ratio,hit_count,miss_count,status,note
+tp8_b2b_candidate_surface,K2.5-tp8ep8-8k2k,decode,forward_total,forward_total,1,67,1,67,66,,,,,,candidate_retained,Phase454 B2b rows; blocked until scoped
+tp8_b2b_candidate_surface,K2.5-tp8ep8-8k2k,mixed_prefill,forward_total,forward_total,122,8000,1,66,127,,,,,,candidate_retained,Phase454 B2b rows; blocked until scoped
+no_scope_temp_ingest,K2.5-tp8ep8-8k2k,decode,forward_total,forward_total,51,51,51,51,132,1.438569,1.454572,0.016003,145,1188,regressed,"top_hit=('decode', 'forward_total', 'forward_total', 51, 51); temp_perfdb_without_regime_scope"
+no_scope_temp_ingest,K2.5-tp8ep8-32k3k,decode,forward_total,forward_total,20,20,20,20,20,1.163036,1.703144,0.540108,34,588,regressed,"top_hit=('decode', 'forward_total', 'forward_total', 20, 20); temp_perfdb_without_regime_scope"
+no_scope_temp_ingest,K2.5-tp8ep8-8k2k-bt65536,decode,forward_total,forward_total,8,8,8,8,19,1.119881,1.117428,-0.002453,32,816,unchanged,"top_hit=('decode', 'forward_total', 'forward_total', 8, 8); temp_perfdb_without_regime_scope"
+regime_scope,K2.5-tp8ep8-32k3k,,,,,,,,,,,,,,config_derived,max_num_batched_tokens=32000
+regime_scope,K2.5-tp8ep8-8k2k,,,,,,,,,,,,,,config_derived,max_num_batched_tokens=8000
+regime_scope,K2.5-tp8ep8-8k2k-bt65536,,,,,,,,,,,,,,config_derived,max_num_batched_tokens=65536

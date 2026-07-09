@@ -71,6 +71,7 @@ class ServingStateQueryAudit:
     phase: str
     row_kind: str
     category: str
+    max_num_batched_tokens: int | None
     bucket_tokens: int
     decode_batch: int
     hit: bool
@@ -85,6 +86,7 @@ class ServingStateQueryAudit:
             "phase": self.phase,
             "row_kind": self.row_kind,
             "category": self.category,
+            "max_num_batched_tokens": self.max_num_batched_tokens,
             "bucket_tokens": self.bucket_tokens,
             "decode_batch": self.decode_batch,
             "hit": self.hit,
@@ -107,6 +109,7 @@ class IterationLatencyCalculator:
         prefix: int = 0,
         overlap_factor: float = 1.0,
         per_iteration_overhead_ms: float = 0.0,
+        serving_state_max_num_batched_tokens: int | None = None,
     ) -> None:
         if not 0.0 <= overlap_factor <= 1.0:
             raise ValueError("overlap_factor must be between 0.0 and 1.0")
@@ -118,6 +121,7 @@ class IterationLatencyCalculator:
         self._prefix = prefix
         self._overlap_factor = overlap_factor
         self._per_iteration_overhead_ms = per_iteration_overhead_ms
+        self._serving_state_max_num_batched_tokens = serving_state_max_num_batched_tokens
         self._cache: dict[tuple, IterationLatencyBreakdown] = {}
         self._last_breakdown: IterationLatencyBreakdown | None = None
         self._serving_state_query_audit: list[ServingStateQueryAudit] = []
@@ -167,6 +171,11 @@ class IterationLatencyCalculator:
             and getattr(config, "moe_ep_size", None) == 8
             and hasattr(self._database, "query_vllm_serving_state")
         )
+
+    def _serving_state_query_max_num_batched_tokens(self) -> int | None:
+        if self._serving_state_topology() == "tp8ep8":
+            return self._serving_state_max_num_batched_tokens
+        return None
 
     def _serving_state_topology(self) -> str | None:
         config = getattr(self._model, "config", None)
@@ -222,6 +231,7 @@ class IterationLatencyCalculator:
         result = self._database.query_vllm_serving_state(
             model=_SERVING_STATE_PERFDB_MODEL,
             topology=self._serving_state_topology(),
+            max_num_batched_tokens=self._serving_state_query_max_num_batched_tokens(),
             phase=phase,
             row_kind="category",
             category=category,
@@ -268,6 +278,7 @@ class IterationLatencyCalculator:
         result = self._database.query_vllm_serving_state(
             model=_SERVING_STATE_PERFDB_MODEL,
             topology=self._serving_state_topology(),
+            max_num_batched_tokens=self._serving_state_query_max_num_batched_tokens(),
             phase=phase,
             row_kind="non_attn_total",
             category=category,
@@ -306,6 +317,7 @@ class IterationLatencyCalculator:
         result = self._database.query_vllm_serving_state(
             model=_SERVING_STATE_PERFDB_MODEL,
             topology=self._serving_state_topology(),
+            max_num_batched_tokens=self._serving_state_query_max_num_batched_tokens(),
             phase=phase,
             row_kind="forward_total",
             category=category,
@@ -349,6 +361,7 @@ class IterationLatencyCalculator:
         key = (
             _SERVING_STATE_PERFDB_MODEL,
             topology,
+            self._serving_state_query_max_num_batched_tokens(),
             phase,
             row_kind,
             category,
@@ -364,6 +377,7 @@ class IterationLatencyCalculator:
             legacy_key = (
                 _SERVING_STATE_PERFDB_MODEL,
                 topology,
+                self._serving_state_query_max_num_batched_tokens(),
                 phase,
                 category,
                 _SERVING_STATE_HIDDEN_SIZE,
@@ -443,6 +457,7 @@ class IterationLatencyCalculator:
                 phase=phase,
                 row_kind=row_kind,
                 category=category,
+                max_num_batched_tokens=self._serving_state_query_max_num_batched_tokens(),
                 bucket_tokens=bucket_tokens,
                 decode_batch=decode_batch,
                 hit=hit,

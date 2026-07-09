@@ -64,6 +64,7 @@ class CBSimulator:
             prefix=prefix,
             overlap_factor=self._config.overlap_factor,
             per_iteration_overhead_ms=self._config.per_iteration_overhead_ms,
+            serving_state_max_num_batched_tokens=self._config.max_num_batched_tokens,
         )
 
     def _estimate_decode_skip_latency(

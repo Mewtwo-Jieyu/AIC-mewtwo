@@ -130,7 +130,7 @@ def test_dp2_bt_decode_duplicate_is_blocked_but_large_mixed_is_accepted(tmp_path
         "\n".join(
             [
                 ",".join(mod.PERFDB_FIELDS),
-                "VLLM,0.19.0,NVIDIA H200,kimi-k2.5,tp4dp2ep8,decode,forward_total,forward_total,phase446,16,16,7168,8,8,CompressedTensorsWNA16MarlinMoEMethod,20.0,old",
+                "VLLM,0.19.0,NVIDIA H200,kimi-k2.5,tp4dp2ep8,decode,forward_total,forward_total,phase446,65536,16,16,7168,8,8,CompressedTensorsWNA16MarlinMoEMethod,20.0,old",
             ]
         )
         + "\n",
@@ -138,7 +138,7 @@ def test_dp2_bt_decode_duplicate_is_blocked_but_large_mixed_is_accepted(tmp_path
     )
     rows = [
         mod.PerfDBCandidate(
-            scenario="bt",
+            scenario="K2.5-tp4ep8dp2-8k2k-bt65536",
             topology="tp4dp2ep8",
             phase="decode",
             row_kind="forward_total",
@@ -150,7 +150,7 @@ def test_dp2_bt_decode_duplicate_is_blocked_but_large_mixed_is_accepted(tmp_path
             provenance="new",
         ),
         mod.PerfDBCandidate(
-            scenario="bt",
+            scenario="K2.5-tp4ep8dp2-8k2k-bt65536",
             topology="tp4dp2ep8",
             phase="mixed_prefill",
             row_kind="forward_total",
@@ -176,7 +176,7 @@ def test_blocked_topology_is_reported_without_perfdb_acceptance(tmp_path: Path) 
     perfdb.write_text(",".join(mod.PERFDB_FIELDS) + "\n", encoding="utf-8")
     rows = [
         mod.PerfDBCandidate(
-            scenario="tp8",
+            scenario="K2.5-tp8ep8-8k2k",
             topology="tp8ep8",
             phase="decode",
             row_kind="forward_total",
@@ -205,7 +205,7 @@ def test_phase454_rows_already_in_perfdb_are_idempotent(tmp_path: Path) -> None:
         "\n".join(
             [
                 ",".join(mod.PERFDB_FIELDS),
-                "VLLM,0.19.0,NVIDIA H200,kimi-k2.5,tp4dp2ep8,mixed_prefill,forward_total,forward_total,phase454_b2b_event_timing,65536,7,7168,8,8,CompressedTensorsWNA16MarlinMoEMethod,9000.0,phase454_b2b_event_step_bucket",
+                "VLLM,0.19.0,NVIDIA H200,kimi-k2.5,tp4dp2ep8,mixed_prefill,forward_total,forward_total,phase454_b2b_event_timing,65536,65536,7,7168,8,8,CompressedTensorsWNA16MarlinMoEMethod,9000.0,phase454_b2b_event_step_bucket",
             ]
         )
         + "\n",
@@ -213,7 +213,7 @@ def test_phase454_rows_already_in_perfdb_are_idempotent(tmp_path: Path) -> None:
     )
     rows = [
         mod.PerfDBCandidate(
-            scenario="bt",
+            scenario="K2.5-tp4ep8dp2-8k2k-bt65536",
             topology="tp4dp2ep8",
             phase="mixed_prefill",
             row_kind="forward_total",

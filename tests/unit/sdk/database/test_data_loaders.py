@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from itertools import product
+from pathlib import Path
 
 import pytest
 import yaml
@@ -31,10 +32,12 @@ from aiconfigurator.sdk.perf_database import (
     load_vllm_ep8_a2a_decode_data,
     load_vllm_serving_state_data,
     load_wideep_moe_compute_data,
+    PerfDatabase,
     set_systems_paths,
 )
 
 pytestmark = pytest.mark.unit
+REAL_SYSTEMS_ROOT = Path(__file__).resolve().parents[4] / "src/aiconfigurator/systems"
 
 
 class DummyPerfDatabase:
@@ -730,9 +733,9 @@ def test_load_vllm_serving_state_data_basic(tmp_path):
     csv_file.write_text(
         "\n".join(
             [
-                "framework,version,device,model,topology,phase,category,kernel_source,bucket_tokens,decode_batch,hidden_size,topk,moe_ep_size,quant_runtime,latency,provenance",
-                "VLLM,0.19.0,NVIDIA H200,kimi-k2.5,tp4dp2ep8,mixed_prefill,ep_a2a,phase435_serving_state,8000,8,7168,8,8,CompressedTensorsWNA16MarlinMoEMethod,425.0,unit",
-                "VLLM,0.19.0,NVIDIA H200,kimi-k2.5,tp4dp2ep8,mixed_prefill,ep_a2a,phase435_serving_state,32000,8,7168,8,8,CompressedTensorsWNA16MarlinMoEMethod,1917.0,unit",
+                "framework,version,device,model,topology,phase,category,kernel_source,max_num_batched_tokens,bucket_tokens,decode_batch,hidden_size,topk,moe_ep_size,quant_runtime,latency,provenance",
+                "VLLM,0.19.0,NVIDIA H200,kimi-k2.5,tp4dp2ep8,mixed_prefill,ep_a2a,phase435_serving_state,32000,8000,8,7168,8,8,CompressedTensorsWNA16MarlinMoEMethod,425.0,unit",
+                "VLLM,0.19.0,NVIDIA H200,kimi-k2.5,tp4dp2ep8,mixed_prefill,ep_a2a,phase435_serving_state,32000,32000,8,7168,8,8,CompressedTensorsWNA16MarlinMoEMethod,1917.0,unit",
             ]
         )
         + "\n"
@@ -743,6 +746,7 @@ def test_load_vllm_serving_state_data_basic(tmp_path):
     key = (
         "kimi-k2.5",
         "tp4dp2ep8",
+        32000,
         "mixed_prefill",
         "ep_a2a",
         7168,
@@ -753,6 +757,18 @@ def test_load_vllm_serving_state_data_basic(tmp_path):
     assert data[key][8000][8]["latency"] == pytest.approx(425.0)
     assert data[key][32000][8]["kernel_source"] == "phase435_serving_state"
     assert data[key][32000][8]["provenance"] == "unit"
+    unscoped_key = (
+        "kimi-k2.5",
+        "tp4dp2ep8",
+        None,
+        "mixed_prefill",
+        "ep_a2a",
+        7168,
+        8,
+        8,
+        "CompressedTensorsWNA16MarlinMoEMethod",
+    )
+    assert data[unscoped_key][8000][8]["latency"] == pytest.approx(425.0)
 
 
 def test_load_vllm_serving_state_data_supports_non_attn_total_row_kind(tmp_path):
@@ -760,8 +776,8 @@ def test_load_vllm_serving_state_data_supports_non_attn_total_row_kind(tmp_path)
     csv_file.write_text(
         "\n".join(
             [
-                "framework,version,device,model,topology,phase,row_kind,category,kernel_source,bucket_tokens,decode_batch,hidden_size,topk,moe_ep_size,quant_runtime,latency,provenance",
-                "VLLM,0.19.0,NVIDIA H200,kimi-k2.5,tp4dp2ep8,mixed_prefill,non_attn_total,non_attn_total,phase440_nonattn_total,8000,64,7168,8,8,CompressedTensorsWNA16MarlinMoEMethod,900.0,unit",
+                "framework,version,device,model,topology,phase,row_kind,category,kernel_source,max_num_batched_tokens,bucket_tokens,decode_batch,hidden_size,topk,moe_ep_size,quant_runtime,latency,provenance",
+                "VLLM,0.19.0,NVIDIA H200,kimi-k2.5,tp4dp2ep8,mixed_prefill,non_attn_total,non_attn_total,phase440_nonattn_total,8000,8000,64,7168,8,8,CompressedTensorsWNA16MarlinMoEMethod,900.0,unit",
             ]
         )
         + "\n"
@@ -772,6 +788,7 @@ def test_load_vllm_serving_state_data_supports_non_attn_total_row_kind(tmp_path)
     key = (
         "kimi-k2.5",
         "tp4dp2ep8",
+        8000,
         "mixed_prefill",
         "non_attn_total",
         "non_attn_total",
@@ -781,6 +798,149 @@ def test_load_vllm_serving_state_data_supports_non_attn_total_row_kind(tmp_path)
         "CompressedTensorsWNA16MarlinMoEMethod",
     )
     assert data[key][8000][64]["latency"] == pytest.approx(900.0)
+
+
+def test_load_vllm_serving_state_data_scopes_by_max_num_batched_tokens(tmp_path):
+    csv_file = tmp_path / "vllm_serving_state_perf.txt"
+    csv_file.write_text(
+        "\n".join(
+            [
+                "framework,version,device,model,topology,phase,row_kind,category,kernel_source,max_num_batched_tokens,bucket_tokens,decode_batch,hidden_size,topk,moe_ep_size,quant_runtime,latency,provenance",
+                "VLLM,0.19.0,NVIDIA H200,kimi-k2.5,tp8ep8,decode,forward_total,forward_total,phase454_b2b_event_timing,8000,32,32,7168,8,8,CompressedTensorsWNA16MarlinMoEMethod,20.0,unit",
+                "VLLM,0.19.0,NVIDIA H200,kimi-k2.5,tp8ep8,decode,forward_total,forward_total,phase454_b2b_event_timing,32000,32,32,7168,8,8,CompressedTensorsWNA16MarlinMoEMethod,99.0,unit",
+            ]
+        )
+        + "\n"
+    )
+
+    data = load_vllm_serving_state_data(str(csv_file))
+
+    key_8k = (
+        "kimi-k2.5",
+        "tp8ep8",
+        8000,
+        "decode",
+        "forward_total",
+        "forward_total",
+        7168,
+        8,
+        8,
+        "CompressedTensorsWNA16MarlinMoEMethod",
+    )
+    key_32k = (
+        "kimi-k2.5",
+        "tp8ep8",
+        32000,
+        "decode",
+        "forward_total",
+        "forward_total",
+        7168,
+        8,
+        8,
+        "CompressedTensorsWNA16MarlinMoEMethod",
+    )
+    assert data[key_8k][32][32]["latency"] == pytest.approx(20.0)
+    assert data[key_32k][32][32]["latency"] == pytest.approx(99.0)
+
+
+def test_query_vllm_serving_state_requires_exact_max_bt_scope(tmp_path):
+    csv_file = tmp_path / "vllm_serving_state_perf.txt"
+    csv_file.write_text(
+        "\n".join(
+            [
+                "framework,version,device,model,topology,phase,row_kind,category,kernel_source,max_num_batched_tokens,bucket_tokens,decode_batch,hidden_size,topk,moe_ep_size,quant_runtime,latency,provenance",
+                "VLLM,0.19.0,NVIDIA H200,kimi-k2.5,tp8ep8,decode,forward_total,forward_total,phase454_b2b_event_timing,8000,32,32,7168,8,8,CompressedTensorsWNA16MarlinMoEMethod,20.0,unit",
+                "VLLM,0.19.0,NVIDIA H200,kimi-k2.5,tp8ep8,decode,forward_total,forward_total,phase454_b2b_event_timing,32000,32,32,7168,8,8,CompressedTensorsWNA16MarlinMoEMethod,99.0,unit",
+            ]
+        )
+        + "\n"
+    )
+    db = PerfDatabase("h200_sxm", "vllm", "0.19.0", str(REAL_SYSTEMS_ROOT))
+    db._vllm_serving_state_data = load_vllm_serving_state_data(str(csv_file))
+    db.query_vllm_serving_state.cache_clear()
+
+    result_8k = db.query_vllm_serving_state(
+        model="kimi-k2.5",
+        topology="tp8ep8",
+        max_num_batched_tokens=8000,
+        phase="decode",
+        row_kind="forward_total",
+        category="forward_total",
+        bucket_tokens=32,
+        decode_batch=32,
+        hidden_size=7168,
+        topk=8,
+        moe_ep_size=8,
+        quant_runtime="CompressedTensorsWNA16MarlinMoEMethod",
+    )
+    result_32k = db.query_vllm_serving_state(
+        model="kimi-k2.5",
+        topology="tp8ep8",
+        max_num_batched_tokens=32000,
+        phase="decode",
+        row_kind="forward_total",
+        category="forward_total",
+        bucket_tokens=32,
+        decode_batch=32,
+        hidden_size=7168,
+        topk=8,
+        moe_ep_size=8,
+        quant_runtime="CompressedTensorsWNA16MarlinMoEMethod",
+    )
+    result_wrong = db.query_vllm_serving_state(
+        model="kimi-k2.5",
+        topology="tp8ep8",
+        max_num_batched_tokens=65536,
+        phase="decode",
+        row_kind="forward_total",
+        category="forward_total",
+        bucket_tokens=32,
+        decode_batch=32,
+        hidden_size=7168,
+        topk=8,
+        moe_ep_size=8,
+        quant_runtime="CompressedTensorsWNA16MarlinMoEMethod",
+    )
+
+    assert result_8k is not None
+    assert float(result_8k) == pytest.approx(20.0)
+    assert result_32k is not None
+    assert float(result_32k) == pytest.approx(99.0)
+    assert result_wrong is None
+
+
+def test_query_vllm_serving_state_keeps_dp2_legacy_scope(tmp_path):
+    csv_file = tmp_path / "vllm_serving_state_perf.txt"
+    csv_file.write_text(
+        "\n".join(
+            [
+                "framework,version,device,model,topology,phase,row_kind,category,kernel_source,max_num_batched_tokens,bucket_tokens,decode_batch,hidden_size,topk,moe_ep_size,quant_runtime,latency,provenance",
+                "VLLM,0.19.0,NVIDIA H200,kimi-k2.5,tp4dp2ep8,decode,forward_total,forward_total,phase446_b2b_event_timing,8000,32,32,7168,8,8,CompressedTensorsWNA16MarlinMoEMethod,20.0,unit",
+            ]
+        )
+        + "\n"
+    )
+    db = PerfDatabase("h200_sxm", "vllm", "0.19.0", str(REAL_SYSTEMS_ROOT))
+    db._vllm_serving_state_data = load_vllm_serving_state_data(str(csv_file))
+    db.query_vllm_serving_state.cache_clear()
+
+    result = db.query_vllm_serving_state(
+        model="kimi-k2.5",
+        topology="tp4dp2ep8",
+        max_num_batched_tokens=None,
+        phase="decode",
+        row_kind="forward_total",
+        category="forward_total",
+        bucket_tokens=32,
+        decode_batch=32,
+        hidden_size=7168,
+        topk=8,
+        moe_ep_size=8,
+        quant_runtime="CompressedTensorsWNA16MarlinMoEMethod",
+    )
+
+    assert result is not None
+    assert float(result) == pytest.approx(20.0)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
