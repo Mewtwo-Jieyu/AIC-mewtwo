@@ -1,0 +1,15 @@
+section,metric,value,target,status,note
+k1_boundary,serve_api_server_count,data_parallel_size(2),api_server_count=2,pass,serve.log confirms internal DP default when present
+k1_boundary,api_server_processes_seen,2,2,pass,two ApiServer processes share the internal DP path
+k1_boundary,client_class_source,DPLBAsyncMPClient,core_client.py:107-129,pass,internal DP without external LB selects DPLBAsyncMPClient
+k1_boundary,client_config_source,client_count/client_index,utils.py:202-208,pass,APIServerProcessManager passes per-process client_index
+k2_harness,direct_import,blocked,import vllm.v1.engine.core_client,blocked,local import requires torch; harness uses source-faithful extracted route block
+k2_harness,persistent_increment_routes,"[32, 32]",alternating,alternating,"final_counts=[[64, 1], [64, 0]]"
+k2_harness,two_api_persistent_routes,"[64, 64]",alternating,alternating,two API clients with independent start indices still balance if increments persist
+k2_harness,stats_overwrite_routes,"[0, 64]",clustered,clustered,clump appears only when stats task overwrites local increments with an old snapshot between route calls
+k2_observation,debug_first_asymmetric_counts,"[[0,1],[63,1]]","[[0,1],[63,1]]",observed,Phase451-I real run
+k2_verdict,route_loop_verdict,alternates,direct route loop behavior,pass,get_core_engine_for_request itself does not produce 63/1
+k2_verdict,clump_mechanism_candidate,stats_overwrite_interleaving,explain code+DEBUG contradiction,candidate,source line core_client.py:1271 assigns self.lb_engines=sliced_counts and can discard local increments
+k5_decision,sim_route_alignment,not_applied,harness-proven actual behavior,blocked,stats-overwrite interleaving cadence is not yet measured; changing route policy would be a guessed model
+k5_decision,cascade_gates,not_run,,blocked,"no runtime change was made, so H/450-A/fingerprint/preemption/--ab cascade is not meaningful"
+k5_decision,phase443b_452,unchanged,,blocked,443-B and Phase452 decisions remain pending until stats-overwrite or upstream distribution is measured
