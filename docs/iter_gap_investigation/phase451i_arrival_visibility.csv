@@ -1,0 +1,19 @@
+section,scenario,metric,value,target,status,note
+i1_discriminator,K2.5-tp4ep8dp2-8k2k,metrics_sample_count,751,,,
+i1_discriminator,K2.5-tp4ep8dp2-8k2k,max_running_per_engine,56.0,,,
+i1_discriminator,K2.5-tp4ep8dp2-8k2k,max_waiting_per_engine_all_run,67.0,,,
+i1_discriminator,K2.5-tp4ep8dp2-8k2k,max_kv_usage,1.0,,,
+i1_discriminator,K2.5-tp4ep8dp2-8k2k,running_p50,47.0,,,
+i1_discriminator,K2.5-tp4ep8dp2-8k2k,waiting_p50,15.0,,,
+i1_discriminator,K2.5-tp4ep8dp2-8k2k,active_window_samples,59,,,
+i1_discriminator,K2.5-tp4ep8dp2-8k2k,active_start_s,0.0,,,
+i1_discriminator,K2.5-tp4ep8dp2-8k2k,active_window_max_waiting_per_engine,67.0,>=50 burst; <=5 drizzle,,
+i1_discriminator,K2.5-tp4ep8dp2-8k2k,active_window_max_waiting_global,122.0,>=100 global burst,,
+i1_discriminator,K2.5-tp4ep8dp2-8k2k,active_window_max_running_per_engine,53.0,,,
+i1_discriminator,K2.5-tp4ep8dp2-8k2k,engine_visibility,engine_burst,burst or drizzle,pass,EngineCore-visible waiting queue jumps to burst scale
+i1_discriminator,K2.5-tp4ep8dp2-8k2k,next_route,debug_observation_required,,open,
+i1_added_lines,K2.5-tp4ep8dp2-8k2k,added_request_line_count,0,>0 gives per-request engine-visible arrival,blocked,no Added request lines at INFO-level serve.log
+i3_debug_run,K2.5-tp4ep8dp2-8k2k,debug_short_run_needed,True,,open,metrics reject drizzle; need DEBUG/victim/waiting observation before any semantic fix
+i2_boundary,K2.5-tp4ep8dp2-8k2k,engine_visible_replay,not_applied,,blocked,drizzle route not supported by existing metrics
+i4_accept,K2.5-tp4ep8dp2-8k2k,runtime_patch,not_applied,,blocked,Phase451-I Step1 is report-only until route is proven
+i4_accept,K2.5-tp4ep8dp2-8k2k,default_aic,No-Go,,blocked,
