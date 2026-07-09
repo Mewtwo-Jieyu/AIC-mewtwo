@@ -216,7 +216,7 @@ MULTI_CONFIG_DATA = [
         dp=1,
         moe_tp=1,
         moe_ep=8,
-        real_total_tok_s_gpu=667.64,
+        real_total_tok_s_gpu=733.1985030506326,
     ),
     MultiConfigPoint(
         "K2.5-tp8ep8-32k3k",
@@ -228,7 +228,7 @@ MULTI_CONFIG_DATA = [
         dp=1,
         moe_tp=1,
         moe_ep=8,
-        real_total_tok_s_gpu=612.14,
+        real_total_tok_s_gpu=584.635270511922,
     ),
     MultiConfigPoint(
         "K2.5-tp4ep8dp2-8k2k",
@@ -240,7 +240,7 @@ MULTI_CONFIG_DATA = [
         dp=2,
         moe_tp=1,
         moe_ep=8,
-        real_total_tok_s_gpu=688.58,
+        real_total_tok_s_gpu=814.7425811036565,
     ),
     MultiConfigPoint(
         "K2.5-tp4ep8dp2-32k3k",
@@ -264,7 +264,7 @@ MULTI_CONFIG_DATA = [
         dp=1,
         moe_tp=1,
         moe_ep=8,
-        real_total_tok_s_gpu=692.35,
+        real_total_tok_s_gpu=620.0849392192076,
     ),
     MultiConfigPoint(
         "K2.5-tp4ep8dp2-8k2k-bt65536",
@@ -276,7 +276,7 @@ MULTI_CONFIG_DATA = [
         dp=2,
         moe_tp=1,
         moe_ep=8,
-        real_total_tok_s_gpu=569.5509309402136,
+        real_total_tok_s_gpu=547.4995526038921,
     ),
 ]
 
@@ -284,28 +284,31 @@ KV_CACHE_BLOCK_SIZE = 16
 PHASE397K_KV_CAPACITY_BY_SCENARIO = {
     "K2.5-tp8ep8-8k2k": MultiConfigKVCapacity(
         scenario="K2.5-tp8ep8-8k2k",
-        kv_cache_tokens=546_160,
+        kv_cache_tokens=546_144,
         block_size=KV_CACHE_BLOCK_SIZE,
-        num_gpu_blocks=34_135,
+        num_gpu_blocks=34_134,
         max_num_seqs=256,
         serve_log=(
-            "docs/iter_gap_investigation/phase454_gpu_batch_scope/"
-            "b2b_tp8_8k2k/overhead_off/K2.5-tp8ep8-8k2k/serve.log"
+            "docs/iter_gap_investigation/phase458_n512_unify/"
+            "recollect_tp8_8k2k/K2.5-tp8ep8-8k2k/serve.log"
         ),
-        serve_log_line_numbers=(195,),
+        serve_log_line_numbers=(200,),
         override_num_gpu_blocks=512,
-        override_line_numbers=(161, 163, 165, 167, 168, 171, 173, 175),
+        override_line_numbers=(159, 161, 162, 163, 167, 168, 171, 172),
     ),
     "K2.5-tp8ep8-32k3k": MultiConfigKVCapacity(
         scenario="K2.5-tp8ep8-32k3k",
-        kv_cache_tokens=675_216,
+        kv_cache_tokens=461_200,
         block_size=KV_CACHE_BLOCK_SIZE,
-        num_gpu_blocks=42_201,
+        num_gpu_blocks=28_825,
         max_num_seqs=256,
-        serve_log="docs/iter_gap_investigation/phase397k_measured_0190/K2.5-tp8ep8-32k3k/serve.log",
+        serve_log=(
+            "docs/iter_gap_investigation/phase458_n512_unify/"
+            "recollect_tp8_32k3k/K2.5-tp8ep8-32k3k/serve.log"
+        ),
         serve_log_line_numbers=(195,),
         override_num_gpu_blocks=512,
-        override_line_numbers=(154, 156, 158, 159, 162, 163, 166, 168),
+        override_line_numbers=(154, 156, 158, 159, 160, 161, 162, 168),
     ),
     "K2.5-tp4ep8dp2-8k2k": MultiConfigKVCapacity(
         scenario="K2.5-tp4ep8dp2-8k2k",
@@ -335,14 +338,17 @@ PHASE397K_KV_CAPACITY_BY_SCENARIO = {
     ),
     "K2.5-tp8ep8-8k2k-bt65536": MultiConfigKVCapacity(
         scenario="K2.5-tp8ep8-8k2k-bt65536",
-        kv_cache_tokens=343_552,
+        kv_cache_tokens=343_584,
         block_size=KV_CACHE_BLOCK_SIZE,
-        num_gpu_blocks=21_472,
+        num_gpu_blocks=21_474,
         max_num_seqs=256,
-        serve_log="docs/iter_gap_investigation/phase397k_measured_0190/K2.5-tp8ep8-8k2k-bt65536/serve.log",
+        serve_log=(
+            "docs/iter_gap_investigation/phase458_n512_unify/"
+            "recollect_tp8_8k2k_bt65536/K2.5-tp8ep8-8k2k-bt65536/serve.log"
+        ),
         serve_log_line_numbers=(195,),
         override_num_gpu_blocks=512,
-        override_line_numbers=(154, 155, 156, 160, 161, 164, 166, 167),
+        override_line_numbers=(154, 156, 158, 159, 162, 164, 166, 168),
     ),
     "K2.5-tp4ep8dp2-8k2k-bt65536": MultiConfigKVCapacity(
         scenario="K2.5-tp4ep8dp2-8k2k-bt65536",
@@ -350,10 +356,13 @@ PHASE397K_KV_CAPACITY_BY_SCENARIO = {
         block_size=KV_CACHE_BLOCK_SIZE,
         num_gpu_blocks=8_229,
         max_num_seqs=256,
-        serve_log="docs/iter_gap_investigation/phase424_bt65536_recollect/K2.5-tp4ep8dp2-8k2k-bt65536/serve.log",
-        serve_log_line_numbers=(203, 206),
+        serve_log=(
+            "docs/iter_gap_investigation/phase458_n512_unify/"
+            "recollect_dp2_8k2k_bt65536/K2.5-tp4ep8dp2-8k2k-bt65536/serve.log"
+        ),
+        serve_log_line_numbers=(208, 212),
         override_num_gpu_blocks=512,
-        override_line_numbers=(163, 164, 167, 169, 171, 172, 175, 177),
+        override_line_numbers=(169, 171, 173, 174, 175, 177, 181, 183),
     ),
 }
 

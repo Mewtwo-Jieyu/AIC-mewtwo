@@ -1,0 +1,15 @@
+[2026-07-09T15:21:11+00:00] phase458_n512_unify_start tasks=A workdir=/mnt/shared-storage-user/zhaojieyu/backup/aic
+[2026-07-09T15:21:11+00:00] phase458 task A: tp8 8k2k N=512 vanilla reference
+vllm_version=0.19.0
+NVIDIA H200, 143771, 570.133.20
+[2026-07-09T15:21:13+00:00] baseline_gpu_pids=[]
+[2026-07-09T15:21:24+00:00] gpu_drained
+[2026-07-09T15:21:24+00:00] serve_command: python3 -m vllm.entrypoints.cli.main serve /mnt/shared-storage-gpfs2/gpfs2-shared-public/huggingface/zskj-hub/models--moonshotai--Kimi-K2.5 --served-model-name kimi-k2.5 --port 21110 --tensor-parallel-size 8 --data-parallel-size 1 --enable-expert-parallel --max-model-len 262144 --gpu-memory-utilization 0.80 --max-num-batched-tokens 8000 --max-num-seqs 256 --enable-chunked-prefill --no-enable-prefix-caching --enable-logging-iteration-details --cudagraph-metrics --mm-encoder-tp-mode data --skip-mm-profiling --trust-remote-code --enable-auto-tool-choice --tool-call-parser kimi_k2 --reasoning-parser kimi_k2
+[2026-07-09T15:21:24+00:00] service_pid=30961
+[2026-07-09T15:23:44+00:00] service_ready port=21110 poll=29
+[2026-07-09T15:23:44+00:00] metrics_poller_pid=32372
+[2026-07-09T15:38:20+00:00] benchmark_exit_code=0
+[2026-07-09T15:38:20+00:00] wrote docs/iter_gap_investigation/phase458_n512_unify/recollect_tp8_8k2k/K2.5-tp8ep8-8k2k/bench_result.json
+[2026-07-09T15:38:37+00:00] gpu_drained
+[2026-07-09T15:38:38+00:00] phase458_recollect_tp8_8k2k_DONE bench_exit=0
+[2026-07-09T15:38:38+00:00] phase458_n512_unify_done

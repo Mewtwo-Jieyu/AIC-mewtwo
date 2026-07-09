@@ -1,0 +1,24 @@
+section,scenario,metric,value,target,status,source,note
+reference_update,K2.5-tp8ep8-8k2k,old_real_output_tok_s_gpu,133.528000,,,scripts/validate_cb_simulator.py,reference before Phase458 N=512 unification
+reference_update,K2.5-tp8ep8-8k2k,new_real_output_tok_s_gpu,146.639701,N=512 vanilla,pass,docs/iter_gap_investigation/phase458_n512_unify/recollect_tp8_8k2k/K2.5-tp8ep8-8k2k/bench_result.json,ok=512; fail=0
+reference_update,K2.5-tp8ep8-8k2k,protocol_gain_vs_old_reference,1.098194,document,,docs/iter_gap_investigation/phase458_n512_unify/recollect_tp8_8k2k/K2.5-tp8ep8-8k2k/bench_result.json,new N=512 output throughput divided by old reference throughput
+capacity_check,K2.5-tp8ep8-8k2k,kv_cache_tokens,546144,serve.log present,pass,docs/iter_gap_investigation/phase458_n512_unify/recollect_tp8_8k2k/K2.5-tp8ep8-8k2k/serve.log,raw truth to wire into validate capacity if changed
+reference_update,K2.5-tp8ep8-32k3k,old_real_output_tok_s_gpu,52.469143,,,scripts/validate_cb_simulator.py,reference before Phase458 N=512 unification
+reference_update,K2.5-tp8ep8-32k3k,new_real_output_tok_s_gpu,50.111595,N=512 vanilla,pass,docs/iter_gap_investigation/phase458_n512_unify/recollect_tp8_32k3k/K2.5-tp8ep8-32k3k/bench_result.json,ok=512; fail=0
+reference_update,K2.5-tp8ep8-32k3k,protocol_gain_vs_old_reference,0.955068,document,,docs/iter_gap_investigation/phase458_n512_unify/recollect_tp8_32k3k/K2.5-tp8ep8-32k3k/bench_result.json,new N=512 output throughput divided by old reference throughput
+capacity_check,K2.5-tp8ep8-32k3k,kv_cache_tokens,461200,serve.log present,pass,docs/iter_gap_investigation/phase458_n512_unify/recollect_tp8_32k3k/K2.5-tp8ep8-32k3k/serve.log,raw truth to wire into validate capacity if changed
+reference_update,K2.5-tp8ep8-8k2k-bt65536,old_real_output_tok_s_gpu,138.470000,,,scripts/validate_cb_simulator.py,reference before Phase458 N=512 unification
+reference_update,K2.5-tp8ep8-8k2k-bt65536,new_real_output_tok_s_gpu,124.016988,N=512 vanilla,pass,docs/iter_gap_investigation/phase458_n512_unify/recollect_tp8_8k2k_bt65536/K2.5-tp8ep8-8k2k-bt65536/bench_result.json,ok=512; fail=0
+reference_update,K2.5-tp8ep8-8k2k-bt65536,protocol_gain_vs_old_reference,0.895624,document,,docs/iter_gap_investigation/phase458_n512_unify/recollect_tp8_8k2k_bt65536/K2.5-tp8ep8-8k2k-bt65536/bench_result.json,new N=512 output throughput divided by old reference throughput
+capacity_check,K2.5-tp8ep8-8k2k-bt65536,kv_cache_tokens,343584,serve.log present,pass,docs/iter_gap_investigation/phase458_n512_unify/recollect_tp8_8k2k_bt65536/K2.5-tp8ep8-8k2k-bt65536/serve.log,raw truth to wire into validate capacity if changed
+reference_update,K2.5-tp4ep8dp2-8k2k-bt65536,old_real_output_tok_s_gpu,113.910186,,,scripts/validate_cb_simulator.py,reference before Phase458 N=512 unification
+reference_update,K2.5-tp4ep8dp2-8k2k-bt65536,new_real_output_tok_s_gpu,109.499911,N=512 vanilla,pass,docs/iter_gap_investigation/phase458_n512_unify/recollect_dp2_8k2k_bt65536/K2.5-tp4ep8dp2-8k2k-bt65536/bench_result.json,ok=512; fail=0
+reference_update,K2.5-tp4ep8dp2-8k2k-bt65536,protocol_gain_vs_old_reference,0.961283,document,,docs/iter_gap_investigation/phase458_n512_unify/recollect_dp2_8k2k_bt65536/K2.5-tp4ep8dp2-8k2k-bt65536/bench_result.json,new N=512 output throughput divided by old reference throughput
+capacity_check,K2.5-tp4ep8dp2-8k2k-bt65536,kv_cache_tokens,131664,serve.log present,pass,docs/iter_gap_investigation/phase458_n512_unify/recollect_dp2_8k2k_bt65536/K2.5-tp4ep8dp2-8k2k-bt65536/serve.log,raw truth to wire into validate capacity if changed
+acceptance,K2.5-tp8ep8-8k2k,current_error_ratio,1.132524,<=1.15,pass,docs/iter_gap_investigation/phase458_validate_ab.csv,improved
+acceptance,K2.5-tp4ep8dp2-8k2k,current_error_ratio,1.041312,<=1.15,pass,docs/iter_gap_investigation/phase458_validate_ab.csv,unchanged
+acceptance,K2.5-tp8ep8-8k2k-bt65536,current_error_ratio,1.234521,<=1.15,fail,docs/iter_gap_investigation/phase458_validate_ab.csv,regressed
+acceptance,K2.5-tp4ep8dp2-8k2k-bt65536,current_error_ratio,1.166794,<=1.15,fail,docs/iter_gap_investigation/phase458_validate_ab.csv,improved
+acceptance,K2.5-tp4ep8dp2-32k3k,current_error_ratio,1.056381,<=1.15,pass,docs/iter_gap_investigation/phase458_validate_ab.csv,unchanged
+acceptance,K2.5-tp8ep8-32k3k,current_error_ratio,1.397081,<=1.15,fail,docs/iter_gap_investigation/phase458_validate_ab.csv,regressed
+verdict,MULTI_CONFIG,phase458_gate,fail,6/6 <= 1.15,fail,docs/iter_gap_investigation/phase458_validate_ab.csv,passed=3; failed=3; total=6
