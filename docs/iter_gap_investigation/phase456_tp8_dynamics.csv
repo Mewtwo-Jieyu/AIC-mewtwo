@@ -1,0 +1,25 @@
+section,scenario,metric,value,target,status,source,note
+real_profile,K2.5-tp8ep8-8k2k,kv_cache_tokens,546160,,,docs/iter_gap_investigation/phase454_gpu_batch_scope/b2b_tp8_8k2k/overhead_off/K2.5-tp8ep8-8k2k/serve.log,
+real_profile,K2.5-tp8ep8-8k2k,num_gpu_blocks,34135,,,docs/iter_gap_investigation/phase454_gpu_batch_scope/b2b_tp8_8k2k/overhead_off/K2.5-tp8ep8-8k2k/serve.log,
+real_profile,K2.5-tp8ep8-8k2k,running_p50,56.000000,,,docs/iter_gap_investigation/phase454_gpu_batch_scope/b2b_tp8_8k2k/overhead_off/K2.5-tp8ep8-8k2k/serve.log,p10=52.000000; p90=64.300000; n=88
+real_profile,K2.5-tp8ep8-8k2k,waiting_p50,69.000000,,,docs/iter_gap_investigation/phase454_gpu_batch_scope/b2b_tp8_8k2k/overhead_off/K2.5-tp8ep8-8k2k/serve.log,p10=31.000000; p90=74.000000; n=88
+real_profile,K2.5-tp8ep8-8k2k,kv_usage_p50,98.500000,,,docs/iter_gap_investigation/phase454_gpu_batch_scope/b2b_tp8_8k2k/overhead_off/K2.5-tp8ep8-8k2k/serve.log,p10=79.180000; p90=99.630000; n=88
+real_fingerprint,K2.5-tp8ep8-8k2k,mixed_share,0.028950,,,docs/iter_gap_investigation/phase454_gpu_batch_scope/b2b_tp8_8k2k/overhead_on/event_timing.jsonl,count=4192; mean=0.028950; p10=; p90=
+real_fingerprint,K2.5-tp8ep8-8k2k,mixed_decode_batch,51.000000,,,docs/iter_gap_investigation/phase454_gpu_batch_scope/b2b_tp8_8k2k/overhead_on/event_timing.jsonl,count=4192; mean=50.213740; p10=50.000000; p90=60.000000
+real_fingerprint,K2.5-tp8ep8-8k2k,mixed_ctx_tokens,7949.000000,,,docs/iter_gap_investigation/phase454_gpu_batch_scope/b2b_tp8_8k2k/overhead_on/event_timing.jsonl,count=4192; mean=7801.526718; p10=7938.000000; p90=7950.000000
+real_fingerprint,K2.5-tp8ep8-8k2k,mixed_forward_busy_ms,608.102295,,,docs/iter_gap_investigation/phase454_gpu_batch_scope/b2b_tp8_8k2k/overhead_on/event_timing.jsonl,count=4192; mean=598.138319; p10=603.096851; p90=611.393494
+real_fingerprint,K2.5-tp8ep8-8k2k,prefill_forward_busy_ms,608.096008,,,docs/iter_gap_investigation/phase454_gpu_batch_scope/b2b_tp8_8k2k/overhead_on/event_timing.jsonl,count=4200; mean=598.110471; p10=602.951434; p90=611.393494
+real_fingerprint,K2.5-tp8ep8-8k2k,decode_batch,59.000000,,,docs/iter_gap_investigation/phase454_gpu_batch_scope/b2b_tp8_8k2k/overhead_on/event_timing.jsonl,count=140600; mean=56.744865; p10=32.000000; p90=65.000000
+real_fingerprint,K2.5-tp8ep8-8k2k,decode_forward_busy_ms,27.377423,,,docs/iter_gap_investigation/phase454_gpu_batch_scope/b2b_tp8_8k2k/overhead_on/event_timing.jsonl,count=140600; mean=31.305285; p10=20.654298; p90=31.736589
+wiring,K2.5-tp8ep8-8k2k,validate_kv_cache_tokens,546160,546160,pass,docs/iter_gap_investigation/phase454_gpu_batch_scope/b2b_tp8_8k2k/overhead_off/K2.5-tp8ep8-8k2k/serve.log,validate must use the Phase454 no-event TP8 capacity
+wiring,K2.5-tp8ep8-8k2k,validate_num_gpu_blocks,34135,34135,pass,docs/iter_gap_investigation/phase454_gpu_batch_scope/b2b_tp8_8k2k/overhead_off/K2.5-tp8ep8-8k2k/serve.log,
+capacity_counterfactual,K2.5-tp8ep8-8k2k,old_capacity_error_ratio,1.438569,<=1.15,fail,,sim=192.089; real=133.528; peak_decode=94; avg_decode=76.107
+capacity_counterfactual,K2.5-tp8ep8-8k2k,current_capacity_error_ratio,1.244061,<=1.15,fail,,sim=166.117; real=133.528; peak_decode=67; avg_decode=54.576
+capacity_counterfactual,K2.5-tp8ep8-8k2k,error_ratio_delta,0.194507,positive,pass,,capacity wiring fixes most TP8-8k2k overprediction but does not close the 15% gate
+decision,K2.5-tp8ep8-8k2k,phase456_verdict,tp8_capacity_wiring_improves_but_residual_remains,6/6 <=15%,blocked,,Do not ingest TP8 B2b rows until dynamics residual is resolved.
+validate_ab,K2.5-tp8ep8-8k2k,K2.5-tp8ep8-8k2k,1.244061,<=1.15,improved,docs/iter_gap_investigation/phase456_validate_ab.csv,baseline=1.439; current_sim=166.117; delta=-0.195
+validate_ab,K2.5-tp4ep8dp2-8k2k,K2.5-tp4ep8dp2-8k2k,1.136279,<=1.15,unchanged,docs/iter_gap_investigation/phase456_validate_ab.csv,baseline=1.136; current_sim=156.484; delta=+0.000
+validate_ab,K2.5-tp8ep8-8k2k-bt65536,K2.5-tp8ep8-8k2k-bt65536,1.119881,<=1.15,unchanged,docs/iter_gap_investigation/phase456_validate_ab.csv,baseline=1.120; current_sim=155.070; delta=+0.000
+validate_ab,K2.5-tp4ep8dp2-8k2k-bt65536,K2.5-tp4ep8dp2-8k2k-bt65536,1.121619,<=1.15,improved,docs/iter_gap_investigation/phase456_validate_ab.csv,baseline=1.234; current_sim=127.764; delta=-0.112
+validate_ab,K2.5-tp8ep8-32k3k,K2.5-tp8ep8-32k3k,1.163036,<=1.15,unchanged,docs/iter_gap_investigation/phase456_validate_ab.csv,baseline=1.163; current_sim=61.024; delta=+0.000
+validate_ab,K2.5-tp4ep8dp2-32k3k,K2.5-tp4ep8dp2-32k3k,1.056381,<=1.15,unchanged,docs/iter_gap_investigation/phase456_validate_ab.csv,baseline=1.056; current_sim=56.281; delta=+0.000

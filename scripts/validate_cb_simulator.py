@@ -284,12 +284,15 @@ KV_CACHE_BLOCK_SIZE = 16
 PHASE397K_KV_CAPACITY_BY_SCENARIO = {
     "K2.5-tp8ep8-8k2k": MultiConfigKVCapacity(
         scenario="K2.5-tp8ep8-8k2k",
-        kv_cache_tokens=760_160,
+        kv_cache_tokens=546_160,
         block_size=KV_CACHE_BLOCK_SIZE,
-        num_gpu_blocks=47_510,
+        num_gpu_blocks=34_135,
         max_num_seqs=256,
-        serve_log="docs/iter_gap_investigation/phase397k_measured_0190/K2.5-tp8ep8-8k2k/serve.log",
-        serve_log_line_numbers=(202,),
+        serve_log=(
+            "docs/iter_gap_investigation/phase454_gpu_batch_scope/"
+            "b2b_tp8_8k2k/overhead_off/K2.5-tp8ep8-8k2k/serve.log"
+        ),
+        serve_log_line_numbers=(195,),
         override_num_gpu_blocks=512,
         override_line_numbers=(161, 163, 165, 167, 168, 171, 173, 175),
     ),
