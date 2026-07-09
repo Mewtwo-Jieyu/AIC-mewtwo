@@ -4,19 +4,17 @@ real_tp_dedupe,K2.5-tp4ep8dp2-8k2k,real,engine_0_mixed_steps_per_request,1.03921
 real_tp_dedupe,K2.5-tp4ep8dp2-8k2k,real,engine_0_recomputed_tokens_per_request,0.0,0,pass,
 real_tp_dedupe,K2.5-tp4ep8dp2-8k2k,real,engine_1_mixed_steps_per_request,1.0392156862745099,~1.0,pass,mixed_steps=265; requests=255; EngineCore iteration lines
 real_tp_dedupe,K2.5-tp4ep8dp2-8k2k,real,engine_1_recomputed_tokens_per_request,0.0,0,pass,
-sim_forensics,K2.5-tp4ep8dp2-8k2k,sim,preemption_events,824,,,throughput_tok_s_gpu=108.743492
+sim_forensics,K2.5-tp4ep8dp2-8k2k,sim,preemption_events,192,,,throughput_tok_s_gpu=155.535661
 sim_forensics,K2.5-tp4ep8dp2-8k2k,sim,classification_coverage,1.0,>=0.80,pass,minimal source-backed candidate set covers the target share
-sim_forensics,K2.5-tp4ep8dp2-8k2k,sim,minimal_candidate_set_coverage,0.9053398058252428,>=0.80,pass,coverage of the minimal candidate set used by the D gate
-sim_forensics,K2.5-tp4ep8dp2-8k2k,sim,candidate_semantic_diff_count,1,<=3 for D gate; E requires a proven semantic fix,pass,preempt_reentry_thrash
+sim_forensics,K2.5-tp4ep8dp2-8k2k,sim,minimal_candidate_set_coverage,0.96875,>=0.80,pass,coverage of the minimal candidate set used by the D gate
+sim_forensics,K2.5-tp4ep8dp2-8k2k,sim,candidate_semantic_diff_count,2,<=3 for D gate; E requires a proven semantic fix,pass,"preempt_reentry_thrash,block_growth_or_watermark"
 decision,K2.5-tp4ep8dp2-8k2k,sim,phase451d_classification_gate,True,coverage>=0.80 and candidates<=3,pass,
-decision,K2.5-tp4ep8dp2-8k2k,sim,phase451e_runtime_fix_gate,blocked_pending_unique_semantic_fix,unique source-backed fix that reduces recompute/preemption,blocked,"dominant signature isolated, but no unique source-backed runtime change has been proven to reduce the declared metrics"
-sim_category,K2.5-tp4ep8dp2-8k2k,sim,admission_induced,6,,,share=0.007282
-sim_category,K2.5-tp4ep8dp2-8k2k,sim,decode_growth_pressure,66,,,share=0.080097
-sim_category,K2.5-tp4ep8dp2-8k2k,sim,prefill_growth_pressure,6,,,share=0.007282
-sim_category,K2.5-tp4ep8dp2-8k2k,sim,thrash_repeat_victim,746,,,share=0.905340
+decision,K2.5-tp4ep8dp2-8k2k,sim,phase451e_runtime_fix_gate,blocked_pending_unique_semantic_fix,unique source-backed fix that reduces recompute/preemption,blocked,multiple source-auditable signatures remain
+sim_category,K2.5-tp4ep8dp2-8k2k,sim,admission_induced,6,,,share=0.031250
+sim_category,K2.5-tp4ep8dp2-8k2k,sim,decode_growth_pressure,66,,,share=0.343750
+sim_category,K2.5-tp4ep8dp2-8k2k,sim,thrash_repeat_victim,120,,,share=0.625000
 candidate,K2.5-tp4ep8dp2-8k2k,sim,block_growth_or_watermark,66,,,source-backed signature candidate; not a fix by itself
-candidate,K2.5-tp4ep8dp2-8k2k,sim,preempt_reentry_thrash,746,,,source-backed signature candidate; not a fix by itself
-candidate,K2.5-tp4ep8dp2-8k2k,sim,prefill_chunk_allocation,6,,,source-backed signature candidate; not a fix by itself
+candidate,K2.5-tp4ep8dp2-8k2k,sim,preempt_reentry_thrash,120,,,source-backed signature candidate; not a fix by itself
 candidate,K2.5-tp4ep8dp2-8k2k,sim,waiting_admission_gate,6,,,source-backed signature candidate; not a fix by itself
 source_semantics,K2.5-tp4ep8dp2-8k2k,vllm,preempt_trigger,running_allocate_slots_none,,,vllm/v1/core/sched/scheduler.py:460-508; preemption occurs while scheduling RUNNING requests
 source_semantics,K2.5-tp4ep8dp2-8k2k,vllm,waiting_after_preempt,skip_waiting_when_preempted,,,vllm/v1/core/sched/scheduler.py:563-564; WAITING scheduling is skipped if preempted_reqs is non-empty

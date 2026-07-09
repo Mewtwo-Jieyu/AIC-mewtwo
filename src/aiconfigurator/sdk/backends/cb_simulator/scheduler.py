@@ -130,6 +130,24 @@ class CBScheduler:
             return True
         return self._total_blocks(running, result) <= self._config.num_gpu_blocks
 
+    def _full_sequence_blocks_needed(self, req: Request) -> int:
+        return self._blocks_needed(req, req.prefill_tokens_remaining)
+
+    def _fits_full_sequence_admission(
+        self,
+        req: Request,
+        running: list[Request],
+        result: ScheduleResult,
+    ) -> bool:
+        if (
+            self._config.num_gpu_blocks <= 0
+            or not self._config.scheduler_reserve_full_isl
+        ):
+            return True
+        used_blocks = self._total_blocks(running, result)
+        needed_blocks = self._full_sequence_blocks_needed(req)
+        return used_blocks + needed_blocks <= self._config.num_gpu_blocks
+
     def _next_waiting_candidate(
         self,
         waiting: list[Request],
@@ -207,6 +225,8 @@ class CBScheduler:
                 break
             chunk = self._cap_prefill_chunk(req.prefill_tokens_remaining, budget)
             if chunk <= 0:
+                break
+            if not self._fits_full_sequence_admission(req, running, result):
                 break
 
             result.prefill_reqs.append(req)

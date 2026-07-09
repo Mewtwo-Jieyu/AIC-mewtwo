@@ -25,6 +25,7 @@ class CBSimConfig:
     num_requests: int = 200
     warmup_requests: int = 50
     long_prefill_token_threshold: int = 0
+    scheduler_reserve_full_isl: bool = True
     num_gpu_blocks: int = 0
     block_size: int = 16
     overlap_factor: float = 1.0

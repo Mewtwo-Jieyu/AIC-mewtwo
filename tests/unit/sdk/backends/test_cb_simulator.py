@@ -258,6 +258,45 @@ class TestCBScheduler:
         assert result.prefill_reqs == []
         assert result.prefill_tokens == {}
 
+    def test_preempted_waiting_requires_full_sequence_headroom(self) -> None:
+        cfg = CBSimConfig(
+            max_num_batched_tokens=17,
+            num_gpu_blocks=6,
+            block_size=16,
+        )
+        sched = CBScheduler(cfg)
+        running = [_make_decoding(0, isl=64, gen=0)]
+        victim = _make_decoding(1, isl=64, gen=32)
+        victim.state = RequestState.PREEMPTED
+        victim.prefill_tokens_remaining = 96
+        waiting = [victim]
+
+        result = sched.schedule(waiting=waiting, running=running)
+
+        assert result.decode_reqs == [running[0]]
+        assert result.prefill_reqs == []
+        assert victim.state == RequestState.PREEMPTED
+
+    def test_full_sequence_headroom_can_be_disabled(self) -> None:
+        cfg = CBSimConfig(
+            max_num_batched_tokens=17,
+            num_gpu_blocks=6,
+            block_size=16,
+            scheduler_reserve_full_isl=False,
+        )
+        sched = CBScheduler(cfg)
+        running = [_make_decoding(0, isl=64, gen=0)]
+        victim = _make_decoding(1, isl=64, gen=32)
+        victim.state = RequestState.PREEMPTED
+        victim.prefill_tokens_remaining = 96
+        waiting = [victim]
+
+        result = sched.schedule(waiting=waiting, running=running)
+
+        assert result.decode_reqs == [running[0]]
+        assert result.prefill_reqs == [victim]
+        assert result.prefill_tokens[victim.request_id] == 16
+
     def test_no_preemption_with_unlimited_blocks(self) -> None:
         cfg = CBSimConfig(
             max_num_batched_tokens=32,
