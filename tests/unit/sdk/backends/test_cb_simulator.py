@@ -762,6 +762,18 @@ class _ForwardTotalServingStateDB(_ServingStateDB):
         raise AssertionError(f"forward_total should short-circuit before category queries: {kwargs}")
 
 
+class _TopologyForwardTotalServingStateDB(_ServingStateDB):
+    def query_vllm_serving_state(self, **kwargs):
+        self.calls.append(kwargs)
+        if (
+            kwargs.get("topology") == "tp8ep8"
+            and kwargs.get("row_kind") == "forward_total"
+            and kwargs["phase"] == "decode"
+        ):
+            return PerformanceResult(42.0, energy=0.0)
+        return None
+
+
 class _BoundedServingStateDB(_ServingStateDB):
     def __init__(self) -> None:
         super().__init__()
@@ -924,8 +936,8 @@ class TestIterationLatencyCalculator:
         assert total == pytest.approx(40.0)
         assert [call["row_kind"] for call in db.calls] == ["forward_total"]
 
-    def test_serving_state_does_not_apply_to_tp8(self) -> None:
-        db = _ServingStateDB()
+    def test_serving_state_forward_total_uses_tp8_topology_for_tp8(self) -> None:
+        db = _TopologyForwardTotalServingStateDB()
         calc = IterationLatencyCalculator(
             backend=_ServingStateBackendForIteration(),
             model=_FakeKimiTP8ModelForServingState(),
@@ -933,15 +945,15 @@ class TestIterationLatencyCalculator:
         )
 
         total = calc.compute(
-            prefill_tokens=8000,
-            prefill_batch_size=1,
-            prefill_seq_len=8000,
-            decode_batch_size=8,
+            prefill_tokens=0,
+            prefill_batch_size=0,
+            prefill_seq_len=1,
+            decode_batch_size=64,
             decode_avg_kv_len=8000,
         )
 
-        assert total == pytest.approx(45.0)
-        assert db.calls == []
+        assert total == pytest.approx(42.0)
+        assert [call["topology"] for call in db.calls] == ["tp8ep8"]
 
     def test_serving_state_records_out_of_grid_misses(self) -> None:
         db = _BoundedServingStateDB()
@@ -972,7 +984,7 @@ class TestIterationLatencyCalculator:
             for row in audit
             if row["category"] == "moe_gemm_or_aux"
         } >= {
-            ("mixed_prefill", "moe_gemm_or_aux", "decode_batch_above_range"),
+            ("mixed_prefill", "moe_gemm_or_aux", "bucket_above_range"),
             ("decode", "moe_gemm_or_aux", "bucket_above_range"),
         }
 

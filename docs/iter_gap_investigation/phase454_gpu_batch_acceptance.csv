@@ -1,0 +1,24 @@
+section,scenario,metric,value,target,status,note
+clean_reference,K2.5-tp4ep8dp2-8k2k,clean_error_ratio,1.041312,<=1.15,pass,N=512 C=128
+clean_reference,K2.5-tp4ep8dp2-8k2k,clean_real_output_tok_s_gpu,162.948516,,clean_reference_collected,
+clean_reference,K2.5-tp4ep8dp2-32k3k,clean_error_ratio,1.057492,<=1.15,pass,N=512 C=64
+clean_reference,K2.5-tp4ep8dp2-32k3k,clean_real_output_tok_s_gpu,53.221414,,clean_reference_collected,
+clean_validate,K2.5-tp8ep8-8k2k,error_ratio,1.438569,<=1.15,fail,existing_reference
+clean_validate,K2.5-tp4ep8dp2-8k2k,error_ratio,1.041312,<=1.15,pass,phase454_n512_clean
+clean_validate,K2.5-tp8ep8-8k2k-bt65536,error_ratio,1.119881,<=1.15,pass,existing_reference
+clean_validate,K2.5-tp4ep8dp2-8k2k-bt65536,error_ratio,1.233619,<=1.15,fail,existing_reference
+clean_validate,K2.5-tp8ep8-32k3k,error_ratio,1.163036,<=1.15,fail,existing_reference
+clean_validate,K2.5-tp4ep8dp2-32k3k,error_ratio,1.057492,<=1.15,pass,phase454_n512_clean
+clean_validate,all,max_error_ratio,1.438569,<=1.15,fail,max_scenario=K2.5-tp8ep8-8k2k
+gpu_overhead_gate,K2.5-tp8ep8-8k2k,overhead_pct,0.041410,<=2.0,pass,off=1171.0122826772538 on=1170.5273652241867
+gpu_overhead_gate,K2.5-tp4ep8dp2-8k2k-bt65536,overhead_pct,1.444566,<=2.0,pass,off=883.000989801678 on=870.2454619600386
+b2b_candidate,K2.5-tp4ep8dp2-8k2k-bt65536,active_rows,104,>0,pass,
+b2b_candidate,K2.5-tp4ep8dp2-8k2k-bt65536,blocked_rows,15,"reported, not overwritten",reported,
+b2b_candidate,K2.5-tp8ep8-8k2k,active_rows,0,>0,blocked,
+b2b_candidate,K2.5-tp8ep8-8k2k,blocked_rows,193,"reported, not overwritten",reported,
+perfdb_candidate,all,active_total,104,accepted or already ingested,ready,appendable=0 already_ingested=104
+perfdb_candidate,all,blocked_total,208,no silent overwrite,pass,Duplicate keys require schema/regime decision.
+gpu_residual,K2.5-tp4ep8dp2-8k2k,process_residual_after_bytes,0,0,pass,/Users/mewtwo/2026/work/codebase/AIC-mewtwo/.worktrees/feature-pr403/docs/iter_gap_investigation/phase454_gpu_batch/recollect_dp2_8k2k/process_residual_after.txt
+gpu_residual,K2.5-tp8ep8-8k2k,process_residual_after_bytes,0,0,pass,/Users/mewtwo/2026/work/codebase/AIC-mewtwo/.worktrees/feature-pr403/docs/iter_gap_investigation/phase454_gpu_batch_scope/b2b_tp8_8k2k/overhead_on/process_residual_after.txt
+gpu_residual,K2.5-tp4ep8dp2-8k2k-bt65536,process_residual_after_bytes,0,0,pass,/Users/mewtwo/2026/work/codebase/AIC-mewtwo/.worktrees/feature-pr403/docs/iter_gap_investigation/phase454_gpu_batch_scope/b2b_dp2_8k2k_bt65536/overhead_on/process_residual_after.txt
+verdict,phase454,clean_acceptance_verdict,gpu_batch_collected_dp2_bt_ingested_tp8_blocked_by_scope,clean reference + safe B2b ingestion evidence,no_go,TP8 B2b rows require a KV/ISL scope key before PerfDB ingestion.

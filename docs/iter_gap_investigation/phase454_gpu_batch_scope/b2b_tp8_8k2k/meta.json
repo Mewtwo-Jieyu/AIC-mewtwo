@@ -1,0 +1,16 @@
+{
+  "attention_busy_ms": "not_split_by_patch",
+  "bench_max_concurrency": 128,
+  "bench_num_prompts": 512,
+  "default_readiness": "No-Go",
+  "flush_interval": 64,
+  "isl": 8000,
+  "max_model_len": 262144,
+  "max_num_batched_tokens": 8000,
+  "measurement": "model_forward_cuda_event_outer_delayed",
+  "mode": "overhead_gate",
+  "osl": 2000,
+  "phase": "phase446_b2b_event_timing",
+  "runtime_file_io": "shutdown_only",
+  "scenario": "K2.5-tp8ep8-8k2k"
+}

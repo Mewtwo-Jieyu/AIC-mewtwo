@@ -1,0 +1,6 @@
+[2026-07-09T07:17:41+00:00] baseline_gpu_pids=[]
+[2026-07-09T07:17:52+00:00] serve_command: python3 -m vllm.entrypoints.cli.main serve /mnt/shared-storage-gpfs2/gpfs2-shared-public/huggingface/zskj-hub/models--moonshotai--Kimi-K2.5 --served-model-name kimi-k2.5 --port 21054 --tensor-parallel-size 4 --data-parallel-size 2 --enable-expert-parallel --max-model-len 131072 --gpu-memory-utilization 0.80 --max-num-batched-tokens 8000 --max-num-seqs 256 --enable-chunked-prefill --no-enable-prefix-caching --enable-logging-iteration-details --cudagraph-metrics --mm-encoder-tp-mode data --skip-mm-profiling --trust-remote-code --enable-auto-tool-choice --tool-call-parser kimi_k2 --reasoning-parser kimi_k2
+[2026-07-09T07:17:52+00:00] service_pid=12035
+[2026-07-09T07:33:37+00:00] benchmark_exit_code=0
+[2026-07-09T07:33:37+00:00] wrote docs/iter_gap_investigation/phase454_gpu_batch/recollect_dp2_8k2k/K2.5-tp4ep8dp2-8k2k/bench_result.json
+[2026-07-09T07:33:57+00:00] phase454_recollect_dp2_8k2k_DONE bench_exit=0

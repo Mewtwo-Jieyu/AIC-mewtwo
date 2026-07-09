@@ -1,0 +1,7 @@
+name,real_output_tok_s_gpu,sim_output_tok_s_gpu,error_ratio,status,reference
+K2.5-tp8ep8-8k2k,133.528000,192.089213,1.438569,fail,existing_reference
+K2.5-tp4ep8dp2-8k2k,162.948516,156.483788,1.041312,pass,phase454_n512_clean
+K2.5-tp8ep8-8k2k-bt65536,138.470000,155.069882,1.119881,pass,existing_reference
+K2.5-tp4ep8dp2-8k2k-bt65536,113.910186,140.521727,1.233619,fail,existing_reference
+K2.5-tp8ep8-32k3k,52.469143,61.023512,1.163036,fail,existing_reference
+K2.5-tp4ep8dp2-32k3k,53.221414,56.281238,1.057492,pass,phase454_n512_clean

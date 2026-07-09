@@ -29,7 +29,6 @@ logger = logging.getLogger(__name__)
 
 _KV_LEN_BUCKET = 512
 _SERVING_STATE_PERFDB_MODEL = "kimi-k2.5"
-_SERVING_STATE_TOPOLOGY = "tp4dp2ep8"
 _SERVING_STATE_HARDWARE = "h200_sxm"
 _SERVING_STATE_VERSION = "0.19.0"
 _SERVING_STATE_QUANT_RUNTIME = "CompressedTensorsWNA16MarlinMoEMethod"
@@ -156,17 +155,36 @@ class IterationLatencyCalculator:
         return compute_ms, dispatch_ms
 
     def _serving_state_scope_enabled(self) -> bool:
+        topology = self._serving_state_topology()
+        if topology is None:
+            return False
         config = getattr(self._model, "config", None)
         return (
             getattr(self._database, "backend", None) == "vllm"
             and getattr(self._database, "system", None) == _SERVING_STATE_HARDWARE
             and getattr(self._database, "version", None) == _SERVING_STATE_VERSION
-            and getattr(config, "tp_size", None) == 4
-            and getattr(config, "attention_dp_size", None) == 2
             and getattr(config, "moe_tp_size", None) == 1
             and getattr(config, "moe_ep_size", None) == 8
             and hasattr(self._database, "query_vllm_serving_state")
         )
+
+    def _serving_state_topology(self) -> str | None:
+        config = getattr(self._model, "config", None)
+        if (
+            getattr(config, "tp_size", None) == 4
+            and getattr(config, "attention_dp_size", None) == 2
+            and getattr(config, "moe_tp_size", None) == 1
+            and getattr(config, "moe_ep_size", None) == 8
+        ):
+            return "tp4dp2ep8"
+        if (
+            getattr(config, "tp_size", None) == 8
+            and getattr(config, "attention_dp_size", None) == 1
+            and getattr(config, "moe_tp_size", None) == 1
+            and getattr(config, "moe_ep_size", None) == 8
+        ):
+            return "tp8ep8"
+        return None
 
     def _serving_state_category(self, op_name: str) -> str | None:
         name = op_name.lower()
@@ -203,7 +221,7 @@ class IterationLatencyCalculator:
             return None
         result = self._database.query_vllm_serving_state(
             model=_SERVING_STATE_PERFDB_MODEL,
-            topology=_SERVING_STATE_TOPOLOGY,
+            topology=self._serving_state_topology(),
             phase=phase,
             row_kind="category",
             category=category,
@@ -249,7 +267,7 @@ class IterationLatencyCalculator:
             return None
         result = self._database.query_vllm_serving_state(
             model=_SERVING_STATE_PERFDB_MODEL,
-            topology=_SERVING_STATE_TOPOLOGY,
+            topology=self._serving_state_topology(),
             phase=phase,
             row_kind="non_attn_total",
             category=category,
@@ -287,7 +305,7 @@ class IterationLatencyCalculator:
         category = "forward_total"
         result = self._database.query_vllm_serving_state(
             model=_SERVING_STATE_PERFDB_MODEL,
-            topology=_SERVING_STATE_TOPOLOGY,
+            topology=self._serving_state_topology(),
             phase=phase,
             row_kind="forward_total",
             category=category,
@@ -325,9 +343,12 @@ class IterationLatencyCalculator:
         data = getattr(self._database, "_vllm_serving_state_data", None)
         if data is None:
             return None
+        topology = self._serving_state_topology()
+        if topology is None:
+            return None
         key = (
             _SERVING_STATE_PERFDB_MODEL,
-            _SERVING_STATE_TOPOLOGY,
+            topology,
             phase,
             row_kind,
             category,
@@ -342,7 +363,7 @@ class IterationLatencyCalculator:
             # row_kind. Keep read compatibility; real PerfDB rows use row_kind.
             legacy_key = (
                 _SERVING_STATE_PERFDB_MODEL,
-                _SERVING_STATE_TOPOLOGY,
+                topology,
                 phase,
                 category,
                 _SERVING_STATE_HIDDEN_SIZE,

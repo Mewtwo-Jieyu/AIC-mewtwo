@@ -1,0 +1,22 @@
+section,metric,value,target,status,note
+rule,zero_regression_revision,global_source_backed_semantic_fix_may_expose_error_cancellation,per-point impact explicitly listed,recorded,Do not silently revert when a global vLLM semantic fix reveals prior offsetting errors.
+rule,error_cancellation_warning,dp2_8k2k_1.136_is_not_closed,clean N=512 reference required,recorded,Current N=128 reference can hide steady-state model error through burst artifact.
+reserve_source,waiting_gate,and not self.kv_cache_manager.can_fit_full_sequence(,,source_located,/Users/mewtwo/2026/work/codebase/vllm-0.19.0/vllm/v1/core/sched/scheduler.py:734
+reserve_source,can_fit_input,"full_num_tokens = min(request.num_tokens, self.max_model_len)",request.num_tokens,source_located,/Users/mewtwo/2026/work/codebase/vllm-0.19.0/vllm/v1/core/kv_cache_manager.py:244
+reserve_source,request_num_tokens,return len(self._all_token_ids),current prompt + generated tokens,source_located,/Users/mewtwo/2026/work/codebase/vllm-0.19.0/vllm/v1/request.py:227
+reserve_source,max_tokens_not_in_num_tokens,self.max_tokens = sampling_params.max_tokens,not referenced by can_fit_full_sequence,source_located,/Users/mewtwo/2026/work/codebase/vllm-0.19.0/vllm/v1/request.py:103
+reserve_source,async_placeholder_not_num_tokens,request.num_output_placeholders += 1 + cur_num_spec_tokens,separate counter,source_located,/Users/mewtwo/2026/work/codebase/vllm-0.19.0/vllm/v1/core/sched/async_scheduler.py:32
+reserve_verdict,prompt_plus_max_tokens_hypothesis,current_sequence_not_prompt_plus_max_tokens,prompt+max_tokens if source proves it,rejected_prompt_plus_max_tokens_hypothesis,"No runtime change: vLLM gate reserves current full sequence, not final max sequence."
+residual_preemption,preemption_events,192,~24 real observed victims,partial,Residual events remain after Phase453 headroom gate.
+residual_preemption,classification_coverage,1.0,>=0.80,pass,Phase451D classification covers all residual events.
+residual_category,admission_induced,6,,,
+residual_category,decode_growth_pressure,66,,,
+residual_category,thrash_repeat_victim,120,,,
+residual_preemption,runtime_fix_gate,blocked_pending_unique_semantic_fix,unique source-backed semantic fix,blocked,The prompt+max reserve hypothesis does not provide that unique fix.
+validate,dp2_8k2k_error_ratio,1.1362789195250411,<=1.15 target,pass_current_but_not_clean,N=128 reference may still contain artifact cancellation.
+validate,max_error_ratio,1.4385687849872588,<=1.50 current; <=1.15 target,pass_default_open_15pct,max_scenario=K2.5-tp8ep8-8k2k
+gpu_batch_plan,dp2_8k2k_recollect,N=512/C=128 vanilla,clean steady reference,pending_gpu,Strictly separate from B2b patched sessions.
+gpu_batch_plan,dp2_32k3k_recollect,N=512/C=64 vanilla,clean steady reference,pending_gpu,Uses original reference concurrency.
+gpu_batch_plan,tp8_b2b,tp8ep8-8k2k B2b,cover TP8 serving-state scope,pending_gpu,
+gpu_batch_plan,dp2_bt65536_b2b,tp4dp2ep8-8k2k-bt65536 B2b,large-bt regime coverage,pending_gpu,
+verdict,phase454_offline_verdict,reserve_prompt_plus_max_rejected_gpu_batch_required,no heuristic runtime change,no_go,Default AIC remains No-Go until clean-reference validate closes.
