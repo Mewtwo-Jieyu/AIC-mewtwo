@@ -1,0 +1,25 @@
+section,scenario,side,metric,value,target,status,note
+h1_real_ramp,K2.5-tp4ep8dp2-8k2k,real,real_trace_steps,8192,,,
+h1_real_ramp,K2.5-tp4ep8dp2-8k2k,real,real_mixed_share,0.039306640625,0.0243±0.0050,,
+h1_real_ramp,K2.5-tp4ep8dp2-8k2k,real,metrics_preemptions_total,108.0,overlay only; no exact step timestamps,,
+h1_real_ramp,K2.5-tp4ep8dp2-8k2k,real,serve_preemption_log_lines,0,>0 needed for victim context,blocked,
+h1_real_ramp,K2.5-tp4ep8dp2-8k2k,real,latency_p10_ms,139377.0884941332,,,
+h1_real_ramp,K2.5-tp4ep8dp2-8k2k,real,latency_p50_ms,161247.77411669493,,,
+h1_real_ramp,K2.5-tp4ep8dp2-8k2k,real,latency_p90_ms,246113.76024056226,,,
+h1_real_ramp,K2.5-tp4ep8dp2-8k2k,real,immediate_refill_like_outliers,31,,informational,
+h1_real_ramp,K2.5-tp4ep8dp2-8k2k,real,wait_for_completion_wave_like_outliers,88,,informational,
+h1_real_ramp,K2.5-tp4ep8dp2-8k2k,real,victim_recovery_path_gate,blocked,,blocked,"bench_records has request latency but no victim id; recovery path remains suggestive, not proven"
+h2_sim_ramp,K2.5-tp4ep8dp2-8k2k,sim,sim_trace_steps,8192,,,
+h2_sim_ramp,K2.5-tp4ep8dp2-8k2k,sim,sim_preemptions,824,,,
+h2_sim_ramp,K2.5-tp4ep8dp2-8k2k,sim,sim_completed,512,,,
+h2_sim_ramp,K2.5-tp4ep8dp2-8k2k,sim,sim_mixed_share,0.081298828125,0.0243±0.0050,,
+h3_divergence,K2.5-tp4ep8dp2-8k2k,compare,first_divergence_status,found,,pass,
+h3_divergence,K2.5-tp4ep8dp2-8k2k,compare,first_divergence_axis,1,,,
+h3_divergence,K2.5-tp4ep8dp2-8k2k,compare,first_differing_fields,"running,free_blocks,phase,prefill_reqs,prefill_tokens,total_tokens",,,
+h3_divergence,K2.5-tp4ep8dp2-8k2k,compare,semantic_hint,admission_or_capacity_gate,,informational,
+h3_divergence,K2.5-tp4ep8dp2-8k2k,compare,first_divergence_observability_gate,blocked,,blocked,"real event rows have no per-step waiting queue; axis=1 may be engine-arrival visibility, not scheduler admission semantics"
+h3_source,K2.5-tp4ep8dp2-8k2k,vllm,waiting_admission,scheduler.py:575-700; kv_cache_manager.py:327-334,,,source point to inspect only if first divergence is admission/capacity
+h3_source,K2.5-tp4ep8dp2-8k2k,vllm,running_then_waiting_order,scheduler.py:530-700,,,vLLM does attempt WAITING scheduling after RUNNING when token budget remains
+h3_source,K2.5-tp4ep8dp2-8k2k,vllm,preemption_reentry,scheduler.py:956-971,,,source point to inspect only if victim recovery is proven
+h4_fix,K2.5-tp4ep8dp2-8k2k,decision,runtime_patch,not_applied,,blocked,report-only H1-H3; current logs do not identify a single source-level fix
+h4_fix,K2.5-tp4ep8dp2-8k2k,decision,default_aic,No-Go,,blocked,
