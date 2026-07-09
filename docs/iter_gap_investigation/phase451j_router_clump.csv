@@ -1,0 +1,14 @@
+section,metric,value,target,status,note
+j1_source,internal_dp_client_class,DPLBAsyncMPClient,core_client.py:107-129,pass,data_parallel_size>1 and no external LB selects DPLBAsyncMPClient
+j1_source,api_server_count_default,data_parallel_size,serve.py:83-103,pass,internal DP serve defaults api_server_count to data_parallel_size
+j1_source,multi_api_client_config,client_count/client_index,utils.py:202-208,pass,each API server gets client_count and client_index
+j1_source,route_score,waiting*4+running,core_client.py:1337-1354,pass,score source matches DPAdmissionRouter
+j1_source,local_waiting_increment,present,core_client.py:1358-1360,pass,DPLB increments current_counts[eng_index][0] by client_count
+j1_source,header_bypass,absent_in_benchmark,"serving.py:866-871; run_openai_fixed_shape_benchmark.py:190,243",pass,benchmark does not send X-data-parallel-rank
+j1_debug,first_nonzero_counts,"[[0,1],[0,0]]",,,Phase451-I DEBUG ramp
+j1_debug,first_asymmetric_burst_counts,"[[0,1],[63,1]]","[[0,1],[63,1]]",observed,DEBUG observation shows early API-visible skew
+j1_debug,first_symmetric_burst_counts,"[[62,2],[62,2]]","[[62,2],[62,2]]",observed,later stats view catches up
+j1_source_sim,dplb_64_routes_from_debug_seed,"[32, 32]","[63,1] or [1,63] if no-increment clump were source-level",contradicts_no_increment_hypothesis,"final_counts=[[64, 1], [64, 0]]"
+j2_decision,remove_optimistic_increment,not_applied,runtime change allowed only with source evidence,blocked,source contradicts no-optimistic-increment interpretation; DEBUG skew is real but not this code path's routing loop semantics
+j3_decision,cascade_gates_after_runtime_change,not_run,,blocked,"no source-grounded runtime change was made, so H/artifact/fingerprint/preemption/--ab cascade would be meaningless"
+j4_decision,phase443b_withdrawal,not_decided,,blocked,"artifact mechanism remains open; next target is API-server request distribution or stats visibility, not DPLB local increment"
