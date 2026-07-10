@@ -1,0 +1,81 @@
+section,scenario,side,metric,value,target,status,source,note
+kv_audit,K2.5-tp4ep8dp2-8k2k,real_vs_validate,kv_cache_tokens,458128,458128,pass,docs/iter_gap_investigation/phase454_gpu_batch/recollect_dp2_8k2k/K2.5-tp4ep8dp2-8k2k/serve.log,validate_source=docs/iter_gap_investigation/phase446_b2b_event_timing/overhead_gate_20260708_075726/overhead_on/K2.5-tp4ep8dp2-8k2k/serve.log; numeric_drift=False
+kv_audit,K2.5-tp4ep8dp2-32k3k,real_vs_validate,kv_cache_tokens,320800,320800,pass,docs/iter_gap_investigation/phase454_gpu_batch/recollect_dp2_32k3k/K2.5-tp4ep8dp2-32k3k/serve.log,validate_source=docs/iter_gap_investigation/phase397k_measured_0190/K2.5-tp4ep8dp2-32k3k/serve.log; numeric_drift=False
+track_a_fingerprint,K2.5-tp8ep8-32k3k,real,mixed_share,0.004825,,,docs/iter_gap_investigation/phase458_n512_unify/recollect_tp8_32k3k/K2.5-tp8ep8-32k3k/serve.log,
+track_a_fingerprint,K2.5-tp8ep8-32k3k,real,mixed_ctx_p50,31990,,,docs/iter_gap_investigation/phase458_n512_unify/recollect_tp8_32k3k/K2.5-tp8ep8-32k3k/serve.log,
+track_a_fingerprint,K2.5-tp8ep8-32k3k,real,mixed_batch_p50,10,,,docs/iter_gap_investigation/phase458_n512_unify/recollect_tp8_32k3k/K2.5-tp8ep8-32k3k/serve.log,
+track_a_fingerprint,K2.5-tp8ep8-32k3k,real,decode_batch_p50,13,,,docs/iter_gap_investigation/phase458_n512_unify/recollect_tp8_32k3k/K2.5-tp8ep8-32k3k/serve.log,
+track_a_fingerprint,K2.5-tp8ep8-32k3k,real,mixed_elapsed_p50,2428.100000,,,docs/iter_gap_investigation/phase458_n512_unify/recollect_tp8_32k3k/K2.5-tp8ep8-32k3k/serve.log,
+track_a_fingerprint,K2.5-tp8ep8-32k3k,real,decode_elapsed_p50,21.100000,,,docs/iter_gap_investigation/phase458_n512_unify/recollect_tp8_32k3k/K2.5-tp8ep8-32k3k/serve.log,
+track_a_fingerprint,K2.5-tp8ep8-32k3k,real,running_p50,13.000000,,,docs/iter_gap_investigation/phase458_n512_unify/recollect_tp8_32k3k/K2.5-tp8ep8-32k3k/metrics.jsonl.gz,
+track_a_fingerprint,K2.5-tp8ep8-32k3k,real,running_p90,14.000000,,,docs/iter_gap_investigation/phase458_n512_unify/recollect_tp8_32k3k/K2.5-tp8ep8-32k3k/metrics.jsonl.gz,
+track_a_fingerprint,K2.5-tp8ep8-32k3k,real,kv_usage_p90,0.987614,,,docs/iter_gap_investigation/phase458_n512_unify/recollect_tp8_32k3k/K2.5-tp8ep8-32k3k/metrics.jsonl.gz,
+track_a_fingerprint,K2.5-tp8ep8-32k3k,real,preemptions,42.000000,,,docs/iter_gap_investigation/phase458_n512_unify/recollect_tp8_32k3k/K2.5-tp8ep8-32k3k/metrics.jsonl.gz,
+track_a_fingerprint,K2.5-tp8ep8-32k3k,real,recomputed_prompt_tokens,0.000000,,,docs/iter_gap_investigation/phase458_n512_unify/recollect_tp8_32k3k/K2.5-tp8ep8-32k3k/metrics.jsonl.gz,
+track_a_fingerprint,K2.5-tp8ep8-32k3k,real,successful_requests_scrape_delta,506.000000,,,docs/iter_gap_investigation/phase458_n512_unify/recollect_tp8_32k3k/K2.5-tp8ep8-32k3k/metrics.jsonl.gz,
+track_a_fingerprint,K2.5-tp8ep8-32k3k,sim,throughput_tok_s_gpu,35.266786,,,current CBSimulator N=512 diagnostic,
+track_a_fingerprint,K2.5-tp8ep8-32k3k,sim,preemptions,194.000000,,,current CBSimulator N=512 diagnostic,
+track_a_fingerprint,K2.5-tp8ep8-32k3k,sim,recompute_tokens,6251983.000000,,,current CBSimulator N=512 diagnostic,
+track_a_fingerprint,K2.5-tp8ep8-32k3k,sim,mixed_batch_p50,12.000000,,,current CBSimulator N=512 diagnostic,
+track_a_fingerprint,K2.5-tp8ep8-32k3k,sim,running_p50,13.000000,,,current CBSimulator N=512 diagnostic,
+track_a_fingerprint,K2.5-tp8ep8-32k3k,sim,avg_decode_reqs,13.102104,,,current CBSimulator N=512 diagnostic,
+track_a_fingerprint,K2.5-tp8ep8-32k3k,sim,peak_decode_reqs,14.000000,,,current CBSimulator N=512 diagnostic,
+track_a_cost_replay,K2.5-tp8ep8-32k3k,real_trace,mixed_wall_share,0.328501,,,docs/iter_gap_investigation/phase458_n512_unify/recollect_tp8_32k3k/K2.5-tp8ep8-32k3k/serve.log,count=565
+track_a_cost_replay,K2.5-tp8ep8-32k3k,sim_vs_real,mixed_representative_sim_over_real,0.529527,,,current IterationLatencyCalculator,"ctx=31990; ctx_reqs=2; decode_batch=10; real_ms=2428.125; sim_ms=1285.757; breakdown={'total_ms': 1285.756900436155, 'context_non_attention_ms': 1034.956062897173, 'context_attention_ms': 204.12026768375125, 'generation_non_attention_ms': 0.0, 'generation_attention_ms': 46.680569855230715, 'iteration_overhead_ms': 0.0}; audit={'table_missing': 6}"
+track_a_cost_replay,K2.5-tp8ep8-32k3k,real_trace,prefill_wall_share,0.000668,,,docs/iter_gap_investigation/phase458_n512_unify/recollect_tp8_32k3k/K2.5-tp8ep8-32k3k/serve.log,count=1
+track_a_cost_replay,K2.5-tp8ep8-32k3k,sim_vs_real,prefill_representative_sim_over_real,0.298280,,,current IterationLatencyCalculator,"ctx=32000; ctx_reqs=1; decode_batch=0; real_ms=2536.120; sim_ms=756.474; breakdown={'total_ms': 756.4736386274578, 'context_non_attention_ms': 552.2895634202043, 'context_attention_ms': 204.18407520725353, 'generation_non_attention_ms': 0.0, 'generation_attention_ms': 0.0, 'iteration_overhead_ms': 0.0}; audit={'table_missing': 6}"
+track_a_cost_replay,K2.5-tp8ep8-32k3k,real_trace,decode_wall_share,0.670831,,,docs/iter_gap_investigation/phase458_n512_unify/recollect_tp8_32k3k/K2.5-tp8ep8-32k3k/serve.log,count=116529
+track_a_cost_replay,K2.5-tp8ep8-32k3k,sim_vs_real,decode_representative_sim_over_real,1.860557,,,current IterationLatencyCalculator,"ctx=0; ctx_reqs=0; decode_batch=13; real_ms=21.000; sim_ms=39.072; breakdown={'total_ms': 39.07168780417416, 'context_non_attention_ms': 0.0, 'context_attention_ms': 0.0, 'generation_non_attention_ms': 8.042602460962568, 'generation_attention_ms': 31.02908534321159, 'iteration_overhead_ms': 0.0}; audit={'table_missing': 6}"
+track_a_attribution,K2.5-tp8ep8-32k3k,real,decode_real_total_ms,21.000000,,,docs/iter_gap_investigation/phase458_n512_unify/recollect_tp8_32k3k/K2.5-tp8ep8-32k3k/serve.log,
+track_a_attribution,K2.5-tp8ep8-32k3k,sim,decode_generation_attention_ms,31.029085,,,current IterationLatencyCalculator,attention term alone exceeds the real whole decode step
+track_a_attribution,K2.5-tp8ep8-32k3k,real_vs_sim,total_gap,1.397081,,,,three-class representative wall-share replay; preemption work factor is reported separately
+track_a_attribution,K2.5-tp8ep8-32k3k,real_vs_sim,cost_replay_factor,1.422267,,,,three-class representative wall-share replay; preemption work factor is reported separately
+track_a_attribution,K2.5-tp8ep8-32k3k,real_vs_sim,cost_replay_residual,0.982292,,,,three-class representative wall-share replay; preemption work factor is reported separately
+track_a_attribution,K2.5-tp8ep8-32k3k,real_vs_sim,preemption_ratio,4.619048,,,,three-class representative wall-share replay; preemption work factor is reported separately
+track_a_attribution,K2.5-tp8ep8-32k3k,real_vs_sim,prompt_work_factor,1.381591,,,,three-class representative wall-share replay; preemption work factor is reported separately
+track_a_attribution,K2.5-tp8ep8-32k3k,real_vs_sim,mixed_step_real_over_sim,1.888479,,,,three-class representative wall-share replay; preemption work factor is reported separately
+track_a_attribution,K2.5-tp8ep8-32k3k,real_vs_sim,decode_step_sim_over_real,1.860557,,,,three-class representative wall-share replay; preemption work factor is reported separately
+track_a_attribution,K2.5-tp8ep8-32k3k,real_vs_sim,preemption_role,secondary_unresolved_composition_error,,,,three-class representative wall-share replay; preemption work factor is reported separately
+track_a_attribution,K2.5-tp8ep8-32k3k,real_vs_sim,verdict,decode_cost_overcharge_dominates,cost replay residual within 10%,pass,,three-class representative wall-share replay; preemption work factor is reported separately
+track_b_step_cost,K2.5-tp8ep8-8k2k-bt65536,real,representative_large_mixed_step_ms,4701.850000,,,docs/iter_gap_investigation/phase458_n512_unify/recollect_tp8_8k2k_bt65536/K2.5-tp8ep8-8k2k-bt65536/serve.log,ctx=65519; ctx_reqs=9; decode_batch=17
+track_b_step_cost,K2.5-tp8ep8-8k2k-bt65536,sim,representative_large_mixed_step_ms,1724.754226,,,current IterationLatencyCalculator,"breakdown={'total_ms': 1724.7542259210727, 'context_non_attention_ms': 1588.7040646436224, 'context_attention_ms': 130.70125361802056, 'generation_non_attention_ms': 0.0, 'generation_attention_ms': 5.348907659429983, 'iteration_overhead_ms': 0.0}"
+track_b_coverage,K2.5-tp8ep8-8k2k-bt65536,sim,serving_state_audit_counts,"{""table_missing"": 6}",representative shape covered,fail,vllm_serving_state_perf.txt query audit,"bounds=[('forward_total', 'forward_total', None, None, None, None), ('category', 'ep_a2a', None, None, None, None), ('category', 'moe_gemm_or_aux', None, None, None, None), ('category', 'other_cuda', None, None, None, None), ('category', 'collective_other', None, None, None, None), ('non_attn_total', 'non_attn_total', None, None, None, None)]"
+track_b_cost_replay,K2.5-tp8ep8-8k2k-bt65536,real_trace,mixed_wall_share,0.315199,,,docs/iter_gap_investigation/phase458_n512_unify/recollect_tp8_8k2k_bt65536/K2.5-tp8ep8-8k2k-bt65536/serve.log,count=80
+track_b_cost_replay,K2.5-tp8ep8-8k2k-bt65536,sim_vs_real,mixed_representative_sim_over_real,0.366825,,,current IterationLatencyCalculator,ctx=65519; ctx_reqs=9; decode_batch=17; audit={'table_missing': 6}
+track_b_cost_replay,K2.5-tp8ep8-8k2k-bt65536,real_trace,prefill_wall_share,0.000707,,,docs/iter_gap_investigation/phase458_n512_unify/recollect_tp8_8k2k_bt65536/K2.5-tp8ep8-8k2k-bt65536/serve.log,count=1
+track_b_cost_replay,K2.5-tp8ep8-8k2k-bt65536,sim_vs_real,prefill_representative_sim_over_real,0.254502,,,current IterationLatencyCalculator,ctx=8000; ctx_reqs=1; decode_batch=0; audit={'table_missing': 6}
+track_b_cost_replay,K2.5-tp8ep8-8k2k-bt65536,real_trace,decode_wall_share,0.684093,,,docs/iter_gap_investigation/phase458_n512_unify/recollect_tp8_8k2k_bt65536/K2.5-tp8ep8-8k2k-bt65536/serve.log,count=27942
+track_b_cost_replay,K2.5-tp8ep8-8k2k-bt65536,sim_vs_real,decode_representative_sim_over_real,0.889833,,,current IterationLatencyCalculator,ctx=0; ctx_reqs=0; decode_batch=35; audit={'table_missing': 6}
+track_b_large_step,K2.5-tp8ep8-8k2k-bt65536,real_vs_sim,large_real_over_sim_step_ratio,2.726099,,,,
+track_b_large_step,K2.5-tp8ep8-8k2k-bt65536,real_vs_sim,large_coverage_miss_count,6,,,,
+track_b_large_step,K2.5-tp8ep8-8k2k-bt65536,real_vs_sim,large_coverage_hit_count,0,,,,
+track_b_large_step,K2.5-tp8ep8-8k2k-bt65536,real_vs_sim,large_verdict,large_mixed_step_undercharged_with_coverage_miss,,,,
+track_b_attribution,K2.5-tp8ep8-8k2k-bt65536,real_vs_sim,observed_sim_wall_ratio,0.810030,,,,
+track_b_attribution,K2.5-tp8ep8-8k2k-bt65536,real_vs_sim,cost_replay_factor,0.724531,,,,
+track_b_attribution,K2.5-tp8ep8-8k2k-bt65536,real_vs_sim,residual_after_cost_replay,1.118007,,,,
+track_b_attribution,K2.5-tp8ep8-8k2k-bt65536,real_vs_sim,modal_mixed_sim_over_real,0.366825,,,,
+track_b_attribution,K2.5-tp8ep8-8k2k-bt65536,real_vs_sim,verdict,mixed_step_undercharge_table_missing,,fail,,
+scoreboard,K2.5-tp8ep8-8k2k-bt65536,validate,current_error_ratio,1.234521,<=1.15,fail,docs/iter_gap_investigation/phase458_validate_ab.csv,sim=153.102; real=124.017
+track_b_step_cost,K2.5-tp4ep8dp2-8k2k-bt65536,real,representative_large_mixed_step_ms,7522.430000,,,docs/iter_gap_investigation/phase458_n512_unify/recollect_dp2_8k2k_bt65536/K2.5-tp4ep8dp2-8k2k-bt65536/serve.log,ctx=65529; ctx_reqs=9; decode_batch=7
+track_b_step_cost,K2.5-tp4ep8dp2-8k2k-bt65536,sim,representative_large_mixed_step_ms,7266.871826,,,current IterationLatencyCalculator,"breakdown={'total_ms': 7266.871826, 'context_non_attention_ms': 7266.871826, 'context_attention_ms': 0.0, 'generation_non_attention_ms': 0.0, 'generation_attention_ms': 0.0, 'iteration_overhead_ms': 0.0}"
+track_b_coverage,K2.5-tp4ep8dp2-8k2k-bt65536,sim,serving_state_audit_counts,"{""hit"": 1}",representative shape covered,pass,vllm_serving_state_perf.txt query audit,"bounds=[('forward_total', 'forward_total', 13, 65536, 1, 56)]"
+track_b_cost_replay,K2.5-tp4ep8dp2-8k2k-bt65536,real_trace,mixed_wall_share,0.253365,,,docs/iter_gap_investigation/phase458_n512_unify/recollect_dp2_8k2k_bt65536/K2.5-tp4ep8dp2-8k2k-bt65536/serve.log,count=100
+track_b_cost_replay,K2.5-tp4ep8dp2-8k2k-bt65536,sim_vs_real,mixed_representative_sim_over_real,0.501723,,,current IterationLatencyCalculator,ctx=6471; ctx_reqs=1; decode_batch=15; audit={'hit': 1}
+track_b_cost_replay,K2.5-tp4ep8dp2-8k2k-bt65536,real_trace,prefill_wall_share,0.002808,,,docs/iter_gap_investigation/phase458_n512_unify/recollect_dp2_8k2k_bt65536/K2.5-tp4ep8dp2-8k2k-bt65536/serve.log,count=2
+track_b_cost_replay,K2.5-tp4ep8dp2-8k2k-bt65536,sim_vs_real,prefill_representative_sim_over_real,0.351699,,,current IterationLatencyCalculator,ctx=65536; ctx_reqs=9; decode_batch=0; audit={'table_missing': 6}
+track_b_cost_replay,K2.5-tp4ep8dp2-8k2k-bt65536,real_trace,decode_wall_share,0.743827,,,docs/iter_gap_investigation/phase458_n512_unify/recollect_dp2_8k2k_bt65536/K2.5-tp4ep8dp2-8k2k-bt65536/serve.log,count=75171
+track_b_cost_replay,K2.5-tp4ep8dp2-8k2k-bt65536,sim_vs_real,decode_representative_sim_over_real,1.018334,,,current IterationLatencyCalculator,ctx=0; ctx_reqs=0; decode_batch=14; audit={'hit': 1}
+track_b_large_step,K2.5-tp4ep8dp2-8k2k-bt65536,real_vs_sim,large_real_over_sim_step_ratio,1.035168,,,,
+track_b_large_step,K2.5-tp4ep8dp2-8k2k-bt65536,real_vs_sim,large_coverage_miss_count,0,,,,
+track_b_large_step,K2.5-tp4ep8dp2-8k2k-bt65536,real_vs_sim,large_coverage_hit_count,1,,,,
+track_b_large_step,K2.5-tp4ep8dp2-8k2k-bt65536,real_vs_sim,large_verdict,large_mixed_step_cost_matched,,,,
+track_b_attribution,K2.5-tp4ep8dp2-8k2k-bt65536,real_vs_sim,observed_sim_wall_ratio,0.857049,,,,
+track_b_attribution,K2.5-tp4ep8dp2-8k2k-bt65536,real_vs_sim,cost_replay_factor,0.885571,,,,
+track_b_attribution,K2.5-tp4ep8dp2-8k2k-bt65536,real_vs_sim,residual_after_cost_replay,0.967794,,,,
+track_b_attribution,K2.5-tp4ep8dp2-8k2k-bt65536,real_vs_sim,modal_mixed_sim_over_real,0.501723,,,,
+track_b_attribution,K2.5-tp4ep8dp2-8k2k-bt65536,real_vs_sim,verdict,mixed_step_undercharge_regime_hit_mismatch,,fail,,
+track_b_coverage,K2.5-tp4ep8dp2-8k2k-bt65536,sim,forward_total_max_bt_regimes_in_shared_table,"8000,32000,65536",query keyed by max_bt,fail,src/aiconfigurator/systems/data/h200_sxm/vllm/0.19.0/vllm_serving_state_perf.txt,"DP2 query currently omits max_num_batched_tokens, so these regimes share one interpolation table"
+scoreboard,K2.5-tp4ep8dp2-8k2k-bt65536,validate,current_error_ratio,1.166794,<=1.15,fail,docs/iter_gap_investigation/phase458_validate_ab.csv,sim=127.764; real=109.500
+decision,K2.5-tp8ep8-32k3k,proposal,phase460_target,tp8_32k_mla_decode_cost_audit,red-to-green in a separate phase,proposed,Phase459 Track A,root=decode_cost_overcharge_dominates; no runtime change in Phase459
+decision,bt65536,proposal,phase461_target,bt65536_regime_scoped_mixed_step_rows,red-to-green in a separate phase,proposed,Phase459 Track B,K2.5-tp8ep8-8k2k-bt65536=mixed_step_undercharge_table_missing; K2.5-tp4ep8dp2-8k2k-bt65536=mixed_step_undercharge_regime_hit_mismatch
+decision,MULTI_CONFIG,gate,phase459_verdict,residuals_triaged_gate_unchanged,6/6 <=1.15 before tightening,fail,docs/iter_gap_investigation/phase458_validate_ab.csv,diagnostic_only=true; perf_database=false; Default AIC remains No-Go
