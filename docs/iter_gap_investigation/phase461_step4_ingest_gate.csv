@@ -1,0 +1,182 @@
+section,scenario,metric,bucket_tokens,decode_batch,value,target,status,note
+coverage_summary,K2.5-tp8ep8-32k3k,query_count,,,131,,pass,candidate_cells=55
+coverage_summary,K2.5-tp8ep8-32k3k,unique_query_cells,,,107,,pass,candidate_cells=55
+coverage_summary,K2.5-tp8ep8-32k3k,covered_query_count,,,82,,pass,candidate_cells=55
+coverage_summary,K2.5-tp8ep8-32k3k,uncovered_query_count,,,49,,pass,candidate_cells=55
+coverage_summary,K2.5-tp8ep8-32k3k,uncovered_unique_cells,,,46,,pass,candidate_cells=55
+coverage_summary,K2.5-tp8ep8-32k3k,coverage_ratio,,,0.6259541984732825,1.0,fail,candidate_cells=55
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,24,12,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,36,12,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,37,12,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,38,12,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,40,12,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,41,12,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,50,12,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,56,12,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,57,12,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,58,13,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,62,12,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,65,12,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,69,12,2,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,70,12,3,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,71,12,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,72,13,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,75,12,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,76,12,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,78,12,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,79,12,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,80,12,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,81,12,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,84,12,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,195,12,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,248,12,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,282,12,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,388,12,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,478,12,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,563,12,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,590,12,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,612,12,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,671,12,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,674,12,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,679,12,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,689,12,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,698,12,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,704,12,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,723,12,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,743,12,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,754,12,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,758,12,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,798,12,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,804,12,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,820,12,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,836,12,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-32k3k,query_count,952,12,1,0,fail,inner_only has no complete token+batch bracket
+session_comparability,K2.5-tp8ep8-32k3k,exact_overlap_cells,,,0,>=5,fail,max_relative_drift=None;reference=phase454_tp8_8k2k
+ingest_gate,K2.5-tp8ep8-32k3k,verdict,,,blocked,pass,blocked,both full coverage and session comparability are required
+coverage_summary,K2.5-tp8ep8-8k2k-bt65536,query_count,,,150,,pass,candidate_cells=82
+coverage_summary,K2.5-tp8ep8-8k2k-bt65536,unique_query_cells,,,135,,pass,candidate_cells=82
+coverage_summary,K2.5-tp8ep8-8k2k-bt65536,covered_query_count,,,31,,pass,candidate_cells=82
+coverage_summary,K2.5-tp8ep8-8k2k-bt65536,uncovered_query_count,,,119,,pass,candidate_cells=82
+coverage_summary,K2.5-tp8ep8-8k2k-bt65536,uncovered_unique_cells,,,119,,pass,candidate_cells=82
+coverage_summary,K2.5-tp8ep8-8k2k-bt65536,coverage_ratio,,,0.20666666666666667,1.0,fail,candidate_cells=82
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8027,27,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8039,38,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8039,39,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8050,39,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8051,39,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8052,39,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8054,37,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8063,38,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8064,38,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8065,38,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8078,37,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8080,37,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8084,40,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8097,36,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8106,36,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8119,40,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8125,39,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8128,35,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8134,40,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8136,39,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8136,40,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8137,38,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8145,39,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8149,39,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8149,40,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8151,37,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8157,38,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8162,38,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8171,37,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8172,34,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8176,37,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8193,36,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8216,40,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8236,38,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8242,39,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8249,37,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8251,39,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8254,37,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8264,36,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8282,37,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8290,37,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8292,35,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8292,36,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8295,35,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8295,36,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8296,40,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8297,37,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8307,35,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8307,36,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8308,35,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8308,36,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8314,37,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8320,34,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8321,34,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8322,35,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8328,36,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8336,36,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8341,35,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8345,36,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8348,34,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8388,34,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8416,33,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8417,35,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8440,40,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8486,34,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8488,33,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8501,37,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8504,36,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8515,37,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8517,37,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8528,36,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8532,35,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8532,36,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8545,35,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8547,36,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8548,34,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8559,34,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8561,35,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8570,34,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8694,35,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8732,33,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8738,37,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8739,37,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8754,36,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8769,36,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8770,36,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8780,35,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8830,33,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8977,33,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8978,34,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,8995,36,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,9007,36,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,9011,35,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,9026,35,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,9267,35,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,16315,38,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,16321,39,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,16523,37,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,16853,36,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,17020,36,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,17035,36,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,17226,36,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,17295,36,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,17346,35,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,17445,33,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,17649,35,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,17701,36,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,17796,35,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,18004,39,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,26503,31,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,34000,37,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,34041,31,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,42058,36,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,42565,30,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,51511,35,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,59106,28,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,59252,34,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,60458,34,1,0,fail,inner_only has no complete token+batch bracket
+uncovered_query_cell,K2.5-tp8ep8-8k2k-bt65536,query_count,64153,28,1,0,fail,inner_only has no complete token+batch bracket
+session_comparability,K2.5-tp8ep8-8k2k-bt65536,exact_overlap_cells,,,0,>=5,fail,max_relative_drift=None;reference=phase454_tp8_8k2k
+ingest_gate,K2.5-tp8ep8-8k2k-bt65536,verdict,,,blocked,pass,blocked,both full coverage and session comparability are required
