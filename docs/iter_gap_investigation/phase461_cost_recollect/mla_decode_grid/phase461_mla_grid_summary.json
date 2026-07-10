@@ -1,0 +1,72 @@
+{
+  "collector_commit": "d1863276d8010886068811630753f578426214a6",
+  "committed_collector_root": "/tmp/phase461_committed_collector",
+  "expected_rows": 18,
+  "max_repeat_spread": 1.15,
+  "measurement": "committed_collect_mla_kernel_microbench",
+  "passed": true,
+  "phase": "phase461_cost_recollect",
+  "points": [
+    {
+      "batch_size": 8,
+      "latency_max_ms": 0.07876266539096832,
+      "latency_median_ms": 0.0774293343226115,
+      "latency_min_ms": 0.07589866717656453,
+      "passed": true,
+      "repeat_spread": 1.0377344994443871,
+      "samples": 3,
+      "target_seq_len": 16384
+    },
+    {
+      "batch_size": 8,
+      "latency_max_ms": 0.13587733109792074,
+      "latency_median_ms": 0.1346773306528727,
+      "latency_min_ms": 0.1276533305644989,
+      "passed": true,
+      "repeat_spread": 1.0644244885507828,
+      "samples": 3,
+      "target_seq_len": 32768
+    },
+    {
+      "batch_size": 8,
+      "latency_max_ms": 0.2462079922358195,
+      "latency_median_ms": 0.23975465695063272,
+      "latency_min_ms": 0.23403199513753256,
+      "passed": true,
+      "repeat_spread": 1.0520270619029313,
+      "samples": 3,
+      "target_seq_len": 65536
+    },
+    {
+      "batch_size": 16,
+      "latency_max_ms": 0.1346826652685801,
+      "latency_median_ms": 0.13462400436401367,
+      "latency_min_ms": 0.1333440045515696,
+      "passed": true,
+      "repeat_spread": 1.0100391519027223,
+      "samples": 3,
+      "target_seq_len": 16384
+    },
+    {
+      "batch_size": 16,
+      "latency_max_ms": 0.24670400222142538,
+      "latency_median_ms": 0.24129066864649454,
+      "latency_min_ms": 0.23483200867970785,
+      "passed": true,
+      "repeat_spread": 1.0505552612204156,
+      "samples": 3,
+      "target_seq_len": 32768
+    },
+    {
+      "batch_size": 16,
+      "latency_max_ms": 0.4448266824086507,
+      "latency_median_ms": 0.44436800479888916,
+      "latency_min_ms": 0.4439733425776164,
+      "passed": true,
+      "repeat_spread": 1.0019220519549215,
+      "samples": 3,
+      "target_seq_len": 65536
+    }
+  ],
+  "rows": 18
+}

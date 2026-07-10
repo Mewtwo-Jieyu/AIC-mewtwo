@@ -1,0 +1,7 @@
+{
+  "diagnostic_only": true,
+  "measurement": "paired_rank_event_plus_iteration_wall",
+  "perf_database": false,
+  "reason": "single forward_total row cannot represent the observed DP phase spread",
+  "valid_for_default": false
+}

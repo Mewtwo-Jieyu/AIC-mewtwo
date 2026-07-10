@@ -1,0 +1,2 @@
+framework,version,device,op_name,kernel_source,mla_dtype,kv_cache_dtype,num_heads,batch_size,isl,tp_size,step,latency
+VLLM,0.19.0,NVIDIA H200,generation_mla,vllm_flash_attn_mla,float16,float16,8,16,1,8,16383,0.13462400436401367

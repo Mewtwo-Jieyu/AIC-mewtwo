@@ -1,0 +1,182 @@
+[2026-07-10T07:45:20+00:00] phase461_cost_recollect_start tasks=A
+[2026-07-10T07:45:20+00:00] phase461 task A: committed MLA exact grid
+cuda:0 0 20855
+INFO 07-10 07:45:24 [parallel_state.py:1400] world_size=-1 rank=-1 local_rank=-1 distributed_init_method=env:// backend=nccl
+INFO 07-10 07:45:25 [scheduler.py:238] Chunked prefill is enabled with max_num_batched_tokens=2048.
+INFO 07-10 07:45:25 [vllm.py:790] Asynchronous scheduling is enabled.
+INFO 07-10 07:45:27 [parallel_state.py:1716] rank 0 in world size 1 is assigned as DP rank 0, PP rank 0, PCP rank 0, TP rank 0, EP rank 0, EPLB rank N/A
+INFO 07-10 07:45:27 [cuda.py:334] Using FLASH_ATTN_MLA attention backend out of potential backends: ['FLASH_ATTN_MLA', 'TRITON_MLA'].
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-10 07:45:33 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-10 07:45:33 [model.py:1678] Using max model len 16383
+INFO 07-10 07:45:33 [scheduler.py:238] Chunked prefill is enabled with max_num_batched_tokens=8192.
+INFO 07-10 07:45:33 [compilation.py:290] Enabled custom fusions: norm_quant, act_quant
+INFO 07-10 07:45:33 [mla_attention.py:2137] Using FlashAttention prefill for MLA
+MLA latency: 0.07589866717656453
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-10 07:45:33 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-10 07:45:33 [model.py:1678] Using max model len 32767
+MLA latency: 0.1276533305644989
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-10 07:45:34 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-10 07:45:34 [model.py:1678] Using max model len 65535
+MLA latency: 0.23403199513753256
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-10 07:45:34 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-10 07:45:34 [model.py:1678] Using max model len 16383
+MLA latency: 0.1333440045515696
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-10 07:45:34 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-10 07:45:34 [model.py:1678] Using max model len 32767
+MLA latency: 0.23483200867970785
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-10 07:45:34 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-10 07:45:34 [model.py:1678] Using max model len 65535
+MLA latency: 0.4439733425776164
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-10 07:45:35 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-10 07:45:35 [model.py:1678] Using max model len 16383
+MLA latency: 0.07876266539096832
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-10 07:45:35 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-10 07:45:35 [model.py:1678] Using max model len 32767
+MLA latency: 0.1346773306528727
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-10 07:45:36 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-10 07:45:36 [model.py:1678] Using max model len 65535
+MLA latency: 0.23975465695063272
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-10 07:45:36 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-10 07:45:36 [model.py:1678] Using max model len 16383
+MLA latency: 0.13462400436401367
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-10 07:45:36 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-10 07:45:36 [model.py:1678] Using max model len 32767
+MLA latency: 0.24129066864649454
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-10 07:45:37 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-10 07:45:37 [model.py:1678] Using max model len 65535
+MLA latency: 0.44436800479888916
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-10 07:45:37 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-10 07:45:37 [model.py:1678] Using max model len 16383
+MLA latency: 0.0774293343226115
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-10 07:45:37 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-10 07:45:37 [model.py:1678] Using max model len 32767
+MLA latency: 0.13587733109792074
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-10 07:45:38 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-10 07:45:38 [model.py:1678] Using max model len 65535
+MLA latency: 0.2462079922358195
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-10 07:45:38 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-10 07:45:38 [model.py:1678] Using max model len 16383
+MLA latency: 0.1346826652685801
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-10 07:45:38 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-10 07:45:38 [model.py:1678] Using max model len 32767
+MLA latency: 0.24670400222142538
+VLLM chose MLA backend: FLASH_ATTN_MLA
+INFO 07-10 07:45:39 [model.py:549] Resolved architecture: DeepseekV3ForCausalLM
+INFO 07-10 07:45:39 [model.py:1678] Using max model len 65535
+MLA latency: 0.4448266824086507
+{"collector_commit": "d1863276d8010886068811630753f578426214a6", "committed_collector_root": "/tmp/phase461_committed_collector", "expected_rows": 18, "max_repeat_spread": 1.15, "measurement": "committed_collect_mla_kernel_microbench", "passed": true, "phase": "phase461_cost_recollect", "points": [{"batch_size": 8, "latency_max_ms": 0.07876266539096832, "latency_median_ms": 0.0774293343226115, "latency_min_ms": 0.07589866717656453, "passed": true, "repeat_spread": 1.0377344994443871, "samples": 3, "target_seq_len": 16384}, {"batch_size": 8, "latency_max_ms": 0.13587733109792074, "latency_median_ms": 0.1346773306528727, "latency_min_ms": 0.1276533305644989, "passed": true, "repeat_spread": 1.0644244885507828, "samples": 3, "target_seq_len": 32768}, {"batch_size": 8, "latency_max_ms": 0.2462079922358195, "latency_median_ms": 0.23975465695063272, "latency_min_ms": 0.23403199513753256, "passed": true, "repeat_spread": 1.0520270619029313, "samples": 3, "target_seq_len": 65536}, {"batch_size": 16, "latency_max_ms": 0.1346826652685801, "latency_median_ms": 0.13462400436401367, "latency_min_ms": 0.1333440045515696, "passed": true, "repeat_spread": 1.0100391519027223, "samples": 3, "target_seq_len": 16384}, {"batch_size": 16, "latency_max_ms": 0.24670400222142538, "latency_median_ms": 0.24129066864649454, "latency_min_ms": 0.23483200867970785, "passed": true, "repeat_spread": 1.0505552612204156, "samples": 3, "target_seq_len": 32768}, {"batch_size": 16, "latency_max_ms": 0.4448266824086507, "latency_median_ms": 0.44436800479888916, "latency_min_ms": 0.4439733425776164, "passed": true, "repeat_spread": 1.0019220519549215, "samples": 3, "target_seq_len": 65536}], "rows": 18}
+[rank0]:[W710 07:45:40.829707586 ProcessGroupNCCL.cpp:1553] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())
+[2026-07-10T07:45:41+00:00] phase461_cost_recollect_done
+[2026-07-10T07:49:55+00:00] phase461_cost_recollect_start tasks=B C D
+[2026-07-10T07:49:55+00:00] phase461 task B: tp8 bt65536 mixed serving-state
+[2026-07-10T07:49:55+00:00] run_point label=overhead_off event_enabled=0 scenario=K2.5-tp8ep8-8k2k-bt65536
+vllm_version=0.19.0
+NVIDIA H200, 143771, 570.133.20
+[2026-07-10T07:49:57+00:00] baseline_gpu_pids=[]
+[2026-07-10T07:50:08+00:00] gpu_drained
+[2026-07-10T07:50:08+00:00] serve_command: python3 -m vllm.entrypoints.cli.main serve /mnt/shared-storage-gpfs2/gpfs2-shared-public/huggingface/zskj-hub/models--moonshotai--Kimi-K2.5 --served-model-name kimi-k2.5 --port 21210 --tensor-parallel-size 8 --data-parallel-size 1 --enable-expert-parallel --max-model-len 262144 --gpu-memory-utilization 0.80 --max-num-batched-tokens 65536 --max-num-seqs 256 --enable-chunked-prefill --no-enable-prefix-caching --enable-logging-iteration-details --cudagraph-metrics --mm-encoder-tp-mode data --skip-mm-profiling --trust-remote-code --enable-auto-tool-choice --tool-call-parser kimi_k2 --reasoning-parser kimi_k2
+[2026-07-10T07:50:08+00:00] service_pid=1714
+[2026-07-10T07:53:58+00:00] service_ready port=21210 poll=47
+[2026-07-10T07:53:58+00:00] metrics_poller_pid=4120
+[2026-07-10T08:11:13+00:00] benchmark_exit_code=0
+[2026-07-10T08:11:14+00:00] wrote /mnt/shared-storage-user/zhaojieyu/backup/aic/docs/iter_gap_investigation/phase461_cost_recollect/tp8_bt65536_mixed/overhead_off/K2.5-tp8ep8-8k2k-bt65536/bench_result.json
+[2026-07-10T08:11:31+00:00] gpu_drained
+[2026-07-10T08:11:31+00:00] phase446_b2b_DONE bench_exit=0
+[2026-07-10T08:11:31+00:00] run_point label=overhead_on event_enabled=1 scenario=K2.5-tp8ep8-8k2k-bt65536
+vllm_version=0.19.0
+NVIDIA H200, 143771, 570.133.20
+[2026-07-10T08:11:33+00:00] baseline_gpu_pids=[]
+[2026-07-10T08:11:44+00:00] gpu_drained
+[2026-07-10T08:11:44+00:00] serve_command: python3 -m vllm.entrypoints.cli.main serve /mnt/shared-storage-gpfs2/gpfs2-shared-public/huggingface/zskj-hub/models--moonshotai--Kimi-K2.5 --served-model-name kimi-k2.5 --port 21211 --tensor-parallel-size 8 --data-parallel-size 1 --enable-expert-parallel --max-model-len 262144 --gpu-memory-utilization 0.80 --max-num-batched-tokens 65536 --max-num-seqs 256 --enable-chunked-prefill --no-enable-prefix-caching --enable-logging-iteration-details --cudagraph-metrics --mm-encoder-tp-mode data --skip-mm-profiling --trust-remote-code --enable-auto-tool-choice --tool-call-parser kimi_k2 --reasoning-parser kimi_k2
+[2026-07-10T08:11:44+00:00] service_pid=4897
+[2026-07-10T08:14:19+00:00] service_ready port=21211 poll=32
+[2026-07-10T08:14:19+00:00] metrics_poller_pid=6194
+[2026-07-10T08:31:35+00:00] benchmark_exit_code=0
+[2026-07-10T08:31:35+00:00] wrote /mnt/shared-storage-user/zhaojieyu/backup/aic/docs/iter_gap_investigation/phase461_cost_recollect/tp8_bt65536_mixed/overhead_on/K2.5-tp8ep8-8k2k-bt65536/bench_result.json
+[2026-07-10T08:31:35+00:00] pre_stop_hook_start=/mnt/shared-storage-user/zhaojieyu/backup/aic/docs/iter_gap_investigation/phase461_cost_recollect/tp8_bt65536_mixed/overhead_on/flush_phase446_events.sh
+[2026-07-10T08:31:45+00:00] pre_stop_hook_done=/mnt/shared-storage-user/zhaojieyu/backup/aic/docs/iter_gap_investigation/phase461_cost_recollect/tp8_bt65536_mixed/overhead_on/flush_phase446_events.sh
+[2026-07-10T08:31:56+00:00] gpu_drained
+[2026-07-10T08:31:56+00:00] phase446_b2b_DONE bench_exit=0
+[2026-07-10T08:31:57+00:00] event_jsonl_rows=224184 path=/mnt/shared-storage-user/zhaojieyu/backup/aic/docs/iter_gap_investigation/phase461_cost_recollect/tp8_bt65536_mixed/overhead_on/event_timing.jsonl
+{"gate": "phase446_b2b_event_timing_overhead", "max_overhead_pct": 2.0, "metric": "output_tok_s", "off_output_tok_s": 992.4304579853762, "on_output_tok_s": 992.1255646462038, "overhead_pct": 0.030721884512827764, "passed": true}
+[2026-07-10T08:31:57+00:00] phase461 task C: tp8 32k3k mixed serving-state
+[2026-07-10T08:31:57+00:00] run_point label=overhead_off event_enabled=0 scenario=K2.5-tp8ep8-32k3k
+vllm_version=0.19.0
+NVIDIA H200, 143771, 570.133.20
+[2026-07-10T08:31:59+00:00] baseline_gpu_pids=[]
+[2026-07-10T08:32:10+00:00] gpu_drained
+[2026-07-10T08:32:10+00:00] serve_command: python3 -m vllm.entrypoints.cli.main serve /mnt/shared-storage-gpfs2/gpfs2-shared-public/huggingface/zskj-hub/models--moonshotai--Kimi-K2.5 --served-model-name kimi-k2.5 --port 21220 --tensor-parallel-size 8 --data-parallel-size 1 --enable-expert-parallel --max-model-len 262144 --gpu-memory-utilization 0.80 --max-num-batched-tokens 32000 --max-num-seqs 256 --enable-chunked-prefill --no-enable-prefix-caching --enable-logging-iteration-details --cudagraph-metrics --mm-encoder-tp-mode data --skip-mm-profiling --trust-remote-code --enable-auto-tool-choice --tool-call-parser kimi_k2 --reasoning-parser kimi_k2
+[2026-07-10T08:32:10+00:00] service_pid=6699
+[2026-07-10T08:34:50+00:00] service_ready port=21220 poll=33
+[2026-07-10T08:34:50+00:00] metrics_poller_pid=8075
+[2026-07-10T09:38:58+00:00] benchmark_exit_code=0
+[2026-07-10T09:38:58+00:00] wrote /mnt/shared-storage-user/zhaojieyu/backup/aic/docs/iter_gap_investigation/phase461_cost_recollect/tp8_32k3k_mixed/overhead_off/K2.5-tp8ep8-32k3k/bench_result.json
+[2026-07-10T09:39:15+00:00] gpu_drained
+[2026-07-10T09:39:15+00:00] phase446_b2b_DONE bench_exit=0
+[2026-07-10T09:39:16+00:00] run_point label=overhead_on event_enabled=1 scenario=K2.5-tp8ep8-32k3k
+vllm_version=0.19.0
+NVIDIA H200, 143771, 570.133.20
+[2026-07-10T09:39:18+00:00] baseline_gpu_pids=[]
+[2026-07-10T09:39:29+00:00] gpu_drained
+[2026-07-10T09:39:29+00:00] serve_command: python3 -m vllm.entrypoints.cli.main serve /mnt/shared-storage-gpfs2/gpfs2-shared-public/huggingface/zskj-hub/models--moonshotai--Kimi-K2.5 --served-model-name kimi-k2.5 --port 21221 --tensor-parallel-size 8 --data-parallel-size 1 --enable-expert-parallel --max-model-len 262144 --gpu-memory-utilization 0.80 --max-num-batched-tokens 32000 --max-num-seqs 256 --enable-chunked-prefill --no-enable-prefix-caching --enable-logging-iteration-details --cudagraph-metrics --mm-encoder-tp-mode data --skip-mm-profiling --trust-remote-code --enable-auto-tool-choice --tool-call-parser kimi_k2 --reasoning-parser kimi_k2
+[2026-07-10T09:39:29+00:00] service_pid=8746
+[2026-07-10T09:41:54+00:00] service_ready port=21221 poll=30
+[2026-07-10T09:41:54+00:00] metrics_poller_pid=10026
+[2026-07-10T10:46:01+00:00] benchmark_exit_code=0
+[2026-07-10T10:46:01+00:00] wrote /mnt/shared-storage-user/zhaojieyu/backup/aic/docs/iter_gap_investigation/phase461_cost_recollect/tp8_32k3k_mixed/overhead_on/K2.5-tp8ep8-32k3k/bench_result.json
+[2026-07-10T10:46:01+00:00] pre_stop_hook_start=/mnt/shared-storage-user/zhaojieyu/backup/aic/docs/iter_gap_investigation/phase461_cost_recollect/tp8_32k3k_mixed/overhead_on/flush_phase446_events.sh
+[2026-07-10T10:46:11+00:00] pre_stop_hook_done=/mnt/shared-storage-user/zhaojieyu/backup/aic/docs/iter_gap_investigation/phase461_cost_recollect/tp8_32k3k_mixed/overhead_on/flush_phase446_events.sh
+[2026-07-10T10:46:22+00:00] gpu_drained
+[2026-07-10T10:46:22+00:00] phase446_b2b_DONE bench_exit=0
+[2026-07-10T10:46:23+00:00] event_jsonl_rows=936760 path=/mnt/shared-storage-user/zhaojieyu/backup/aic/docs/iter_gap_investigation/phase461_cost_recollect/tp8_32k3k_mixed/overhead_on/event_timing.jsonl
+{"gate": "phase446_b2b_event_timing_overhead", "max_overhead_pct": 2.0, "metric": "output_tok_s", "off_output_tok_s": 399.65441557227285, "on_output_tok_s": 399.7718124903352, "overhead_pct": 0.0, "passed": true}
+[2026-07-10T10:46:23+00:00] phase461 task D: dp2 bt65536 paired-rank diagnostic
+[2026-07-10T10:46:23+00:00] run_point label=overhead_off event_enabled=0 scenario=K2.5-tp4ep8dp2-8k2k-bt65536
+vllm_version=0.19.0
+NVIDIA H200, 143771, 570.133.20
+[2026-07-10T10:46:25+00:00] baseline_gpu_pids=[]
+[2026-07-10T10:46:36+00:00] gpu_drained
+[2026-07-10T10:46:36+00:00] serve_command: python3 -m vllm.entrypoints.cli.main serve /mnt/shared-storage-gpfs2/gpfs2-shared-public/huggingface/zskj-hub/models--moonshotai--Kimi-K2.5 --served-model-name kimi-k2.5 --port 21230 --tensor-parallel-size 4 --data-parallel-size 2 --enable-expert-parallel --max-model-len 131072 --gpu-memory-utilization 0.80 --max-num-batched-tokens 65536 --max-num-seqs 256 --enable-chunked-prefill --no-enable-prefix-caching --enable-logging-iteration-details --cudagraph-metrics --mm-encoder-tp-mode data --skip-mm-profiling --trust-remote-code --enable-auto-tool-choice --tool-call-parser kimi_k2 --reasoning-parser kimi_k2
+[2026-07-10T10:46:36+00:00] service_pid=10363
+[2026-07-10T10:49:46+00:00] service_ready port=21230 poll=39
+[2026-07-10T10:49:46+00:00] metrics_poller_pid=12708
+[2026-07-10T11:09:19+00:00] benchmark_exit_code=0
+[2026-07-10T11:09:19+00:00] wrote /mnt/shared-storage-user/zhaojieyu/backup/aic/docs/iter_gap_investigation/phase461_cost_recollect/dp2_bt65536_diagnostic/overhead_off/K2.5-tp4ep8dp2-8k2k-bt65536/bench_result.json
+[2026-07-10T11:09:39+00:00] gpu_drained
+[2026-07-10T11:09:40+00:00] phase446_b2b_DONE bench_exit=0
+[2026-07-10T11:09:40+00:00] run_point label=overhead_on event_enabled=1 scenario=K2.5-tp4ep8dp2-8k2k-bt65536
+vllm_version=0.19.0
+NVIDIA H200, 143771, 570.133.20
+[2026-07-10T11:09:42+00:00] baseline_gpu_pids=[]
+[2026-07-10T11:09:53+00:00] gpu_drained
+[2026-07-10T11:09:53+00:00] serve_command: python3 -m vllm.entrypoints.cli.main serve /mnt/shared-storage-gpfs2/gpfs2-shared-public/huggingface/zskj-hub/models--moonshotai--Kimi-K2.5 --served-model-name kimi-k2.5 --port 21231 --tensor-parallel-size 4 --data-parallel-size 2 --enable-expert-parallel --max-model-len 131072 --gpu-memory-utilization 0.80 --max-num-batched-tokens 65536 --max-num-seqs 256 --enable-chunked-prefill --no-enable-prefix-caching --enable-logging-iteration-details --cudagraph-metrics --mm-encoder-tp-mode data --skip-mm-profiling --trust-remote-code --enable-auto-tool-choice --tool-call-parser kimi_k2 --reasoning-parser kimi_k2
+[2026-07-10T11:09:53+00:00] service_pid=13308
+[2026-07-10T11:12:48+00:00] service_ready port=21231 poll=36
+[2026-07-10T11:12:48+00:00] metrics_poller_pid=15503
+[2026-07-10T11:32:18+00:00] benchmark_exit_code=0
+[2026-07-10T11:32:18+00:00] wrote /mnt/shared-storage-user/zhaojieyu/backup/aic/docs/iter_gap_investigation/phase461_cost_recollect/dp2_bt65536_diagnostic/overhead_on/K2.5-tp4ep8dp2-8k2k-bt65536/bench_result.json
+[2026-07-10T11:32:18+00:00] pre_stop_hook_start=/mnt/shared-storage-user/zhaojieyu/backup/aic/docs/iter_gap_investigation/phase461_cost_recollect/dp2_bt65536_diagnostic/overhead_on/flush_phase446_events.sh
+[2026-07-10T11:32:28+00:00] pre_stop_hook_done=/mnt/shared-storage-user/zhaojieyu/backup/aic/docs/iter_gap_investigation/phase461_cost_recollect/dp2_bt65536_diagnostic/overhead_on/flush_phase446_events.sh
+[2026-07-10T11:34:39+00:00] force-killing lingering gpu pids: [2193823 2193826 2193828 2193830 2194032 2194035 2194037 2194039 ]
+[2026-07-10T11:34:55+00:00] gpu_drained
+[2026-07-10T11:34:55+00:00] phase446_b2b_DONE bench_exit=0
+[2026-07-10T11:34:56+00:00] event_jsonl_rows=303328 path=/mnt/shared-storage-user/zhaojieyu/backup/aic/docs/iter_gap_investigation/phase461_cost_recollect/dp2_bt65536_diagnostic/overhead_on/event_timing.jsonl
+{"gate": "phase446_b2b_event_timing_overhead", "max_overhead_pct": 2.0, "metric": "output_tok_s", "off_output_tok_s": 875.8160284434734, "on_output_tok_s": 877.8322340223546, "overhead_pct": 0.0, "passed": true}
+[2026-07-10T11:34:56+00:00] phase461_cost_recollect_done

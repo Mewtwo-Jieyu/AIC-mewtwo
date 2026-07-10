@@ -1,0 +1,9 @@
+{
+  "gate": "phase446_b2b_event_timing_overhead",
+  "max_overhead_pct": 2.0,
+  "metric": "output_tok_s",
+  "off_output_tok_s": 992.4304579853762,
+  "on_output_tok_s": 992.1255646462038,
+  "overhead_pct": 0.030721884512827764,
+  "passed": true
+}

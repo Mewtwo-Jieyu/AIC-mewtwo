@@ -1,0 +1,31 @@
+[2026-07-10T10:46:23+00:00] run_point label=overhead_off event_enabled=0 scenario=K2.5-tp4ep8dp2-8k2k-bt65536
+vllm_version=0.19.0
+NVIDIA H200, 143771, 570.133.20
+[2026-07-10T10:46:25+00:00] baseline_gpu_pids=[]
+[2026-07-10T10:46:36+00:00] gpu_drained
+[2026-07-10T10:46:36+00:00] serve_command: python3 -m vllm.entrypoints.cli.main serve /mnt/shared-storage-gpfs2/gpfs2-shared-public/huggingface/zskj-hub/models--moonshotai--Kimi-K2.5 --served-model-name kimi-k2.5 --port 21230 --tensor-parallel-size 4 --data-parallel-size 2 --enable-expert-parallel --max-model-len 131072 --gpu-memory-utilization 0.80 --max-num-batched-tokens 65536 --max-num-seqs 256 --enable-chunked-prefill --no-enable-prefix-caching --enable-logging-iteration-details --cudagraph-metrics --mm-encoder-tp-mode data --skip-mm-profiling --trust-remote-code --enable-auto-tool-choice --tool-call-parser kimi_k2 --reasoning-parser kimi_k2
+[2026-07-10T10:46:36+00:00] service_pid=10363
+[2026-07-10T10:49:46+00:00] service_ready port=21230 poll=39
+[2026-07-10T10:49:46+00:00] metrics_poller_pid=12708
+[2026-07-10T11:09:19+00:00] benchmark_exit_code=0
+[2026-07-10T11:09:19+00:00] wrote /mnt/shared-storage-user/zhaojieyu/backup/aic/docs/iter_gap_investigation/phase461_cost_recollect/dp2_bt65536_diagnostic/overhead_off/K2.5-tp4ep8dp2-8k2k-bt65536/bench_result.json
+[2026-07-10T11:09:39+00:00] gpu_drained
+[2026-07-10T11:09:40+00:00] phase446_b2b_DONE bench_exit=0
+[2026-07-10T11:09:40+00:00] run_point label=overhead_on event_enabled=1 scenario=K2.5-tp4ep8dp2-8k2k-bt65536
+vllm_version=0.19.0
+NVIDIA H200, 143771, 570.133.20
+[2026-07-10T11:09:42+00:00] baseline_gpu_pids=[]
+[2026-07-10T11:09:53+00:00] gpu_drained
+[2026-07-10T11:09:53+00:00] serve_command: python3 -m vllm.entrypoints.cli.main serve /mnt/shared-storage-gpfs2/gpfs2-shared-public/huggingface/zskj-hub/models--moonshotai--Kimi-K2.5 --served-model-name kimi-k2.5 --port 21231 --tensor-parallel-size 4 --data-parallel-size 2 --enable-expert-parallel --max-model-len 131072 --gpu-memory-utilization 0.80 --max-num-batched-tokens 65536 --max-num-seqs 256 --enable-chunked-prefill --no-enable-prefix-caching --enable-logging-iteration-details --cudagraph-metrics --mm-encoder-tp-mode data --skip-mm-profiling --trust-remote-code --enable-auto-tool-choice --tool-call-parser kimi_k2 --reasoning-parser kimi_k2
+[2026-07-10T11:09:53+00:00] service_pid=13308
+[2026-07-10T11:12:48+00:00] service_ready port=21231 poll=36
+[2026-07-10T11:12:48+00:00] metrics_poller_pid=15503
+[2026-07-10T11:32:18+00:00] benchmark_exit_code=0
+[2026-07-10T11:32:18+00:00] wrote /mnt/shared-storage-user/zhaojieyu/backup/aic/docs/iter_gap_investigation/phase461_cost_recollect/dp2_bt65536_diagnostic/overhead_on/K2.5-tp4ep8dp2-8k2k-bt65536/bench_result.json
+[2026-07-10T11:32:18+00:00] pre_stop_hook_start=/mnt/shared-storage-user/zhaojieyu/backup/aic/docs/iter_gap_investigation/phase461_cost_recollect/dp2_bt65536_diagnostic/overhead_on/flush_phase446_events.sh
+[2026-07-10T11:32:28+00:00] pre_stop_hook_done=/mnt/shared-storage-user/zhaojieyu/backup/aic/docs/iter_gap_investigation/phase461_cost_recollect/dp2_bt65536_diagnostic/overhead_on/flush_phase446_events.sh
+[2026-07-10T11:34:39+00:00] force-killing lingering gpu pids: [2193823 2193826 2193828 2193830 2194032 2194035 2194037 2194039 ]
+[2026-07-10T11:34:55+00:00] gpu_drained
+[2026-07-10T11:34:55+00:00] phase446_b2b_DONE bench_exit=0
+[2026-07-10T11:34:56+00:00] event_jsonl_rows=303328 path=/mnt/shared-storage-user/zhaojieyu/backup/aic/docs/iter_gap_investigation/phase461_cost_recollect/dp2_bt65536_diagnostic/overhead_on/event_timing.jsonl
+{"gate": "phase446_b2b_event_timing_overhead", "max_overhead_pct": 2.0, "metric": "output_tok_s", "off_output_tok_s": 875.8160284434734, "on_output_tok_s": 877.8322340223546, "overhead_pct": 0.0, "passed": true}

@@ -1,0 +1,34 @@
+section,scenario,metric,value,status,note
+mla_gate,mla_decode_heads8,raw_rows,18,pass,
+provenance,mla_decode_heads8,collector_commit,d1863276d8010886068811630753f578426214a6,recorded,
+mla_grid,mla_decode_heads8,b8_kv16384_latency_ms,0.0774293343226115,pass,samples=3;spread=1.037734
+mla_grid,mla_decode_heads8,b8_kv32768_latency_ms,0.1346773306528727,pass,samples=3;spread=1.064424
+mla_bad_row,mla_decode_heads8,old_over_recollected,7.118089875506969,confirmed_bad_row,old=0.958645344;new=0.134677331
+mla_grid,mla_decode_heads8,b8_kv65536_latency_ms,0.23975465695063272,pass,samples=3;spread=1.052027
+mla_grid,mla_decode_heads8,b16_kv16384_latency_ms,0.13462400436401367,pass,samples=3;spread=1.010039
+mla_grid,mla_decode_heads8,b16_kv32768_latency_ms,0.24129066864649454,pass,samples=3;spread=1.050555
+mla_grid,mla_decode_heads8,b16_kv65536_latency_ms,0.44436800479888916,pass,samples=3;spread=1.001922
+collection_gate,K2.5-tp8ep8-8k2k-bt65536,overhead_pct,0.030721884512827764,pass,events=224184
+coverage,K2.5-tp8ep8-8k2k-bt65536,mixed_steps,138,pass,
+coverage,K2.5-tp8ep8-8k2k-bt65536,mixed_bucket_min,446,observed,
+coverage,K2.5-tp8ep8-8k2k-bt65536,mixed_bucket_max,65536,observed,
+coverage,K2.5-tp8ep8-8k2k-bt65536,mixed_decode_min,1,observed,
+coverage,K2.5-tp8ep8-8k2k-bt65536,mixed_decode_max,41,observed,
+collection_gate,K2.5-tp8ep8-32k3k,overhead_pct,0.0,pass,events=936760
+coverage,K2.5-tp8ep8-32k3k,mixed_steps,634,pass,
+coverage,K2.5-tp8ep8-32k3k,mixed_bucket_min,26,observed,
+coverage,K2.5-tp8ep8-32k3k,mixed_bucket_max,32000,observed,
+coverage,K2.5-tp8ep8-32k3k,mixed_decode_min,1,observed,
+coverage,K2.5-tp8ep8-32k3k,mixed_decode_max,13,observed,
+collection_gate,K2.5-tp4ep8dp2-8k2k-bt65536,overhead_pct,0.0,pass,events=303328
+coverage,K2.5-tp4ep8dp2-8k2k-bt65536,mixed_steps,168,pass,
+coverage,K2.5-tp4ep8dp2-8k2k-bt65536,mixed_bucket_min,6486,observed,
+coverage,K2.5-tp4ep8dp2-8k2k-bt65536,mixed_bucket_max,65536,observed,
+coverage,K2.5-tp4ep8dp2-8k2k-bt65536,mixed_decode_min,1,observed,
+coverage,K2.5-tp4ep8dp2-8k2k-bt65536,mixed_decode_max,15,observed,
+ingest_boundary,K2.5-tp4ep8dp2-8k2k-bt65536,perf_database,False,pass,diagnostic_only required
+dp_rank_diagnostic,K2.5-tp4ep8dp2-8k2k-bt65536,max_same_cell_rank_spread,8.540214161763164,diagnostic,"bucket=6486;batch=15;medians={'0': 4795.55908203125, '1': 561.5267944335938}"
+dp_rank_diagnostic,K2.5-tp4ep8dp2-8k2k-bt65536,max_busy_over_wall,0.9997121252363487,pass,bucket=6486;batch=15;samples=8
+dp_rank_diagnostic,K2.5-tp4ep8dp2-8k2k-bt65536,transition_decision,retain_measured_row_diagnostic_only_until_phase_model,diagnostic,
+gpu_cleanup,all,final_gpu_compute_apps_bytes,0,pass,
+gpu_cleanup,K2.5-tp4ep8dp2-8k2k-bt65536,forced_worker_cleanup,observed,recorded,final residual remained empty

@@ -1,0 +1,19 @@
+repeat,target_seq_len,framework,version,device,op_name,kernel_source,mla_dtype,kv_cache_dtype,num_heads,batch_size,isl,tp_size,step,latency
+1,16384,VLLM,0.19.0,NVIDIA H200,generation_mla,vllm_flash_attn_mla,float16,float16,8,8,1,8,16383,0.07589866717656453
+1,32768,VLLM,0.19.0,NVIDIA H200,generation_mla,vllm_flash_attn_mla,float16,float16,8,8,1,8,32767,0.1276533305644989
+1,65536,VLLM,0.19.0,NVIDIA H200,generation_mla,vllm_flash_attn_mla,float16,float16,8,8,1,8,65535,0.23403199513753256
+1,16384,VLLM,0.19.0,NVIDIA H200,generation_mla,vllm_flash_attn_mla,float16,float16,8,16,1,8,16383,0.1333440045515696
+1,32768,VLLM,0.19.0,NVIDIA H200,generation_mla,vllm_flash_attn_mla,float16,float16,8,16,1,8,32767,0.23483200867970785
+1,65536,VLLM,0.19.0,NVIDIA H200,generation_mla,vllm_flash_attn_mla,float16,float16,8,16,1,8,65535,0.4439733425776164
+2,16384,VLLM,0.19.0,NVIDIA H200,generation_mla,vllm_flash_attn_mla,float16,float16,8,8,1,8,16383,0.07876266539096832
+2,32768,VLLM,0.19.0,NVIDIA H200,generation_mla,vllm_flash_attn_mla,float16,float16,8,8,1,8,32767,0.1346773306528727
+2,65536,VLLM,0.19.0,NVIDIA H200,generation_mla,vllm_flash_attn_mla,float16,float16,8,8,1,8,65535,0.23975465695063272
+2,16384,VLLM,0.19.0,NVIDIA H200,generation_mla,vllm_flash_attn_mla,float16,float16,8,16,1,8,16383,0.13462400436401367
+2,32768,VLLM,0.19.0,NVIDIA H200,generation_mla,vllm_flash_attn_mla,float16,float16,8,16,1,8,32767,0.24129066864649454
+2,65536,VLLM,0.19.0,NVIDIA H200,generation_mla,vllm_flash_attn_mla,float16,float16,8,16,1,8,65535,0.44436800479888916
+3,16384,VLLM,0.19.0,NVIDIA H200,generation_mla,vllm_flash_attn_mla,float16,float16,8,8,1,8,16383,0.0774293343226115
+3,32768,VLLM,0.19.0,NVIDIA H200,generation_mla,vllm_flash_attn_mla,float16,float16,8,8,1,8,32767,0.13587733109792074
+3,65536,VLLM,0.19.0,NVIDIA H200,generation_mla,vllm_flash_attn_mla,float16,float16,8,8,1,8,65535,0.2462079922358195
+3,16384,VLLM,0.19.0,NVIDIA H200,generation_mla,vllm_flash_attn_mla,float16,float16,8,16,1,8,16383,0.1346826652685801
+3,32768,VLLM,0.19.0,NVIDIA H200,generation_mla,vllm_flash_attn_mla,float16,float16,8,16,1,8,32767,0.24670400222142538
+3,65536,VLLM,0.19.0,NVIDIA H200,generation_mla,vllm_flash_attn_mla,float16,float16,8,16,1,8,65535,0.4448266824086507
