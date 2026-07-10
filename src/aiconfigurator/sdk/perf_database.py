@@ -980,20 +980,6 @@ def load_vllm_serving_state_data(vllm_serving_state_file):
                 "kernel_source": row["kernel_source"],
                 "provenance": row["provenance"],
             }
-            if row["topology"] != "tp8ep8":
-                unscoped_key = (
-                    row["model"],
-                    row["topology"],
-                    None,
-                    row["phase"],
-                    row_kind,
-                    row["category"],
-                    int(row["hidden_size"]),
-                    int(row["topk"]),
-                    int(row["moe_ep_size"]),
-                    row["quant_runtime"],
-                )
-                data[unscoped_key][bucket_tokens][decode_batch] = table[bucket_tokens][decode_batch]
             if row_kind == "category":
                 legacy_key = (
                     row["model"],
@@ -1007,19 +993,6 @@ def load_vllm_serving_state_data(vllm_serving_state_file):
                     row["quant_runtime"],
                 )
                 data[legacy_key] = table
-                if row["topology"] != "tp8ep8":
-                    unscoped_legacy_key = (
-                        row["model"],
-                        row["topology"],
-                        None,
-                        row["phase"],
-                        row["category"],
-                        int(row["hidden_size"]),
-                        int(row["topk"]),
-                        int(row["moe_ep_size"]),
-                        row["quant_runtime"],
-                    )
-                    data[unscoped_legacy_key] = data[unscoped_key]
 
     return data
 

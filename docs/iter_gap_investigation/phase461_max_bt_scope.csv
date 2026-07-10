@@ -1,0 +1,10 @@
+section,scenario,phase,row_kind,category,max_bt,bucket_tokens,decode_batch,baseline_error_ratio,current_error_ratio,delta_error_ratio,classification,hit_count,miss_count,scope_query_count,exact_query_count,influence_hit_count,status,note
+six_point_ab,K2.5-tp8ep8-8k2k,,,,8000,,,1.132524,1.132524,0.000000,unchanged,,,,,,explicit_scope_attribution,TP8 already used exact max_bt before Step 1
+six_point_ab,K2.5-tp4ep8dp2-8k2k,,,,8000,,,1.041312,1.041312,0.000000,unchanged,,,,,,explicit_scope_attribution,exact bt8000 reproduces the prior effective charge
+six_point_ab,K2.5-tp8ep8-8k2k-bt65536,,,,65536,,,1.234521,1.234521,0.000000,unchanged,,,,,,explicit_scope_attribution,TP8 already used exact max_bt before Step 1
+six_point_ab,K2.5-tp4ep8dp2-8k2k-bt65536,,,,65536,,,1.166794,1.184544,0.017750,regressed,,,,,,explicit_scope_attribution,correct bt65536 rows replace the cross-regime unscoped table; 14484/14 spike reached
+six_point_ab,K2.5-tp4ep8dp2-32k3k,,,,32000,,,1.056381,1.173318,0.116938,regressed,,,,,,explicit_scope_attribution,correct bt32000 rows replace the cross-regime unscoped table; 63/9 spike not reached
+six_point_ab,K2.5-tp8ep8-32k3k,,,,32000,,,1.397081,1.397081,0.000000,unchanged,,,,,,explicit_scope_attribution,TP8 already used exact max_bt before Step 1
+spike_reachability,K2.5-tp4ep8dp2-32k3k,mixed_prefill,forward_total,forward_total,32000,63,9,,,,,24,288,49,0,0,not_reached_current_six,bucket_below_range=100;decode_batch_below_range=15;hit=24;interpolation_gap=10;table_missing=163
+spike_reachability,K2.5-tp4ep8dp2-8k2k-bt65536,mixed_prefill,forward_total,forward_total,65536,14484,14,,,,,41,923,160,2,2,reachable_recollect,bucket_above_range=12;bucket_below_range=9;decode_batch_above_range=3;decode_batch_below_range=73;hit=41;interpolation_gap=511;table_missing=315
+tp8_phase455_scope_decision,K2.5-tp8ep8-8k2k,,,,8000,,,,,,,,,,,,retain_pending_isl_replay,six_point_collision_count=0;max_bt separates current six but does not prove generic ISL safety

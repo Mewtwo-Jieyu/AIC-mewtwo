@@ -173,9 +173,7 @@ class IterationLatencyCalculator:
         )
 
     def _serving_state_query_max_num_batched_tokens(self) -> int | None:
-        if self._serving_state_topology() == "tp8ep8":
-            return self._serving_state_max_num_batched_tokens
-        return None
+        return self._serving_state_max_num_batched_tokens
 
     def _serving_state_topology(self) -> str | None:
         config = getattr(self._model, "config", None)

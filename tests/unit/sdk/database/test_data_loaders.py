@@ -768,7 +768,7 @@ def test_load_vllm_serving_state_data_basic(tmp_path):
         8,
         "CompressedTensorsWNA16MarlinMoEMethod",
     )
-    assert data[unscoped_key][8000][8]["latency"] == pytest.approx(425.0)
+    assert unscoped_key not in data
 
 
 def test_load_vllm_serving_state_data_supports_non_attn_total_row_kind(tmp_path):
@@ -909,7 +909,7 @@ def test_query_vllm_serving_state_requires_exact_max_bt_scope(tmp_path):
     assert result_wrong is None
 
 
-def test_query_vllm_serving_state_keeps_dp2_legacy_scope(tmp_path):
+def test_query_vllm_serving_state_requires_exact_dp2_max_bt_scope(tmp_path):
     csv_file = tmp_path / "vllm_serving_state_perf.txt"
     csv_file.write_text(
         "\n".join(
@@ -927,7 +927,35 @@ def test_query_vllm_serving_state_keeps_dp2_legacy_scope(tmp_path):
     result = db.query_vllm_serving_state(
         model="kimi-k2.5",
         topology="tp4dp2ep8",
+        max_num_batched_tokens=8000,
+        phase="decode",
+        row_kind="forward_total",
+        category="forward_total",
+        bucket_tokens=32,
+        decode_batch=32,
+        hidden_size=7168,
+        topk=8,
+        moe_ep_size=8,
+        quant_runtime="CompressedTensorsWNA16MarlinMoEMethod",
+    )
+    unscoped = db.query_vllm_serving_state(
+        model="kimi-k2.5",
+        topology="tp4dp2ep8",
         max_num_batched_tokens=None,
+        phase="decode",
+        row_kind="forward_total",
+        category="forward_total",
+        bucket_tokens=32,
+        decode_batch=32,
+        hidden_size=7168,
+        topk=8,
+        moe_ep_size=8,
+        quant_runtime="CompressedTensorsWNA16MarlinMoEMethod",
+    )
+    wrong_scope = db.query_vllm_serving_state(
+        model="kimi-k2.5",
+        topology="tp4dp2ep8",
+        max_num_batched_tokens=65536,
         phase="decode",
         row_kind="forward_total",
         category="forward_total",
@@ -941,6 +969,8 @@ def test_query_vllm_serving_state_keeps_dp2_legacy_scope(tmp_path):
 
     assert result is not None
     assert float(result) == pytest.approx(20.0)
+    assert unscoped is None
+    assert wrong_scope is None
 
 
 # ─────────────────────────────────────────────────────────────────────────────

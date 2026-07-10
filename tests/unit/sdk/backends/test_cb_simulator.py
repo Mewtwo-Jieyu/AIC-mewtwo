@@ -780,7 +780,7 @@ class _BoundedServingStateDB(_ServingStateDB):
         scope = (
             "kimi-k2.5",
             "tp4dp2ep8",
-            None,
+            8000,
             "mixed_prefill",
             "moe_gemm_or_aux",
             7168,
@@ -791,7 +791,7 @@ class _BoundedServingStateDB(_ServingStateDB):
         decode_scope = (
             "kimi-k2.5",
             "tp4dp2ep8",
-            None,
+            8000,
             "decode",
             "moe_gemm_or_aux",
             7168,
@@ -964,7 +964,7 @@ class TestIterationLatencyCalculator:
         assert [call["topology"] for call in db.calls] == ["tp8ep8"]
         assert [call["max_num_batched_tokens"] for call in db.calls] == [8000]
 
-    def test_serving_state_uses_legacy_scope_for_dp2(self) -> None:
+    def test_serving_state_uses_exact_max_bt_scope_for_dp2(self) -> None:
         db = _ForwardTotalServingStateDB()
         calc = IterationLatencyCalculator(
             backend=_ServingStateBackendForIteration(),
@@ -982,7 +982,7 @@ class TestIterationLatencyCalculator:
         )
 
         assert [call["topology"] for call in db.calls] == ["tp4dp2ep8"]
-        assert [call["max_num_batched_tokens"] for call in db.calls] == [None]
+        assert [call["max_num_batched_tokens"] for call in db.calls] == [8000]
 
     def test_serving_state_records_out_of_grid_misses(self) -> None:
         db = _BoundedServingStateDB()
@@ -1016,6 +1016,28 @@ class TestIterationLatencyCalculator:
         } >= {
             ("mixed_prefill", "moe_gemm_or_aux", "bucket_above_range"),
             ("decode", "moe_gemm_or_aux", "bucket_above_range"),
+        }
+
+    def test_serving_state_missing_max_bt_scope_uses_analytic_charge(self) -> None:
+        db = _BoundedServingStateDB()
+        calc = IterationLatencyCalculator(
+            backend=_ServingStateBackendForIteration(),
+            model=_FakeKimiDP2ModelForServingState(),
+            database=db,
+            serving_state_max_num_batched_tokens=65536,
+        )
+
+        total = calc.compute(
+            prefill_tokens=0,
+            prefill_batch_size=0,
+            prefill_seq_len=1,
+            decode_batch_size=64,
+            decode_avg_kv_len=8000,
+        )
+
+        assert total == pytest.approx(33.0)
+        assert {record.miss_reason for record in calc.get_serving_state_query_audit()} == {
+            "table_missing"
         }
 
     def test_mixed_non_attention_uses_merged_total_tokens(self) -> None:
