@@ -1,0 +1,30 @@
+section,metric,value,target,status,source,note
+lookup_path,decode_batch,13,,,runtime query chain,Phase459 representative decode step
+lookup_path,decode_avg_kv_input,33500,,,runtime query chain,prompt + half output
+lookup_path,decode_kv_bucket,33792,,,runtime query chain,ceil to 512-token bucket
+lookup_path,generation_mla_query_kv,33793,,,runtime query chain,BaseBackend adds one decode token
+lookup_path,local_heads,8,,,runtime query chain,64 global heads / TP8
+lookup_path,layer_scale,61,,,runtime query chain,61 transformer layers
+lookup_path,database_mode,SILICON,,,runtime query chain,in-range SILICON lookup
+lookup_path,interpolation,bilinear,,,runtime query chain,batch and KV are both bracketed
+lookup_corners,batch8_kv32768_ms_per_layer,0.9586453437805176,,,src/aiconfigurator/systems/data/h200_sxm/vllm/0.19.0/generation_mla_perf.txt,kernel_source=vllm_flash_attn_mla
+lookup_corners,batch8_kv65536_ms_per_layer,0.2446026603380839,,,src/aiconfigurator/systems/data/h200_sxm/vllm/0.19.0/generation_mla_perf.txt,kernel_source=vllm_flash_attn_mla
+lookup_corners,batch16_kv32768_ms_per_layer,0.2449386715888977,,,src/aiconfigurator/systems/data/h200_sxm/vllm/0.19.0/generation_mla_perf.txt,kernel_source=vllm_flash_attn_mla
+lookup_corners,batch16_kv65536_ms_per_layer,0.47361600399017334,,,src/aiconfigurator/systems/data/h200_sxm/vllm/0.19.0/generation_mla_perf.txt,kernel_source=vllm_flash_attn_mla
+outlier_audit,current_per_layer_ms,0.5086735302165835,matches PerfDatabase,pass,src/aiconfigurator/systems/data/h200_sxm/vllm/0.19.0/generation_mla_perf.txt,database_query=0.508673530217
+outlier_audit,current_attention_ms,31.02908534321159,Phase459 31.029ms,pass,src/aiconfigurator/systems/data/h200_sxm/vllm/0.19.0/generation_mla_perf.txt,
+outlier_audit,outlier_latency_ms,0.9586453437805176,monotonic local neighborhood,fail,src/aiconfigurator/systems/data/h200_sxm/vllm/0.19.0/generation_mla_perf.txt,batch=8; kv=32768
+outlier_audit,outlier_context_trend_ms,0.13326044215096366,diagnostic only,,src/aiconfigurator/systems/data/h200_sxm/vllm/0.19.0/generation_mla_perf.txt,linear trend from same-batch 16k and 64k rows
+outlier_audit,outlier_actual_over_context_trend,7.19377279789091,<=2.0,fail,src/aiconfigurator/systems/data/h200_sxm/vllm/0.19.0/generation_mla_perf.txt,7.19x diagnostic outlier
+outlier_audit,outlier_actual_over_sol,15.230698480442166,,,src/aiconfigurator/systems/data/h200_sxm/vllm/0.19.0/generation_mla_perf.txt,SOL=0.062942ms
+outlier_audit,outlier_actual_over_empirical,12.184558784353735,,,src/aiconfigurator/systems/data/h200_sxm/vllm/0.19.0/generation_mla_perf.txt,EMPIRICAL=0.078677ms
+outlier_audit,counterfactual_attention_ms,12.739003149325299,diagnostic only,,src/aiconfigurator/systems/data/h200_sxm/vllm/0.19.0/generation_mla_perf.txt,not a proposed PerfDB value
+outlier_audit,counterfactual_decode_total_ms,20.78160561028787,real=21.0ms,,src/aiconfigurator/systems/data/h200_sxm/vllm/0.19.0/generation_mla_perf.txt,single-row diagnostic replacement
+outlier_audit,counterfactual_decode_sim_over_real,0.9896002671565652,0.90..1.10,pass,src/aiconfigurator/systems/data/h200_sxm/vllm/0.19.0/generation_mla_perf.txt,counterfactual closes representative step
+outlier_audit,verdict,perfdb_outlier_row_requires_recollect,root cause identified,pass,src/aiconfigurator/systems/data/h200_sxm/vllm/0.19.0/generation_mla_perf.txt,recollect exact row; do not auto-repair table
+context_semantics,attention_span_ms,0.5213307935947142,,,32k..35k query sweep,
+context_semantics,share_of_observed_excess,0.028847930489054728,<=10% of observed excess,,32k..35k query sweep,
+context_semantics,verdict,context_semantics_not_primary,,pass,32k..35k query sweep,
+decision,phase460_step2,gpu_recollect_generation_mla_32k_grid,user confirmation before collection or PerfDB change,proposed,,"TP8 local_heads=8; batch={8,16}; kv={16384,32768,65536}; repeated measurements"
+decision,runtime_lookup_change,not_required,,pass,,lookup is in-range bilinear and context semantics are not primary
+gate,default_aic,No-Go,6/6 <=1.15 before tightening,fail,,Phase460 Step 1 is report-only; no runtime/PerfDB/gate change
