@@ -1,0 +1,26 @@
+section,side,metric,value,target,status,source,note
+trace_alignment,real,idle_prefill_gap_iteration,1,none in all-at-t0 sim,diverged,docs/iter_gap_investigation/phase462_preemption_observation/overhead_on/K2.5-tp8ep8-32k3k/serve.log.gz,"0 context requests, 1 generation request"
+trace_alignment,both,post_gap_shape_match_rate,1.0,1.0,pass,real INFO iteration rows vs current sim scheduler trace,matched=16/16
+admission_state,real,second_full_prompt_fits_at_gap,True,True,pass,Phase458 KV capacity + vLLM can_fit_full_sequence semantics,free_after_first=26825; needed=2000
+prefill_packing,real,max_context_requests_first_window,2,2,aligned,docs/iter_gap_investigation/phase462_preemption_observation/overhead_on/K2.5-tp8ep8-32k3k/serve.log.gz,
+prefill_packing,sim,max_context_requests_first_window,2,,aligned,current cb_sim trace,
+prefill_completion,real,max_decode_batch_increment,1,1,aligned,docs/iter_gap_investigation/phase462_preemption_observation/overhead_on/K2.5-tp8ep8-32k3k/serve.log.gz,
+prefill_completion,sim,max_decode_batch_increment,1,1,aligned,current cb_sim trace,
+source_semantics,real,long_prefill_token_threshold,0,0,aligned,"vLLM config/scheduler.py:69-79,244-247","max_num_partial_prefills defaults to 1, so the 4% auto-threshold branch is inactive"
+source_semantics,sim,initial_arrival_visibility,all_concurrency_at_t0,engine-visible incremental arrivals,diverged,cb_sim simulator.py:152-157,the only source difference that reproduces the one-row trace shift
+source_semantics,real,initial_arrival_visibility,process_inputs_then_add_request_async,scheduler only sees enqueued requests,observed,"vLLM async_llm.py:354-373,407-418; scheduler.py:1733-1752",Iteration(1) proves the next request was not yet scheduler-visible
+block_boundary,real,first_trigger_minus_tail_tokens,1,1,phase_skew,Phase462 Step2b decision hook,trigger=32928; victim=32927
+block_boundary,sim,first_trigger_minus_tail_tokens,0,0,self_phase,current sim decision hook,allocation remains one block short on both sides
+verdict,both,prefill_packing,aligned_not_root,,decided,source audit + trace alignment,
+verdict,both,prefill_completion,one_step_arrival_gap_then_aligned,,decided,source audit + trace alignment,
+verdict,both,block_boundary,aligned_not_root,,decided,source audit + trace alignment,
+verdict,both,root_cause,engine_visible_arrival_gap,,decided,source audit + trace alignment,
+verdict,both,self_sustaining_loop,falsified_as_origin,,decided,source audit + trace alignment,
+verdict,both,runtime_fix_allowed,False,,blocked,source audit + trace alignment,
+sign_prediction,K2.5-tp8ep8-8k2k,preemption_fix_sim_throughput_increase,worsen,error_ratio<=1.15,current_pass_at_risk,docs/iter_gap_investigation/phase461_step4b_final_ab.csv,real=146.639701; sim=166.072957; current_ratio=1.132524; max_increase_before_fail=0.015431
+sign_prediction,K2.5-tp4ep8dp2-8k2k,preemption_fix_sim_throughput_increase,improve_until_crossing,error_ratio<=1.15,current_pass_not_immediately_at_risk,docs/iter_gap_investigation/phase461_step4b_final_ab.csv,real=162.948516; sim=156.483788; current_ratio=1.041312; max_increase_before_fail=0.197509
+sign_prediction,K2.5-tp8ep8-8k2k-bt65536,preemption_fix_sim_throughput_increase,worsen,error_ratio<=1.15,current_fail_worsens,docs/iter_gap_investigation/phase461_step4b_final_ab.csv,real=124.016988; sim=153.101636; current_ratio=1.234521; max_increase_before_fail=-0.068465
+sign_prediction,K2.5-tp4ep8dp2-8k2k-bt65536,preemption_fix_sim_throughput_increase,worsen,error_ratio<=1.15,current_fail_worsens,docs/iter_gap_investigation/phase461_step4b_final_ab.csv,real=109.499911; sim=129.707417; current_ratio=1.184544; max_increase_before_fail=-0.029162
+sign_prediction,K2.5-tp4ep8dp2-32k3k,preemption_fix_sim_throughput_increase,worsen,error_ratio<=1.15,current_fail_worsens,docs/iter_gap_investigation/phase461_step4b_final_ab.csv,real=53.277429; sim=62.511382; current_ratio=1.173318; max_increase_before_fail=-0.019874
+sign_prediction,K2.5-tp8ep8-32k3k,preemption_fix_sim_throughput_increase,improve_until_crossing,error_ratio<=1.15,current_pass_not_immediately_at_risk,docs/iter_gap_investigation/phase461_step4b_final_ab.csv,real=50.111595; sim=45.407582; current_ratio=1.103595; max_increase_before_fail=0.269135
+flags,both,default_aic,No-Go,6/6 <=1.15,No-Go,Phase462 discipline,"report-only; no runtime, PerfDB, or gate change"
