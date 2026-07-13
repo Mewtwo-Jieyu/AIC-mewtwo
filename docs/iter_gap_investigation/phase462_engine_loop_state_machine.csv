@@ -1,0 +1,53 @@
+section,mode,metric,value,target,status,note
+deployment,real,pipeline_parallel_size,1,runtime value,pass,serve.log engine config
+deployment,real,async_scheduling,True,runtime value,pass,serve.log: Asynchronous scheduling is enabled
+deployment,real,executor,multiproc,runtime path,pass,multiproc_executor startup lines
+deployment,real,batch_queue_depth,2,source rule applied to runtime values,pass,multiproc_executor.py:469-472
+deployment,real,engine_step,step_with_batch_queue,queue_depth > 1,pass,core.py:185-211
+source_semantics,real,async_output_progress,output_placeholders_until_future_completion,AsyncScheduler,pass,async_scheduler.py:15-59
+source_semantics,real,waiting_after_preemption,skip_entire_waiting_phase,no waiting admission after any preemption,pass,scheduler.py:563-564; cb_sim base path differs after first preemption
+primitive,tokenizer,in_sample_weighted_mape,0.059152858080723195,diagnostic only; <=0.10,pass,"target-run samples; confirms replay fidelity only, not prediction eligibility"
+ground_truth,phase462_preemption_observation,preemptions,10,,pass,docs/iter_gap_investigation/phase462_preemption_observation/preemption_observation.jsonl
+ground_truth,phase462_preemption_observation,unique_victims,10,,pass,docs/iter_gap_investigation/phase462_preemption_observation/preemption_observation.jsonl
+ground_truth,phase462_preemption_observation,repeat_victim_events,0,,pass,docs/iter_gap_investigation/phase462_preemption_observation/preemption_observation.jsonl
+ground_truth,phase462_preemption_observation,self_preemptions,0,,pass,docs/iter_gap_investigation/phase462_preemption_observation/preemption_observation.jsonl
+prototype,target_run_fit_replay_plus_cb_cost,drain_step_match,0.2734375,1.0,fail,
+prototype,target_run_fit_replay_plus_cb_cost,first_schedule_step_match,0.9375,1.0,fail,
+prototype,target_run_fit_replay_plus_cb_cost,first_16_match,1.0,1.0,pass,
+prototype,target_run_fit_replay_plus_cb_cost,preemptions,10,10±2,pass,
+prototype,target_run_fit_replay_plus_cb_cost,self_preemptions,2,0,fail,
+prototype,target_run_fit_replay_plus_cb_cost,repeat_victim_events,0,0,pass,
+prototype,target_run_fit_replay_plus_cb_cost,signature_gate,False,all four signatures,fail,target-run replay; never sufficient for runtime promotion
+prototype,target_run_fit_replay_plus_cb_cost,gate,False,all four signatures,fail,requires both signatures and prediction-eligible input
+prototype,target_run_fit_replay_plus_future_oracle,drain_step_match,1.0,1.0,pass,
+prototype,target_run_fit_replay_plus_future_oracle,first_schedule_step_match,0.9375,1.0,fail,
+prototype,target_run_fit_replay_plus_future_oracle,first_16_match,1.0,1.0,pass,
+prototype,target_run_fit_replay_plus_future_oracle,preemptions,10,10±2,pass,
+prototype,target_run_fit_replay_plus_future_oracle,self_preemptions,2,0,fail,
+prototype,target_run_fit_replay_plus_future_oracle,repeat_victim_events,0,0,pass,
+prototype,target_run_fit_replay_plus_future_oracle,signature_gate,False,all four signatures,fail,target-run replay; never sufficient for runtime promotion
+prototype,target_run_fit_replay_plus_future_oracle,gate,False,all four signatures,fail,requires both signatures and prediction-eligible input
+prototype,target_run_tokenizer_oracle_plus_future_oracle,drain_step_match,1.0,1.0,pass,
+prototype,target_run_tokenizer_oracle_plus_future_oracle,first_schedule_step_match,0.9375,1.0,fail,
+prototype,target_run_tokenizer_oracle_plus_future_oracle,first_16_match,1.0,1.0,pass,
+prototype,target_run_tokenizer_oracle_plus_future_oracle,preemptions,10,10±2,pass,
+prototype,target_run_tokenizer_oracle_plus_future_oracle,self_preemptions,2,0,fail,
+prototype,target_run_tokenizer_oracle_plus_future_oracle,repeat_victim_events,0,0,pass,
+prototype,target_run_tokenizer_oracle_plus_future_oracle,signature_gate,False,all four signatures,fail,target-run replay; never sufficient for runtime promotion
+prototype,target_run_tokenizer_oracle_plus_future_oracle,gate,False,all four signatures,fail,requires both signatures and prediction-eligible input
+prototype,target_run_drain_oracle_plus_future_oracle,drain_step_match,1.0,1.0,pass,
+prototype,target_run_drain_oracle_plus_future_oracle,first_schedule_step_match,0.9375,1.0,fail,
+prototype,target_run_drain_oracle_plus_future_oracle,first_16_match,1.0,1.0,pass,
+prototype,target_run_drain_oracle_plus_future_oracle,preemptions,10,10±2,pass,
+prototype,target_run_drain_oracle_plus_future_oracle,self_preemptions,2,0,fail,
+prototype,target_run_drain_oracle_plus_future_oracle,repeat_victim_events,0,0,pass,
+prototype,target_run_drain_oracle_plus_future_oracle,signature_gate,False,all four signatures,fail,target-run replay; never sufficient for runtime promotion
+prototype,target_run_drain_oracle_plus_future_oracle,gate,False,all four signatures,fail,requires both signatures and prediction-eligible input
+remaining_divergence,target_run_drain_oracle_plus_future_oracle,first_schedule_mismatches,8,0,fail,"[{""request_id"": 27, ""real_step"": 1476, ""sim_step"": 1475}, {""request_id"": 41, ""real_step"": 2919, ""sim_step"": 2917}, {""request_id"": 55, ""real_step"": 4345, ""sim_step"": 4342}]"
+remaining_divergence,target_run_drain_oracle_plus_future_oracle,self_preemption_events,2,0,fail,"[{""local_step"": 945, ""trigger_req_id"": 13, ""victim_req_id"": 13, ""trigger_state"": ""DECODING"", ""victim_preemptions_before"": 0, ""victim_sampled_output_tokens"": 928, ""victim_computed_output_tokens"": 928, ""victim_output_placeholders"": 1}, {""local_step"": 9398, ""trigger_req_id"": 110, ""victim_req_id"": 110, ""trigger_state"": ""DECODING"", ""victim_preemptions_before"": 0, ""victim_sampled_output_tokens"": 512, ""victim_computed_output_tokens"": 512, ""victim_output_placeholders"": 1}]"
+dp_merge,phase461_diagnostic,has_per_rank_queue_timestamps,False,True,fail,"{""ranks"": [0, 1], ""engine_receive_ranks"": [], ""scheduler_step_ranks"": [], ""timestamped_queue_ranks"": [], ""has_per_rank_queue_timestamps"": false}"
+dp_merge,phase461_diagnostic,verdict,single_rank_state_machine_not_validated,per_rank_state_machine_observed,blocked,
+boundary,phase462,diagnostic_only,True,,pass,
+boundary,phase462,valid_for_default,False,,pass,
+boundary,phase462,perf_database,False,,pass,
+boundary,phase462,default_aic,No-Go,,pass,
