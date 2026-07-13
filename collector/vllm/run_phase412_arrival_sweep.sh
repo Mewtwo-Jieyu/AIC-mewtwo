@@ -32,6 +32,7 @@ BENCH_NUM_PROMPTS="${BENCH_NUM_PROMPTS:-512}"
 BENCH_MAX_CONCURRENCY="${BENCH_MAX_CONCURRENCY:-128}"
 BENCH_WARMUP_REQUESTS="${BENCH_WARMUP_REQUESTS:-0}"
 BENCH_TIMEOUT_S="${BENCH_TIMEOUT_S:-14400}"
+BENCH_REQUEST_ID_PREFIX="${BENCH_REQUEST_ID_PREFIX:-}"
 
 METRICS_POLL_INTERVAL_S="${METRICS_POLL_INTERVAL_S:-2}"
 READY_TIMEOUT_POLLS="${READY_TIMEOUT_POLLS:-480}"
@@ -273,6 +274,10 @@ EOF
   local bench_rec="${tmp_dir}/bench_records.jsonl"
   local bench_log="${tmp_dir}/bench.log"
   local bench_exit=0
+  local bench_trace_args=()
+  if [[ -n "${BENCH_REQUEST_ID_PREFIX}" ]]; then
+    bench_trace_args=(--request-id-prefix "${BENCH_REQUEST_ID_PREFIX}")
+  fi
   set +e
   python3 scripts/run_openai_fixed_shape_benchmark.py \
     --host 127.0.0.1 --port "${PORT}" \
@@ -280,6 +285,7 @@ EOF
     --num-prompts "${BENCH_NUM_PROMPTS}" --max-concurrency "${BENCH_MAX_CONCURRENCY}" \
     --input-len "${ISL}" --output-len "${OSL}" \
     --warmup-requests "${BENCH_WARMUP_REQUESTS}" --timeout-s "${BENCH_TIMEOUT_S}" \
+    "${bench_trace_args[@]}" \
     --result-json "${bench_json}" --records-jsonl "${bench_rec}" >"${bench_log}" 2>&1
   bench_exit="$?"
   set -e

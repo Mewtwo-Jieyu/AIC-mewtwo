@@ -1,0 +1,22 @@
+{
+  "gate": "phase462_arrival_logging_overhead",
+  "passed": true,
+  "rows": [
+    {
+      "absolute_delta_pct": 0.13813215766346157,
+      "max_overhead_pct": 2.0,
+      "off_output_tok_s": 985.319304432001,
+      "on_output_tok_s": 983.9582616169145,
+      "passed": true,
+      "scenario": "8k2k"
+    },
+    {
+      "absolute_delta_pct": 0.051521670729741224,
+      "max_overhead_pct": 2.0,
+      "off_output_tok_s": 266.0845800769434,
+      "on_output_tok_s": 266.22167129815324,
+      "passed": true,
+      "scenario": "32k3k"
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "complete_batch_pairs": 780,
+  "duplicate_engine_receive_trace_ids": 0,
+  "duplicate_first_scheduled_trace_ids": 0,
+  "duplicate_tokenizer_trace_ids": 0,
+  "engine_receive_trace_ids": 1024,
+  "first_scheduled_trace_ids": 1024,
+  "paired_trace_ids": 1024,
+  "passed": true,
+  "prompt_length_mismatches": 0,
+  "required_scenarios": [
+    "32k3k",
+    "8k2k"
+  ],
+  "runtime_config_matches": true,
+  "runtime_config_rows": 2,
+  "scenarios": [
+    "32k3k",
+    "8k2k"
+  ],
+  "schema": "phase462_arrival_observation_self_check_v1",
+  "tokenizer_batch_complete_rows": 780,
+  "tokenizer_batch_enter_rows": 780,
+  "tokenizer_trace_ids": 1024
+}

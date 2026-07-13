@@ -1,0 +1,99 @@
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+progress: 8/512, ok=8, fail=0
+progress: 16/512, ok=16, fail=0
+progress: 24/512, ok=24, fail=0
+progress: 32/512, ok=32, fail=0
+progress: 40/512, ok=40, fail=0
+progress: 48/512, ok=48, fail=0
+progress: 56/512, ok=56, fail=0
+progress: 64/512, ok=64, fail=0
+progress: 72/512, ok=72, fail=0
+progress: 80/512, ok=80, fail=0
+progress: 88/512, ok=88, fail=0
+progress: 96/512, ok=96, fail=0
+progress: 104/512, ok=104, fail=0
+progress: 112/512, ok=112, fail=0
+progress: 120/512, ok=120, fail=0
+progress: 128/512, ok=128, fail=0
+progress: 136/512, ok=136, fail=0
+progress: 144/512, ok=144, fail=0
+progress: 152/512, ok=152, fail=0
+progress: 160/512, ok=160, fail=0
+progress: 168/512, ok=168, fail=0
+progress: 176/512, ok=176, fail=0
+progress: 184/512, ok=184, fail=0
+progress: 192/512, ok=192, fail=0
+progress: 200/512, ok=200, fail=0
+progress: 208/512, ok=208, fail=0
+progress: 216/512, ok=216, fail=0
+progress: 224/512, ok=224, fail=0
+progress: 232/512, ok=232, fail=0
+progress: 240/512, ok=240, fail=0
+progress: 248/512, ok=248, fail=0
+progress: 256/512, ok=256, fail=0
+progress: 264/512, ok=264, fail=0
+progress: 272/512, ok=272, fail=0
+progress: 280/512, ok=280, fail=0
+progress: 288/512, ok=288, fail=0
+progress: 296/512, ok=296, fail=0
+progress: 304/512, ok=304, fail=0
+progress: 312/512, ok=312, fail=0
+progress: 320/512, ok=320, fail=0
+progress: 328/512, ok=328, fail=0
+progress: 336/512, ok=336, fail=0
+progress: 344/512, ok=344, fail=0
+progress: 352/512, ok=352, fail=0
+progress: 360/512, ok=360, fail=0
+progress: 368/512, ok=368, fail=0
+progress: 376/512, ok=376, fail=0
+progress: 384/512, ok=384, fail=0
+progress: 392/512, ok=392, fail=0
+progress: 400/512, ok=400, fail=0
+progress: 408/512, ok=408, fail=0
+progress: 416/512, ok=416, fail=0
+progress: 424/512, ok=424, fail=0
+progress: 432/512, ok=432, fail=0
+progress: 440/512, ok=440, fail=0
+progress: 448/512, ok=448, fail=0
+progress: 456/512, ok=456, fail=0
+progress: 464/512, ok=464, fail=0
+progress: 472/512, ok=472, fail=0
+progress: 480/512, ok=480, fail=0
+progress: 488/512, ok=488, fail=0
+progress: 496/512, ok=496, fail=0
+progress: 504/512, ok=504, fail=0
+progress: 512/512, ok=512, fail=0
+{
+  "ok_requests": 512,
+  "failed_requests": 0,
+  "use_prompt_token_ids": false,
+  "prompt_variant_mode": "fixed",
+  "unique_prompt_prefixes": 1,
+  "output_tok_s": 266.222,
+  "total_tok_s": 7365.466,
+  "mean_latency_ms": 512615.045,
+  "p50_latency_ms": 566018.009,
+  "p99_latency_ms": 598286.216
+}

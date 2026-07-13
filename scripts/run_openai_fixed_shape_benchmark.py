@@ -66,6 +66,11 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--result-json", type=Path, required=True)
     parser.add_argument("--records-jsonl", type=Path)
+    parser.add_argument(
+        "--request-id-prefix",
+        default="",
+        help="Optional diagnostic X-Request-Id prefix; empty preserves existing behavior.",
+    )
     return parser
 
 
@@ -184,10 +189,11 @@ async def _post_completion(
     endpoint: str,
     payload: dict[str, Any],
     request_index: int,
+    headers: dict[str, str] | None = None,
 ) -> RequestRecord:
     start = time.perf_counter()
     try:
-        async with session.post(endpoint, json=payload) as response:
+        async with session.post(endpoint, json=payload, headers=headers) as response:
             latency_ms = (time.perf_counter() - start) * 1000.0
             body = await response.text()
             if response.status != 200:
@@ -225,6 +231,17 @@ async def _post_completion(
             total_tokens=0,
             error=str(exc),
         )
+
+
+def _request_headers(
+    request_id_prefix: str, prompt_tokens: int, request_index: int
+) -> dict[str, str] | None:
+    if not request_id_prefix:
+        return None
+    return {
+        "X-AIC-Prompt-Tokens": str(prompt_tokens),
+        "X-Request-Id": f"{request_id_prefix}-{request_index:06d}",
+    }
 
 
 async def _supports_prompt_token_ids(
@@ -334,6 +351,11 @@ async def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
                     endpoint=endpoint,
                     payload=payloads[request_index % len(payloads)],
                     request_index=request_index,
+                    headers=_request_headers(
+                        args.request_id_prefix,
+                        args.input_len,
+                        request_index,
+                    ),
                 )
                 records.append(record)
                 done = len(records)

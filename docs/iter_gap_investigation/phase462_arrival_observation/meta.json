@@ -1,0 +1,12 @@
+{
+  "phase": "phase462_arrival_observation",
+  "scenarios": ["8k2k", "32k3k"],
+  "isl": [8000, 32000],
+  "osl": 1200,
+  "num_prompts": 512,
+  "concurrency": 128,
+  "runtime_change": "temporary_logging_patch_only",
+  "diagnostic_only": true,
+  "valid_for_default": false,
+  "perf_database": false
+}
