@@ -1,0 +1,17 @@
+section,side,metric,value,target,status,note
+gate,real,complete_decision_pairs,10,>0,pass,
+gate,real,logging_overhead_pct,0.14616388227170238,<=2%,pass,off=262.990176; on=263.374573
+decision_dynamics,real,preemptions,10,,,
+decision_dynamics,real,unique_victims,10,,,
+decision_dynamics,real,repeat_victim_events,0,,,
+decision_dynamics,real,self_preemptions,0,,,
+decision_dynamics,sim,preemptions,26,,,
+decision_dynamics,sim,unique_victims,22,,,
+decision_dynamics,sim,repeat_victim_events,4,,,
+decision_dynamics,sim,self_preemptions,5,,,
+first_divergence,both,allocation_condition,aligned_one_block_short,same one-block shortage,aligned,real requested=1/free=0; sim scheduled demand exceeds capacity by 1 block
+first_divergence,real,victim_relation,peer_tail_victim,,observed,trigger_tokens=32928; victim_tokens=32927; median_gap_s=62.567940
+first_divergence,sim,victim_relation,self_victim_then_repeat_in_2_iters,,diverged,first_iter=944; second_iter=946
+decision,both,first_divergence,victim_relation_and_recurrence,unique semantics boundary,narrowed,candidate=per_request_decode_phase_evolution
+decision,sim,runtime_fix_allowed,False,source-backed decode-phase mechanism,blocked,allocation threshold and tail-victim policy are aligned; source audit is still required
+flags,real,diagnostic_only,True,,pass,valid_for_default=false; perf_database=false; Default AIC No-Go

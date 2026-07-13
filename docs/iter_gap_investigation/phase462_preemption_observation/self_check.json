@@ -1,0 +1,42 @@
+{
+  "allocate_failure_rows": 10,
+  "complete_pairs": 10,
+  "first_complete_pair": {
+    "allocate_failure": {
+      "free_blocks": 0,
+      "kind": "allocate_failure",
+      "num_new_tokens": 1,
+      "num_tokens_need_slot": 32929,
+      "pid": 4077,
+      "requested_blocks": 1,
+      "schema": "phase462_preemption_observation_v1",
+      "total_computed_tokens": 32928,
+      "trigger_num_computed_tokens": 32928,
+      "trigger_num_tokens": 32928,
+      "trigger_request_id": "cmpl-b6c725aef2cf6ab9-0-b447ee40",
+      "ts_ns": 1783912933857680280
+    },
+    "preempt_decision": {
+      "free_blocks_before_victim_free": 0,
+      "kind": "preempt_decision",
+      "pid": 4077,
+      "running_count_after_pop": 13,
+      "scheduler_timestamp": 5881020.453023278,
+      "schema": "phase462_preemption_observation_v1",
+      "trigger_num_computed_tokens": 32928,
+      "trigger_num_tokens": 32928,
+      "trigger_request_id": "cmpl-b6c725aef2cf6ab9-0-b447ee40",
+      "ts_ns": 1783912933857951436,
+      "victim_num_computed_tokens": 32927,
+      "victim_num_tokens": 32927,
+      "victim_policy": "tail",
+      "victim_position": 13,
+      "victim_request_id": "cmpl-b030b53d8671f935-0-95a823ce",
+      "waiting_count": 114
+    }
+  },
+  "paired_rows": 10,
+  "passed": true,
+  "preempt_decision_rows": 10,
+  "schema": "phase462_preemption_observation_self_check_v1"
+}

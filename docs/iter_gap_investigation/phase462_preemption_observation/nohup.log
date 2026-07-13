@@ -1,0 +1,27 @@
+vllm_version=0.19.0
+NVIDIA H200, 143771, 570.133.20
+[2026-07-13T03:01:53+00:00] baseline_gpu_pids=[]
+[2026-07-13T03:02:04+00:00] gpu_drained
+[2026-07-13T03:02:04+00:00] serve_command: python3 -m vllm.entrypoints.cli.main serve /mnt/shared-storage-gpfs2/gpfs2-shared-public/huggingface/zskj-hub/models--moonshotai--Kimi-K2.5 --served-model-name kimi-k2.5 --port 21462 --tensor-parallel-size 8 --data-parallel-size 1 --enable-expert-parallel --max-model-len 262144 --gpu-memory-utilization 0.80 --max-num-batched-tokens 32000 --max-num-seqs 256 --enable-chunked-prefill --no-enable-prefix-caching --enable-logging-iteration-details --cudagraph-metrics --mm-encoder-tp-mode data --skip-mm-profiling --trust-remote-code --enable-auto-tool-choice --tool-call-parser kimi_k2 --reasoning-parser kimi_k2
+[2026-07-13T03:02:04+00:00] service_pid=782
+[2026-07-13T03:08:24+00:00] service_ready port=21462 poll=77
+[2026-07-13T03:08:24+00:00] metrics_poller_pid=3320
+[2026-07-13T03:18:13+00:00] benchmark_exit_code=0
+[2026-07-13T03:18:13+00:00] wrote docs/iter_gap_investigation/phase462_preemption_observation/overhead_off/K2.5-tp8ep8-32k3k/bench_result.json
+[2026-07-13T03:18:30+00:00] gpu_drained
+[2026-07-13T03:18:31+00:00] phase462_preemption_observation_off_DONE bench_exit=0
+phase462_preemption_observation_patch=applied
+vllm_version=0.19.0
+NVIDIA H200, 143771, 570.133.20
+[2026-07-13T03:18:34+00:00] baseline_gpu_pids=[]
+[2026-07-13T03:18:44+00:00] gpu_drained
+[2026-07-13T03:18:44+00:00] serve_command: python3 -m vllm.entrypoints.cli.main serve /mnt/shared-storage-gpfs2/gpfs2-shared-public/huggingface/zskj-hub/models--moonshotai--Kimi-K2.5 --served-model-name kimi-k2.5 --port 21462 --tensor-parallel-size 8 --data-parallel-size 1 --enable-expert-parallel --max-model-len 262144 --gpu-memory-utilization 0.80 --max-num-batched-tokens 32000 --max-num-seqs 256 --enable-chunked-prefill --no-enable-prefix-caching --enable-logging-iteration-details --cudagraph-metrics --mm-encoder-tp-mode data --skip-mm-profiling --trust-remote-code --enable-auto-tool-choice --tool-call-parser kimi_k2 --reasoning-parser kimi_k2
+[2026-07-13T03:18:44+00:00] service_pid=3866
+[2026-07-13T03:21:14+00:00] service_ready port=21462 poll=31
+[2026-07-13T03:21:14+00:00] metrics_poller_pid=5243
+[2026-07-13T03:31:02+00:00] benchmark_exit_code=0
+[2026-07-13T03:31:02+00:00] wrote docs/iter_gap_investigation/phase462_preemption_observation/overhead_on/K2.5-tp8ep8-32k3k/bench_result.json
+[2026-07-13T03:31:19+00:00] gpu_drained
+[2026-07-13T03:31:19+00:00] phase462_preemption_observation_on_DONE bench_exit=0
+{"allocate_failure_rows": 10, "complete_pairs": 10, "first_complete_pair": {"allocate_failure": {"free_blocks": 0, "kind": "allocate_failure", "num_new_tokens": 1, "num_tokens_need_slot": 32929, "pid": 4077, "requested_blocks": 1, "schema": "phase462_preemption_observation_v1", "total_computed_tokens": 32928, "trigger_num_computed_tokens": 32928, "trigger_num_tokens": 32928, "trigger_request_id": "cmpl-b6c725aef2cf6ab9-0-b447ee40", "ts_ns": 1783912933857680280}, "preempt_decision": {"free_blocks_before_victim_free": 0, "kind": "preempt_decision", "pid": 4077, "running_count_after_pop": 13, "scheduler_timestamp": 5881020.453023278, "schema": "phase462_preemption_observation_v1", "trigger_num_computed_tokens": 32928, "trigger_num_tokens": 32928, "trigger_request_id": "cmpl-b6c725aef2cf6ab9-0-b447ee40", "ts_ns": 1783912933857951436, "victim_num_computed_tokens": 32927, "victim_num_tokens": 32927, "victim_policy": "tail", "victim_position": 13, "victim_request_id": "cmpl-b030b53d8671f935-0-95a823ce", "waiting_count": 114}}, "paired_rows": 10, "passed": true, "preempt_decision_rows": 10, "schema": "phase462_preemption_observation_self_check_v1"}
+{"absolute_delta_pct": 0.14616388227170238, "gate": "phase462_logging_only_overhead", "max_overhead_pct": 2.0, "metric": "output_tok_s", "off_output_tok_s": 262.9901759507342, "on_output_tok_s": 263.374572601897, "passed": true}

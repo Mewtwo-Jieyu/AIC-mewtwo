@@ -1,0 +1,9 @@
+{
+  "absolute_delta_pct": 0.14616388227170238,
+  "gate": "phase462_logging_only_overhead",
+  "max_overhead_pct": 2.0,
+  "metric": "output_tok_s",
+  "off_output_tok_s": 262.9901759507342,
+  "on_output_tok_s": 263.374572601897,
+  "passed": true
+}

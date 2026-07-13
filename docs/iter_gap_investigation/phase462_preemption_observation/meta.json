@@ -1,0 +1,13 @@
+{
+  "phase": "phase462_preemption_observation",
+  "scenario": "K2.5-tp8ep8-32k3k",
+  "isl": 32000,
+  "osl": 1200,
+  "num_prompts": 128,
+  "concurrency": 128,
+  "max_num_batched_tokens": 32000,
+  "runtime_change": "temporary_logging_patch_only",
+  "diagnostic_only": true,
+  "valid_for_default": false,
+  "perf_database": false
+}
