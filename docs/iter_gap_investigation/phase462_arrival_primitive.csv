@@ -1,0 +1,19 @@
+section,metric,value,status,source,note
+source_structure,arrival_queue,microbatch_queue,pass,"vllm/utils/async_utils.py:24-52,90-132",up to 32 prompts wait 2ms and share one tokenizer batch call
+source_structure,completion_path,render_cmpl_async->tokenize_prompts_async->process_inputs->add_request_async,pass,vllm/renderers/base.py:843-862; v1/engine/async_llm.py:340-420,tokenization precedes process_inputs; process_inputs is not the serial tokenizer
+source_structure,engine_queue_boundary,drain_before_each_engine_step,pass,vllm/v1/engine/core.py:1136-1175,all queued client requests are consumed before the next step
+source_structure,per_request_serial_formula_allowed,False,fail,"vllm/utils/async_utils.py:32-52,90-132","single executor serializes batches, not individual requests"
+observation_inventory,K2.5-tp8ep8-8k2k,0,fail,docs/iter_gap_investigation/phase458_n512_unify/recollect_tp8_8k2k/K2.5-tp8ep8-8k2k/serve.log,start=0; tokenizer_batch=0; post_add=0; engine_receive=0
+observation_inventory,K2.5-tp8ep8-32k3k,0,fail,docs/iter_gap_investigation/phase458_n512_unify/recollect_tp8_32k3k/K2.5-tp8ep8-32k3k/serve.log,start=0; tokenizer_batch=0; post_add=0; engine_receive=0
+observation_inventory,K2.5-tp8ep8-8k2k-bt65536,0,fail,docs/iter_gap_investigation/phase458_n512_unify/recollect_tp8_8k2k_bt65536/K2.5-tp8ep8-8k2k-bt65536/serve.log,start=0; tokenizer_batch=0; post_add=0; engine_receive=0
+observation_inventory,K2.5-tp8ep8-32k3k,0,fail,docs/iter_gap_investigation/phase462_preemption_observation/overhead_on/K2.5-tp8ep8-32k3k/serve.log.gz,start=0; tokenizer_batch=0; post_add=0; engine_receive=0
+observation_inventory,K2.5-tp8ep8-8k2k_bench_records,512,fail,docs/iter_gap_investigation/phase458_n512_unify/recollect_tp8_8k2k/K2.5-tp8ep8-8k2k/bench_records.jsonl,request_start_fields=none
+observation_inventory,K2.5-tp8ep8-32k3k_bench_records,512,fail,docs/iter_gap_investigation/phase458_n512_unify/recollect_tp8_32k3k/K2.5-tp8ep8-32k3k/bench_records.jsonl,request_start_fields=none
+observation_inventory,K2.5-tp8ep8-8k2k-bt65536_bench_records,512,fail,docs/iter_gap_investigation/phase458_n512_unify/recollect_tp8_8k2k_bt65536/K2.5-tp8ep8-8k2k-bt65536/bench_records.jsonl,request_start_fields=none
+gate,structure_gate,pass,pass,phase462_step2a3,"no runtime, PerfDB, or gate change"
+gate,measurement_gate,fail,fail,phase462_step2a3,"no runtime, PerfDB, or gate change"
+gate,prototype_gate,blocked,blocked,phase462_step2a3,"no runtime, PerfDB, or gate change"
+gate,runtime_fix_allowed,False,fail,phase462_step2a3,"no runtime, PerfDB, or gate change"
+gate,visible_step_signature,not_run,blocked,phase462_step2a3,"no runtime, PerfDB, or gate change"
+gate,first_16_steps_signature,not_run,blocked,phase462_step2a3,"no runtime, PerfDB, or gate change"
+gate,preemption_signature,not_run,blocked,phase462_step2a3,"no runtime, PerfDB, or gate change"
