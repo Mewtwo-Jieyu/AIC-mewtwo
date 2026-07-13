@@ -1,0 +1,18 @@
+section,scenario,metric,value,target,status,note
+decision_fork,K2.5-tp8ep8-8k2k-bt65536,real_context_requests,9,>2 means large-budget cadence,pass,"Iteration(2), ctx_tokens=65535, decode=1"
+decision_fork,K2.5-tp8ep8-8k2k-bt65536,sim_fresh_admissions,9,9,pass,ctx_tokens=65535; decode=1; recompute excluded
+decision_fork,K2.5-tp8ep8-8k2k-bt65536,verdict,budget_driven_cadence_aligned,source-backed unique fix,pass,admission cap change forbidden; large cohort is max_bt budget semantics
+primitive_fit,8k2k+32k3k,batch_measurements,780,covers 1024 request pairs,pass,request_weight=1024
+primitive_fit,8k2k+32k3k,tokenizer_weighted_mape,0.059152858080723195,<=0.1,pass,valid only on observed ISL 8k/32k and batch 1-32 support
+primitive_fit,8k2k+32k3k,formula,0.029270374 + 0.001003614837*tokens + (-0.604326979)*batch,,measured,negative batch term is observed batching amortization; no extrapolation
+primitive_fit,32k3k,tokenizer_weighted_mape,0.047634385473683434,<=0.1,pass,
+primitive_fit,8k2k,tokenizer_weighted_mape,0.07067133068776296,<=0.1,pass,
+primitive_boundary,8k2k+32k3k,tokenizer_to_engine_fit_mape,4.66666702893883,<=0.1,fail,delay includes in-flight model execution and EngineCore drain; not a tokenizer primitive
+prototype_oracle,K2.5-tp8ep8-32k3k,visible_step_match,0.07142857142857142,1.0,fail,pairs=14; exact tokenizer completion timestamps
+prototype_oracle,K2.5-tp8ep8-32k3k,first_16_match,0.0625,1.0,fail,
+prototype_oracle,K2.5-tp8ep8-32k3k,preemptions,26,10±2,fail,
+prototype_oracle,K2.5-tp8ep8-32k3k,self_preemptions,5,0,fail,
+prototype_oracle,K2.5-tp8ep8-32k3k,repeat_victim_events,4,0,fail,
+gate,all,prototype_gate,fail,all three signatures pass,fail,exact tokenizer completion oracle is stronger than the fitted primitive
+gate,all,step2c,locked,unlocked,blocked,"report-only; no runtime, PerfDB, or validation gate changes"
+boundary,all,default_aic,No-Go,,blocked,diagnostic_only=true; valid_for_default=false; perf_database=false
