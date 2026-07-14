@@ -10,8 +10,8 @@ import json
 import re
 import statistics
 import sys
-from collections import Counter, deque
-from dataclasses import dataclass, field, replace
+from collections import Counter
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable, Iterable
 
@@ -19,6 +19,14 @@ from typing import Callable, Iterable
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "src"))
+
+from aiconfigurator.sdk.backends.cb_simulator.engine_loop import (  # noqa: E402
+    EngineLoopBatch as PrototypeBatch,
+    EngineLoopResult as QueueMachineResult,
+    TimedInput,
+    TimedInputSource,
+    run_engine_loop,
+)
 
 ARRIVAL_JSONL = (
     REPO_ROOT
@@ -85,29 +93,6 @@ class DeploymentQueueSpec:
     source_rule: str
 
 
-@dataclass(frozen=True)
-class TimedInput:
-    arrival_ms: float
-    payload: object
-
-
-@dataclass(frozen=True)
-class PrototypeBatch:
-    batch_id: int
-    launch_ms: float
-    latency_ms: float
-    complete_ms: float = -1.0
-    payload: dict[str, object] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class QueueMachineResult:
-    launched: list[PrototypeBatch]
-    completed: list[PrototypeBatch]
-    max_queue_depth: int
-    final_clock_ms: float
-
-
 def derive_deployment_queue_spec(
     *,
     executor: str,
@@ -144,61 +129,12 @@ def run_batch_queue_machine(
     callback returns. Model execution is serialized, while up to ``queue_depth``
     futures may be outstanding.
     """
-    if queue_depth < 1:
-        raise ValueError("queue_depth must be positive")
-
-    pending_inputs = deque(
-        sorted(arrivals, key=lambda item: item.arrival_ms)
-    )
-    batch_queue: deque[PrototypeBatch] = deque()
-    launched: list[PrototypeBatch] = []
-    completed: list[PrototypeBatch] = []
-    now_ms = 0.0
-    executor_available_ms = 0.0
-    max_depth = 0
-
-    while True:
-        drained: list[object] = []
-        while pending_inputs and pending_inputs[0].arrival_ms <= now_ms:
-            drained.append(pending_inputs.popleft().payload)
-        if drained:
-            on_drain(now_ms, drained)
-
-        scheduled = None
-        if len(batch_queue) < queue_depth:
-            scheduled = schedule(now_ms)
-        if scheduled is not None:
-            complete_ms = max(now_ms, executor_available_ms) + scheduled.latency_ms
-            executor_available_ms = complete_ms
-            scheduled = replace(
-                scheduled,
-                launch_ms=now_ms,
-                complete_ms=complete_ms,
-            )
-            batch_queue.append(scheduled)
-            launched.append(scheduled)
-            max_depth = max(max_depth, len(batch_queue))
-            if len(batch_queue) < queue_depth and batch_queue[0].complete_ms > now_ms:
-                continue
-
-        if batch_queue:
-            finished = batch_queue.popleft()
-            now_ms = max(now_ms, finished.complete_ms)
-            completed.append(finished)
-            on_complete(finished)
-            continue
-
-        if pending_inputs:
-            now_ms = max(now_ms, pending_inputs[0].arrival_ms)
-            continue
-        if scheduled is None:
-            break
-
-    return QueueMachineResult(
-        launched=launched,
-        completed=completed,
-        max_queue_depth=max_depth,
-        final_clock_ms=now_ms,
+    return run_engine_loop(
+        queue_depth=queue_depth,
+        input_source=TimedInputSource(list(arrivals)),
+        on_drain=on_drain,
+        schedule=schedule,
+        on_complete=on_complete,
     )
 
 

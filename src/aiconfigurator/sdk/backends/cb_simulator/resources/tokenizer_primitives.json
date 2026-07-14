@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "primitives": [
+    {
+      "resource_version": 1,
+      "model_path": "moonshotai/Kimi-K2.5",
+      "system": "h200_sxm",
+      "backend": "vllm",
+      "backend_version": "0.19.0",
+      "support": {
+        "prompt_tokens": [8000, 32000],
+        "batch_size": [1, 32]
+      },
+      "runtime": {
+        "max_batch_size": 32,
+        "wait_timeout_ms": 2.0,
+        "workers": 1
+      },
+      "engine_loop": {
+        "queue_depth": 2,
+        "pipeline_parallel_size": 1,
+        "async_scheduling": true
+      },
+      "formula": {
+        "intercept_ms": 0.029270374,
+        "ms_per_prompt_token": 0.001003614837,
+        "ms_per_request": -0.604326979
+      },
+      "weighted_mape": 0.059152858080723195,
+      "provenance": "phase462/64af4c12:phase462_arrival_admission_prototype.csv"
+    }
+  ]
+}

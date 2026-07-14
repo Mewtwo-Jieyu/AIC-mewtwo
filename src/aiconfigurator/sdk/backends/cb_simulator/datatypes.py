@@ -30,6 +30,7 @@ class CBSimConfig:
     block_size: int = 16
     overlap_factor: float = 1.0
     per_iteration_overhead_ms: float = 0.0
+    engine_loop_enabled: bool = False
 
 
 @dataclass
@@ -43,7 +44,9 @@ class Request:
     # Mutable state
     state: RequestState = RequestState.WAITING
     prefill_tokens_remaining: int = -1
-    generated_tokens: int = 0
+    sampled_output_tokens: int = 0
+    computed_output_tokens: int = 0
+    output_placeholders: int = 0
     prefill_start_ms: float = -1.0
     first_token_ms: float = -1.0
     finish_ms: float = -1.0
@@ -56,7 +59,18 @@ class Request:
     @property
     def kv_cache_len(self) -> int:
         """Current KV cache length = prefilled tokens + generated tokens."""
-        return (self.isl - self.prefill_tokens_remaining) + self.generated_tokens
+        return (self.isl - self.prefill_tokens_remaining) + self.sampled_output_tokens
+
+    @property
+    def generated_tokens(self) -> int:
+        """Legacy alias for callers that do not model asynchronous execution."""
+        return self.sampled_output_tokens
+
+    @generated_tokens.setter
+    def generated_tokens(self, value: int) -> None:
+        self.sampled_output_tokens = value
+        self.computed_output_tokens = value
+        self.output_placeholders = 0
 
 
 @dataclass

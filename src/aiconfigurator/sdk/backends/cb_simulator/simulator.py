@@ -7,13 +7,17 @@ WAITING/PREEMPTED -> PREFILLING -> DECODING -> DONE.
 from __future__ import annotations
 
 import logging
+import time
+from collections import Counter
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import numpy as np
 
+from .arrival import TokenizerArrivalLayer, TokenizerPrimitive, resolve_tokenizer_primitive
 from .datatypes import CBSimConfig, CBSimResult, Request, RequestState
 from .dp_admission import DPAdmissionRouter, DPReplicaCounts
+from .engine_loop import AsyncCBScheduler, EngineLoopBatch, run_engine_loop
 from .iteration_latency import IterationLatencyCalculator, ServingStateQueryAudit
 from .scheduler import CBScheduler
 
@@ -54,6 +58,28 @@ class CBSimulator:
         self._database = database
         self._last_latency_calc: IterationLatencyCalculator | None = None
         self._last_schedule_trace: list[dict[str, float | int | bool]] = []
+        self._last_engine_loop_audit: dict[str, float | int | bool | str] = {
+            "path": "not_run"
+        }
+        self._last_preemption_events: list[dict[str, int | bool]] = []
+
+    def _resolve_engine_loop_primitive(self, isl: int) -> TokenizerPrimitive | None:
+        model_path = getattr(self._model, "model_path", None)
+        system = getattr(self._database, "system", None)
+        backend = getattr(self._database, "backend", None)
+        version = getattr(self._database, "version", None)
+        if not all(
+            isinstance(value, str)
+            for value in (model_path, system, backend, version)
+        ):
+            return None
+        return resolve_tokenizer_primitive(
+            model_path=model_path,
+            system=system,
+            backend=backend,
+            version=version,
+            prompt_tokens=isl,
+        )
 
     def _create_latency_calc(self, prefix: int) -> IterationLatencyCalculator:
         """Factory hook for latency calculator. Override in tests."""
@@ -128,6 +154,28 @@ class CBSimulator:
         Returns:
             CBSimResult with TTFT, TPOT, throughput metrics.
         """
+        if self._config.engine_loop_enabled:
+            primitive = self._resolve_engine_loop_primitive(isl)
+            if primitive is None:
+                raise ValueError(
+                    "engine loop enabled but no exact tokenizer primitive "
+                    "matches this deployment"
+                )
+            return self._run_single_engine_loop(
+                isl=isl,
+                osl=osl,
+                concurrency=concurrency,
+                prefix=prefix,
+                num_gpus=num_gpus,
+                primitive=primitive,
+            )
+
+        self._last_engine_loop_audit = {
+            "path": "legacy",
+            "decode_skip_enabled": True,
+            "engine_loop_enabled": self._config.engine_loop_enabled,
+        }
+        self._last_preemption_events = []
         latency_calc = self._create_latency_calc(prefix)
         self._last_latency_calc = latency_calc
         self._last_schedule_trace = []
@@ -272,6 +320,324 @@ class CBSimulator:
             peak_prefill_reqs, peak_decode_reqs, peak_tokens,
         )
 
+    def _run_single_engine_loop(
+        self,
+        *,
+        isl: int,
+        osl: int,
+        concurrency: int,
+        prefix: int,
+        num_gpus: int,
+        primitive: TokenizerPrimitive,
+    ) -> CBSimResult:
+        """Run one replica with vLLM's non-blocking EngineCore batch queue."""
+        latency_calc = self._create_latency_calc(prefix)
+        self._last_latency_calc = latency_calc
+        self._last_schedule_trace = []
+
+        scheduler = AsyncCBScheduler(self._config)
+        arrival = TokenizerArrivalLayer(primitive)
+        waiting: list[Request] = []
+        running: list[Request] = []
+        completed: list[Request] = []
+        first_prefill_completion_steps: dict[int, int] = {}
+        request_completion_steps: dict[int, int] = {}
+        next_id = 0
+        stats = {
+            "total_iters": 0,
+            "sum_prefill_reqs": 0,
+            "sum_decode_reqs": 0,
+            "sum_tokens": 0,
+            "steady_iters": 0,
+            "steady_time_ms": 0.0,
+            "steady_output_tokens": 0,
+            "peak_prefill_reqs": 0,
+            "peak_decode_reqs": 0,
+            "peak_tokens": 0,
+        }
+
+        initial = min(concurrency, self._config.num_requests)
+        arrival.submit_many(
+            [((request_id, 0.0), isl) for request_id in range(initial)],
+            now_ms=0.0,
+        )
+        next_id = initial
+        max_iters = self._config.num_requests * (
+            osl + isl // self._config.max_num_batched_tokens + 10
+        )
+
+        def on_drain(now_ms: float, items: list[object]) -> None:
+            for item in items:
+                request_id, submitted_ms = item
+                waiting.append(
+                    Request(
+                        request_id=int(request_id),
+                        isl=isl,
+                        osl=osl,
+                        arrival_time_ms=float(submitted_ms),
+                    )
+                )
+
+        def schedule(now_ms: float) -> EngineLoopBatch | None:
+            if (
+                len(completed) >= self._config.num_requests
+                or stats["total_iters"] >= max_iters
+            ):
+                return None
+
+            guarded: list[Request] = []
+            for req in running:
+                if (
+                    req.state == RequestState.DECODING
+                    and req.sampled_output_tokens + req.output_placeholders >= req.osl
+                ):
+                    req.state = RequestState.DONE
+                    guarded.append(req)
+
+            has_external_supply = (
+                bool(waiting)
+                or next_id < self._config.num_requests
+                or arrival.next_event_ms() is not None
+            )
+            in_steady_state = (
+                len(completed) >= self._config.warmup_requests
+                and has_external_supply
+            )
+            scheduler.in_steady_state = in_steady_state
+            result = scheduler.schedule(waiting, running)
+            for req in guarded:
+                if req.state == RequestState.DONE:
+                    req.state = RequestState.DECODING
+            if result.is_empty:
+                return None
+
+            avg_kv = (
+                int(np.mean([
+                    req.isl + req.computed_output_tokens
+                    for req in result.decode_reqs
+                ]))
+                if result.decode_reqs
+                else 0
+            )
+            iter_lat = latency_calc.compute(
+                prefill_tokens=result.total_prefill_tokens,
+                prefill_batch_size=len(result.prefill_reqs),
+                prefill_seq_len=isl,
+                decode_batch_size=len(result.decode_reqs),
+                decode_avg_kv_len=avg_kv,
+            )
+
+            completed_prefill_ids: list[int] = []
+            for req in result.prefill_reqs:
+                tokens = result.prefill_tokens[req.request_id]
+                if req.state in {RequestState.WAITING, RequestState.PREEMPTED}:
+                    req.state = RequestState.PREFILLING
+                    if req.prefill_start_ms < 0:
+                        req.prefill_start_ms = now_ms
+                    if req in waiting:
+                        waiting.remove(req)
+                    if req not in running:
+                        running.append(req)
+                req.prefill_tokens_remaining -= tokens
+                if req.prefill_tokens_remaining <= 0:
+                    req.prefill_tokens_remaining = 0
+                    req.state = RequestState.DECODING
+                    req.computed_output_tokens = req.sampled_output_tokens
+                    req.output_placeholders += 1
+                    completed_prefill_ids.append(req.request_id)
+
+            for req in result.decode_reqs:
+                req.computed_output_tokens += 1
+                req.output_placeholders += 1
+
+            stats["total_iters"] += 1
+            stats["sum_prefill_reqs"] += len(result.prefill_reqs)
+            stats["sum_decode_reqs"] += len(result.decode_reqs)
+            stats["sum_tokens"] += result.total_tokens
+            stats["peak_prefill_reqs"] = max(
+                stats["peak_prefill_reqs"], len(result.prefill_reqs)
+            )
+            stats["peak_decode_reqs"] = max(
+                stats["peak_decode_reqs"], len(result.decode_reqs)
+            )
+            stats["peak_tokens"] = max(
+                stats["peak_tokens"], result.total_tokens
+            )
+            if in_steady_state:
+                stats["steady_iters"] += 1
+                stats["steady_time_ms"] += iter_lat
+
+            return EngineLoopBatch(
+                batch_id=int(stats["total_iters"]),
+                launch_ms=now_ms,
+                latency_ms=iter_lat,
+                payload={
+                    "prefill_reqs": len(result.prefill_reqs),
+                    "prefill_tokens": result.total_prefill_tokens,
+                    "decode_reqs": len(result.decode_reqs),
+                    "total_tokens": result.total_tokens,
+                    "completed_prefill_ids": completed_prefill_ids,
+                    "decode_ids": [req.request_id for req in result.decode_reqs],
+                    "sampled_output_ids": completed_prefill_ids
+                    + [req.request_id for req in result.decode_reqs],
+                    "in_steady_state": in_steady_state,
+                },
+            )
+
+        def find_request(request_id: int) -> Request | None:
+            return next(
+                (
+                    req
+                    for req in [*running, *waiting]
+                    if req.request_id == request_id
+                ),
+                None,
+            )
+
+        def on_complete(batch: EngineLoopBatch) -> None:
+            nonlocal next_id
+            prefill_ids = set(batch.payload["completed_prefill_ids"])
+            decode_ids = set(batch.payload["decode_ids"])
+            newly_done: list[Request] = []
+            for request_id in batch.payload["sampled_output_ids"]:
+                req = find_request(int(request_id))
+                if req is None:
+                    continue
+                req.output_placeholders -= 1
+                if req.output_placeholders < 0:
+                    raise RuntimeError("negative output placeholder count")
+                req.sampled_output_tokens += 1
+                if request_id in prefill_ids and req.first_token_ms < 0:
+                    req.first_token_ms = batch.complete_ms
+                    first_prefill_completion_steps[req.request_id] = batch.batch_id
+                if req.state in {
+                    RequestState.WAITING,
+                    RequestState.PREEMPTED,
+                    RequestState.PREFILLING,
+                }:
+                    req.prefill_tokens_remaining += 1
+                if req.sampled_output_tokens >= req.osl:
+                    req.state = RequestState.DONE
+                    req.finish_ms = batch.complete_ms
+                    request_completion_steps[req.request_id] = batch.batch_id
+                    newly_done.append(req)
+
+            if batch.payload["in_steady_state"]:
+                stats["steady_output_tokens"] += len(decode_ids)
+
+            self._last_schedule_trace.append(
+                {
+                    "replica_id": 0,
+                    "local_iter": batch.batch_id,
+                    "start_ms": batch.launch_ms,
+                    "end_ms": batch.complete_ms,
+                    "prefill_reqs": batch.payload["prefill_reqs"],
+                    "prefill_tokens": batch.payload["prefill_tokens"],
+                    "decode_reqs": batch.payload["decode_reqs"],
+                    "total_tokens": batch.payload["total_tokens"],
+                    "is_mixed": bool(
+                        batch.payload["prefill_reqs"]
+                        and batch.payload["decode_reqs"]
+                    ),
+                }
+            )
+
+            for req in newly_done:
+                if req in running:
+                    running.remove(req)
+                if req in waiting:
+                    waiting.remove(req)
+                completed.append(req)
+                if next_id < self._config.num_requests:
+                    submitted_ms = batch.complete_ms
+                    arrival.submit_many(
+                        [((next_id, submitted_ms), isl)],
+                        now_ms=submitted_ms,
+                    )
+                    next_id += 1
+
+        runtime_start = time.perf_counter()
+        machine = run_engine_loop(
+            queue_depth=primitive.queue_depth,
+            input_source=arrival,
+            on_drain=on_drain,
+            schedule=schedule,
+            on_complete=on_complete,
+        )
+        runtime_seconds = time.perf_counter() - runtime_start
+        completed.sort(key=lambda req: req.finish_ms)
+
+        all_events = scheduler.preemption_events
+        self._last_preemption_events = [dict(event) for event in all_events]
+        if first_prefill_completion_steps and request_completion_steps:
+            final_first_prefill = max(first_prefill_completion_steps.values())
+            first_completion = min(request_completion_steps.values())
+            if final_first_prefill < first_completion:
+                steady_start_step = final_first_prefill + 1
+                steady_end_step = first_completion
+                steady_window_mode = "fully_admitted_before_drain"
+            else:
+                steady_start_step = first_completion + 1
+                steady_end_step = final_first_prefill + 1
+                steady_window_mode = "replacement_plateau_while_waiting_nonempty"
+        else:
+            steady_start_step = 0
+            steady_end_step = 0
+            steady_window_mode = "unavailable"
+        steady_events = [
+            event
+            for event in all_events
+            if steady_start_step <= int(event["step"]) < steady_end_step
+        ]
+
+        def preemption_signature(
+            events: list[dict[str, int | bool]],
+        ) -> tuple[int, int, int]:
+            victims = Counter(int(event["victim_request_id"]) for event in events)
+            self_preemptions = sum(
+                event["trigger_request_id"] == event["victim_request_id"]
+                for event in events
+            )
+            repeats = sum(count - 1 for count in victims.values())
+            return len(events), self_preemptions, repeats
+
+        preemptions, self_preemptions, repeats = preemption_signature(all_events)
+        steady_preemptions, steady_self_preemptions, steady_repeats = (
+            preemption_signature(steady_events)
+        )
+        self._last_engine_loop_audit = {
+            "path": "engine_loop",
+            "queue_depth": primitive.queue_depth,
+            "max_queue_depth": machine.max_queue_depth,
+            "decode_skip_enabled": False,
+            "sim_runtime_seconds": runtime_seconds,
+            "simulated_wall_ms": machine.final_clock_ms,
+            "preemptions": preemptions,
+            "self_preemptions": self_preemptions,
+            "repeat_victim_events": repeats,
+            "steady_preemptions": steady_preemptions,
+            "steady_self_preemptions": steady_self_preemptions,
+            "steady_repeat_victim_events": steady_repeats,
+            "steady_start_step": steady_start_step,
+            "steady_end_step": steady_end_step,
+            "steady_window_mode": steady_window_mode,
+        }
+
+        return self._collect_metrics(
+            completed,
+            num_gpus,
+            int(stats["total_iters"]),
+            int(stats["sum_prefill_reqs"]),
+            int(stats["sum_decode_reqs"]),
+            int(stats["sum_tokens"]),
+            int(stats["steady_iters"]),
+            float(stats["steady_time_ms"]),
+            int(stats["steady_output_tokens"]),
+            int(stats["peak_prefill_reqs"]),
+            int(stats["peak_decode_reqs"]),
+            int(stats["peak_tokens"]),
+        )
+
     def run_multi_replica(
         self,
         isl: int,
@@ -288,6 +654,10 @@ class CBSimulator:
         adds only the architecture missing from the DP path: independent
         schedulers/clocks/KV states plus a global admission router.
         """
+        if data_parallel_size > 1 and self._config.engine_loop_enabled:
+            raise NotImplementedError(
+                "multi-replica engine loop is deferred to Phase462 Step 3"
+            )
         if data_parallel_size <= 1:
             return self.run(
                 isl=isl,
@@ -668,6 +1038,14 @@ class CBSimulator:
     def get_last_schedule_trace(self) -> list[dict[str, float | int | bool]]:
         """Return per-replica schedule trace from the most recent multi run."""
         return list(self._last_schedule_trace)
+
+    def get_last_engine_loop_audit(self) -> dict[str, float | int | bool | str]:
+        """Return path, timing, and preemption counters from the latest run."""
+        return dict(self._last_engine_loop_audit)
+
+    def get_last_preemption_events(self) -> list[dict[str, int | bool]]:
+        """Return source-aligned preemption decision packets from the latest run."""
+        return [dict(event) for event in self._last_preemption_events]
 
     def _collect_metrics(
         self,

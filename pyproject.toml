@@ -96,6 +96,7 @@ aiconfigurator = "aiconfigurator.main:main"
 "aiconfigurator.generator" = ["config/**/*.yaml", "config/backend_templates/**/*.j2", "rule_plugin/**/*.rule"]
 "aiconfigurator" = ["systems/*.yaml", "systems/*.csv", "systems/**/*.txt", "model_configs/*.json"]
 "aiconfigurator.webapp.components.profiling" = ["styles.css", "js/*.js"]
+"aiconfigurator.sdk.backends.cb_simulator" = ["resources/*.json"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
