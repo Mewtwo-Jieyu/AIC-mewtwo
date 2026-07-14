@@ -516,6 +516,7 @@ def _run_cb_queue_prototype(
     scenario: str = SCENARIO,
     request_limit: int = REQUEST_LIMIT,
     prototype_osl: int = PROTOTYPE_OSL,
+    schedule_observer: Callable[[dict[str, object]], None] | None = None,
 ) -> dict[str, object]:
     """Run the source-defined queue with current cb scheduler state updates."""
     import scripts.validate_cb_simulator as validate
@@ -638,6 +639,43 @@ def _run_cb_queue_prototype(
     schedule_calls = 0
     completed: set[int] = set()
 
+    def queue_state() -> dict[str, object]:
+        def computed_tokens(req: Request) -> int:
+            if req.state in {RequestState.WAITING, RequestState.PREEMPTED}:
+                return 0
+            if req.state == RequestState.PREFILLING:
+                return max(
+                    0,
+                    req.isl
+                    + sampled_output_tokens[req.request_id]
+                    - req.prefill_tokens_remaining,
+                )
+            return req.isl + computed_output_tokens[req.request_id]
+
+        visible = [*running, *waiting]
+        return {
+            "visible_ordinals": [req.request_id for req in visible],
+            "running_order": [req.request_id for req in running],
+            "waiting_order": [req.request_id for req in waiting],
+            "skipped_waiting_order": [],
+            "free_blocks": (
+                config.num_gpu_blocks
+                - sum(scheduler._blocks_needed(req) for req in running)
+            ),
+            "request_phase": {
+                str(req.request_id): {
+                    "num_computed_tokens": computed_tokens(req),
+                    "num_output_placeholders": output_placeholders[req.request_id],
+                    "block_counts": [
+                        scheduler._blocks_needed(req)
+                        if req in running
+                        else 0
+                    ],
+                }
+                for req in visible
+            },
+        }
+
     def on_drain(_now_ms: float, request_ids: list[object]) -> None:
         next_step = schedule_calls + 1
         for value in request_ids:
@@ -668,12 +706,28 @@ def _run_cb_queue_prototype(
             ):
                 req.state = RequestState.DONE
                 guarded.append(req)
+        input_state = queue_state()
+        running_before = list(running)
+        waiting_status_before = {req.request_id: req.state for req in waiting}
+        preemption_start = len(preemption_events)
         result = scheduler.schedule(waiting, running)
         for req in guarded:
             if req.state == RequestState.DONE:
                 req.state = RequestState.DECODING
         schedule_calls += 1
         if result.is_empty:
+            if schedule_observer is not None:
+                schedule_observer(
+                    {
+                        "schedule_seq": schedule_calls,
+                        "input": input_state,
+                        "output": queue_state(),
+                        "scheduled_new": [],
+                        "scheduled_resumed": [],
+                        "scheduled_running": [],
+                        "preempted": [],
+                    }
+                )
             return None
 
         avg_kv = (
@@ -729,6 +783,43 @@ def _run_cb_queue_prototype(
         for req in result.decode_reqs:
             computed_output_tokens[req.request_id] += 1
             output_placeholders[req.request_id] += 1
+
+        if schedule_observer is not None:
+            selected_ids = {
+                req.request_id
+                for req in [*result.prefill_reqs, *result.decode_reqs]
+            }
+            scheduled_new = [
+                req.request_id
+                for req in result.prefill_reqs
+                if req not in running_before
+                and waiting_status_before.get(req.request_id) == RequestState.WAITING
+            ]
+            scheduled_resumed = [
+                req.request_id
+                for req in result.prefill_reqs
+                if req not in running_before
+                and waiting_status_before.get(req.request_id)
+                == RequestState.PREEMPTED
+            ]
+            schedule_observer(
+                {
+                    "schedule_seq": schedule_calls,
+                    "input": input_state,
+                    "output": queue_state(),
+                    "scheduled_new": scheduled_new,
+                    "scheduled_resumed": scheduled_resumed,
+                    "scheduled_running": [
+                        req.request_id
+                        for req in running_before
+                        if req.request_id in selected_ids
+                    ],
+                    "preempted": [
+                        int(event["victim_req_id"])
+                        for event in preemption_events[preemption_start:]
+                    ],
+                }
+            )
 
         if measured_iteration_latencies_ms is None:
             latency_ms = latency_calc.compute(

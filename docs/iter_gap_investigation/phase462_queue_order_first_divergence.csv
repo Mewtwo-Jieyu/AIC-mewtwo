@@ -1,0 +1,23 @@
+section,side,metric,value,target,status,source,note
+gpu_gate,both,protocol,N128/C128/ISL32k/OSL1200/max_bt32000,same protocol,pass,,
+gpu_gate,both,logging_overhead_pct,0.21138191239565546,<=2.0,pass,phase462_queue_order_observation/overhead_gate.json,
+integrity,real,mapped_requests,128,128,pass,phase462_queue_order_observation/integrity_gate_local.json,
+integrity,real,schedule_sequences,12032,continuous,pass,phase462_queue_order_observation/integrity_gate_local.json,
+integrity,real,linked_preemptions,10,all,pass,phase462_queue_order_observation/integrity_gate_local.json,
+first_divergence,both,kind,kv_capacity_divergence,first semantic difference,decided,phase462_queue_order_observation/first_divergence.json,schedule_seq=1
+first_divergence,real,allocatable_blocks,28824,same,diverged,queue trace,physical 28825 minus one null block
+first_divergence,sim,allocatable_blocks,28825,same,diverged,scripts/validate_cb_simulator.py:299-304,physical total used as allocatable
+first_behavior,both,schedule_seq,944,first output difference,decided,phase462_queue_order_observation/first_divergence.json,queue and per-request phase identical
+first_behavior,real,preempted,[13],same,diverged,queue trace,free_blocks=0
+first_behavior,sim,preempted,[],same,diverged,oracle diagnostic,free_blocks=1
+source,vllm,null_block_reserved,1,source-defined,pass,vllm/v1/core/block_pool.py:162-176,num_gpu_blocks-1 is allocatable
+source,vllm,block_pool_sha256,2ea932628ac6a06607dd48ded7a908f705b55c3eb6801232264ee2db142c6cd9,verified,pass,deployed vLLM 0.19,
+suspect,both,preempted_waiting_insertion,aligned,aligned,excluded,vLLM scheduler.py:976; cb scheduler.py:92,both prepend
+suspect,both,resume_new_running_order,aligned_through_944,aligned,excluded,vLLM scheduler.py:808; scripts/analyze_phase462_engine_loop_state_machine.py:771,both append FCFS
+suspect,both,microbatch_admit_order,aligned_through_944,aligned,excluded,arrival_ordinal trace,128/128 mapping
+suspect,both,sampled_computed_boundary,phase_equal_through_944,aligned,excluded,first_divergence.json,phase divergence starts at 945
+decision,both,step2c2_action,stop_for_capacity_fix_confirmation,preregistered stop line,blocked,,no runtime fix or ab
+boundary,report,diagnostic_only,True,,pass,,
+boundary,report,valid_for_default,False,,pass,,
+boundary,report,perf_database,False,,pass,,
+boundary,report,default_aic,No-Go,,blocked,,

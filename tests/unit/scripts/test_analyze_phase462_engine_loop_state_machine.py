@@ -65,6 +65,28 @@ def test_batch_queue_preschedules_to_depth_before_waiting() -> None:
     assert result.max_queue_depth == 2
 
 
+def test_queue_prototype_exposes_diagnostic_schedule_boundaries() -> None:
+    mod = _load_module()
+    states = []
+
+    result = mod._run_cb_queue_prototype(
+        arrivals=[mod.TimedInput(0.0, 0), mod.TimedInput(0.0, 1)],
+        measured_iteration_latencies_ms=None,
+        queue_depth=2,
+        request_limit=2,
+        prototype_osl=2,
+        schedule_observer=states.append,
+    )
+
+    assert result["completed_requests"] == 2
+    assert states[0]["schedule_seq"] == 1
+    assert states[0]["input"]["running_order"] == []
+    assert states[0]["input"]["waiting_order"] == [0, 1]
+    assert states[0]["output"]["running_order"] == [0]
+    assert states[0]["scheduled_new"] == [0]
+    assert set(states[0]["input"]["request_phase"]) == {"0", "1"}
+
+
 def test_inputs_arriving_during_execution_wait_for_next_busy_loop_drain() -> None:
     mod = _load_module()
     drained: list[tuple[float, list[str]]] = []

@@ -1,0 +1,51 @@
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+Calling super().encode with {'add_special_tokens': False}
+progress: 8/128, ok=8, fail=0
+progress: 16/128, ok=16, fail=0
+progress: 24/128, ok=24, fail=0
+progress: 32/128, ok=32, fail=0
+progress: 40/128, ok=40, fail=0
+progress: 48/128, ok=48, fail=0
+progress: 56/128, ok=56, fail=0
+progress: 64/128, ok=64, fail=0
+progress: 72/128, ok=72, fail=0
+progress: 80/128, ok=80, fail=0
+progress: 88/128, ok=88, fail=0
+progress: 96/128, ok=96, fail=0
+progress: 104/128, ok=104, fail=0
+progress: 112/128, ok=112, fail=0
+progress: 120/128, ok=120, fail=0
+progress: 128/128, ok=128, fail=0
+{
+  "ok_requests": 128,
+  "failed_requests": 0,
+  "use_prompt_token_ids": false,
+  "prompt_variant_mode": "fixed",
+  "unique_prompt_prefixes": 1,
+  "output_tok_s": 263.672,
+  "total_tok_s": 7294.923,
+  "mean_latency_ms": 329136.229,
+  "p50_latency_ms": 327514.024,
+  "p99_latency_ms": 582498.096
+}

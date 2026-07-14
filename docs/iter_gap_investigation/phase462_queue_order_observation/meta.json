@@ -1,0 +1,10 @@
+{
+  "phase": "phase462_queue_order_observation",
+  "protocol": "N128/C128/ISL32k/OSL1200/max_bt32000",
+  "runtime_change": "temporary_logging_patch_only",
+  "capture_tool_hashes": "tools.sha256",
+  "analysis_tool_hashes": "analysis_tools.sha256",
+  "diagnostic_only": true,
+  "valid_for_default": false,
+  "perf_database": false
+}
