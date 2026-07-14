@@ -7,6 +7,8 @@ from enum import Enum, auto
 
 logger = logging.getLogger(__name__)
 
+VLLM_NULL_BLOCKS_PER_POOL = 1
+
 
 class RequestState(Enum):
     """Explicit request lifecycle state."""
@@ -26,11 +28,18 @@ class CBSimConfig:
     warmup_requests: int = 50
     long_prefill_token_threshold: int = 0
     scheduler_reserve_full_isl: bool = True
-    num_gpu_blocks: int = 0
+    num_gpu_blocks: int = 0  # Physical BlockPool size; 0 disables capacity.
     block_size: int = 16
     overlap_factor: float = 1.0
     per_iteration_overhead_ms: float = 0.0
     engine_loop_enabled: bool = False
+
+    @property
+    def num_allocatable_gpu_blocks(self) -> int:
+        """Blocks available to the scheduler after vLLM's null block reserve."""
+        if self.num_gpu_blocks <= 0:
+            return 0
+        return self.num_gpu_blocks - VLLM_NULL_BLOCKS_PER_POOL
 
 
 @dataclass

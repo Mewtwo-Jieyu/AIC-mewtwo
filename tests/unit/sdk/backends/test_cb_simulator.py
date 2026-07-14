@@ -218,7 +218,7 @@ class TestCBScheduler:
     def test_preemption_frees_and_requeues(self) -> None:
         cfg = CBSimConfig(
             max_num_batched_tokens=32,
-            num_gpu_blocks=4,
+            num_gpu_blocks=5,
             block_size=16,
         )
         sched = CBScheduler(cfg)
@@ -239,7 +239,7 @@ class TestCBScheduler:
     def test_waiting_admission_does_not_preempt_running(self) -> None:
         cfg = CBSimConfig(
             max_num_batched_tokens=32,
-            num_gpu_blocks=4,
+            num_gpu_blocks=5,
             block_size=16,
         )
         sched = CBScheduler(cfg)
@@ -261,7 +261,7 @@ class TestCBScheduler:
     def test_preempted_waiting_requires_full_sequence_headroom(self) -> None:
         cfg = CBSimConfig(
             max_num_batched_tokens=17,
-            num_gpu_blocks=6,
+            num_gpu_blocks=7,
             block_size=16,
         )
         sched = CBScheduler(cfg)
@@ -280,7 +280,7 @@ class TestCBScheduler:
     def test_full_sequence_headroom_can_be_disabled(self) -> None:
         cfg = CBSimConfig(
             max_num_batched_tokens=17,
-            num_gpu_blocks=6,
+            num_gpu_blocks=7,
             block_size=16,
             scheduler_reserve_full_isl=False,
         )
@@ -600,7 +600,7 @@ class TestCBSimulatorUnit:
             max_num_batched_tokens=32,
             num_requests=2,
             warmup_requests=0,
-            num_gpu_blocks=6,
+            num_gpu_blocks=7,
             block_size=16,
         )
         sim = _make_testable_sim(cfg)

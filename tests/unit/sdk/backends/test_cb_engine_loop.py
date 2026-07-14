@@ -198,6 +198,82 @@ def test_async_scheduler_uses_computed_kv_and_resets_it_on_preemption() -> None:
     assert request.computed_output_tokens == 0
 
 
+def test_gpu_block_config_separates_physical_and_allocatable_capacity() -> None:
+    config = CBSimConfig(num_gpu_blocks=28_825)
+
+    assert config.num_gpu_blocks == 28_825
+    assert config.num_allocatable_gpu_blocks == 28_824
+    assert CBSimConfig(num_gpu_blocks=0).num_allocatable_gpu_blocks == 0
+
+
+def test_null_block_capacity_preempts_peer_before_tail_self_preemption() -> None:
+    """Replay the N128 seq=944 boundary from the Phase462 capture."""
+    config = CBSimConfig(
+        max_num_batched_tokens=32_000,
+        max_num_seqs=128,
+        num_gpu_blocks=28_825,
+        block_size=16,
+    )
+    scheduler = AsyncCBScheduler(config)
+    computed_tokens = [
+        32_942,
+        32_939,
+        32_938,
+        32_937,
+        32_936,
+        32_935,
+        32_934,
+        32_933,
+        32_932,
+        32_931,
+        32_930,
+        32_929,
+        32_928,
+        32_927,
+    ]
+    running: list[Request] = []
+    for request_id, num_computed_tokens in enumerate(computed_tokens):
+        request = Request(
+            request_id=request_id,
+            isl=32_000,
+            osl=1_200,
+            arrival_time_ms=0.0,
+        )
+        request.state = RequestState.DECODING
+        request.prefill_tokens_remaining = 0
+        request.computed_output_tokens = num_computed_tokens - request.isl
+        request.sampled_output_tokens = request.computed_output_tokens + 1
+        request.output_placeholders = 1
+        running.append(request)
+
+    waiting = [
+        Request(
+            request_id=request_id,
+            isl=32_000,
+            osl=1_200,
+            arrival_time_ms=0.0,
+        )
+        for request_id in range(14, 128)
+    ]
+
+    first = scheduler.schedule(waiting, running)
+
+    assert [event["trigger_request_id"] for event in scheduler.preemption_events] == [12]
+    assert [event["victim_request_id"] for event in scheduler.preemption_events] == [13]
+    assert [request.request_id for request in first.decode_reqs] == list(range(13))
+
+    for request in first.decode_reqs:
+        request.computed_output_tokens += 1
+        request.output_placeholders = 0
+
+    scheduler.schedule(waiting, running)
+
+    assert all(
+        event["trigger_request_id"] != event["victim_request_id"]
+        for event in scheduler.preemption_events
+    )
+
+
 def _make_exact_engine_loop_sim(config: CBSimConfig) -> CBSimulator:
     sim = CBSimulator(
         backend=MagicMock(),

@@ -659,7 +659,7 @@ def _run_cb_queue_prototype(
             "waiting_order": [req.request_id for req in waiting],
             "skipped_waiting_order": [],
             "free_blocks": (
-                config.num_gpu_blocks
+                config.num_allocatable_gpu_blocks
                 - sum(scheduler._blocks_needed(req) for req in running)
             ),
             "request_phase": {

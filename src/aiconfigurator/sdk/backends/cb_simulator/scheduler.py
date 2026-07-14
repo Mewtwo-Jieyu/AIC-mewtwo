@@ -106,7 +106,10 @@ class CBScheduler:
             return True, 0
 
         released_tokens = 0
-        while self._total_blocks(running, result) > self._config.num_gpu_blocks:
+        while (
+            self._total_blocks(running, result)
+            > self._config.num_allocatable_gpu_blocks
+        ):
             if running:
                 victim = running[-1]
                 released_tokens += self._preempt(
@@ -128,7 +131,10 @@ class CBScheduler:
     ) -> bool:
         if self._config.num_gpu_blocks <= 0:
             return True
-        return self._total_blocks(running, result) <= self._config.num_gpu_blocks
+        return (
+            self._total_blocks(running, result)
+            <= self._config.num_allocatable_gpu_blocks
+        )
 
     def _full_sequence_blocks_needed(self, req: Request) -> int:
         return self._blocks_needed(req, req.prefill_tokens_remaining)
@@ -146,7 +152,10 @@ class CBScheduler:
             return True
         used_blocks = self._total_blocks(running, result)
         needed_blocks = self._full_sequence_blocks_needed(req)
-        return used_blocks + needed_blocks <= self._config.num_gpu_blocks
+        return (
+            used_blocks + needed_blocks
+            <= self._config.num_allocatable_gpu_blocks
+        )
 
     def _next_waiting_candidate(
         self,

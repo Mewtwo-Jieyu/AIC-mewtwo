@@ -1,11 +1,11 @@
 section,metric,value,target,status,note
 oracle,drain_step_match,1.0,1.0,pass,
-oracle,first_schedule_step_match,0.9375,>=0.9375,pass,
+oracle,first_schedule_step_match,1.0,>=0.9375,pass,
 oracle,first_16_match,1.0,1.0,pass,
 steady,preemptions,10,10+/-2,pass,
-steady,steady_self_preemptions,1,0,fail,"[{""step"": 945, ""trigger_request_id"": 13, ""victim_request_id"": 13, ""victim_preemptions_before"": 0, ""victim_sampled_output_tokens"": 928, ""victim_computed_output_tokens"": 928, ""victim_output_placeholders"": 1, ""recompute_tokens"": 32928, ""metrics_steady_state"": true, ""lifecycle_steady_state"": false}, {""step"": 8176, ""trigger_request_id"": 96, ""victim_request_id"": 96, ""victim_preemptions_before"": 0, ""victim_sampled_output_tokens"": 736, ""victim_computed_output_tokens"": 736, ""victim_output_placeholders"": 1, ""recompute_tokens"": 32736, ""metrics_steady_state"": true, ""lifecycle_steady_state"": true}]"
+steady,steady_self_preemptions,2,0,fail,"[{""step"": 2167, ""trigger_request_id"": 27, ""victim_request_id"": 27, ""victim_preemptions_before"": 0, ""victim_sampled_output_tokens"": 688, ""victim_computed_output_tokens"": 688, ""victim_output_placeholders"": 1, ""recompute_tokens"": 32688, ""metrics_steady_state"": true, ""lifecycle_steady_state"": true}, {""step"": 10616, ""trigger_request_id"": 124, ""victim_request_id"": 124, ""victim_preemptions_before"": 0, ""victim_sampled_output_tokens"": 288, ""victim_computed_output_tokens"": 288, ""victim_output_placeholders"": 1, ""recompute_tokens"": 32288, ""metrics_steady_state"": true, ""lifecycle_steady_state"": true}]"
 steady,repeat_victim_events,0,0,pass,
-runtime,sim_runtime_seconds,0.7852381670018076,,measured,
+runtime,sim_runtime_seconds,1.5283791670080973,,measured,
 preregistered_evidence,phase462_2a3f_self_preemption,"value=2/2; t0_regions={'ramp': 1, 'steady': 1}; oracle_regions={'ramp': 1, 'steady': 1}",steady=0,contradicts_gate,
 gate,step2c2,blocked,pass,blocked,steady_state_signature_failed
 gate,default_engine_loop,False,False,pass,engine_loop_enabled remains false by default

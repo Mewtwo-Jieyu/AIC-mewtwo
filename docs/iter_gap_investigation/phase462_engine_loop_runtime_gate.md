@@ -5,38 +5,38 @@
 | 门 | 结果 | 目标 | 判定 |
 |---|---:|---:|---|
 | oracle drain | 100.00% | 100% | PASS |
-| oracle 首调度步 | 93.75% | >=93.75% | PASS |
+| oracle 首调度步 | 100.00% | >=93.75% | PASS |
 | oracle 前 16 步 | 100.00% | 100% | PASS |
 | 短跑抢占 | 10 | 10+/-2 | PASS |
-| 短跑稳态自抢占 | 1 | 0 | FAIL |
+| 短跑稳态自抢占 | 2 | 0 | FAIL |
 | 短跑重复 victim | 0 | 0 | PASS |
-| sim 实际运行时长 | 0.785s | 记录 | measured |
+| sim 实际运行时长 | 1.528s | 记录 | measured |
 
 稳态窗口为 `[1201, 10831)`，模式 `replacement_plateau_while_waiting_nonempty`。自抢占事件：
 
 ```json
 [
   {
-    "step": 945,
-    "trigger_request_id": 13,
-    "victim_request_id": 13,
+    "step": 2167,
+    "trigger_request_id": 27,
+    "victim_request_id": 27,
     "victim_preemptions_before": 0,
-    "victim_sampled_output_tokens": 928,
-    "victim_computed_output_tokens": 928,
+    "victim_sampled_output_tokens": 688,
+    "victim_computed_output_tokens": 688,
     "victim_output_placeholders": 1,
-    "recompute_tokens": 32928,
+    "recompute_tokens": 32688,
     "metrics_steady_state": true,
-    "lifecycle_steady_state": false
+    "lifecycle_steady_state": true
   },
   {
-    "step": 8176,
-    "trigger_request_id": 96,
-    "victim_request_id": 96,
+    "step": 10616,
+    "trigger_request_id": 124,
+    "victim_request_id": 124,
     "victim_preemptions_before": 0,
-    "victim_sampled_output_tokens": 736,
-    "victim_computed_output_tokens": 736,
+    "victim_sampled_output_tokens": 288,
+    "victim_computed_output_tokens": 288,
     "victim_output_placeholders": 1,
-    "recompute_tokens": 32736,
+    "recompute_tokens": 32288,
     "metrics_steady_state": true,
     "lifecycle_steady_state": true
   }
