@@ -1,0 +1,43 @@
+section,item,value,target,status,note
+source_audit,status,pass,True,pass,
+source_audit,single_replica_serial_loop,True,True,pass,
+source_audit,multi_replica_serial_loop,True,True,pass,
+source_audit,dp_lockstep_serial_loop,True,True,pass,
+source_audit,dp_legacy_guard_present,True,True,pass,
+runtime_path,single_replica,engine_loop_state_machine,CBSimulator.run,preregistered,default_after_all_gates
+runtime_path,multi_replica,engine_loop_state_machine,CBSimulator.run_multi_replica,preregistered,capability_then_step3_gate
+runtime_path,dp_lockstep,engine_loop_state_machine,CBSimulator._run_multi_replica_lockstep,preregistered,preserve_lockstep_max
+unchanged,max_bt_keying,no_change,no_change,locked,
+unchanged,multi_config_gate,no_change,no_change,locked,
+unchanged,perf_database,no_change,no_change,locked,
+unchanged,preemption_trigger,no_change,no_change,locked,
+unchanged,scheduler_admission_policy,no_change,no_change,locked,
+unchanged,validate_protocol,no_change,no_change,locked,
+unchanged,victim_selection,no_change,no_change,locked,
+oracle_gate,input_drain_match,100%,100%,preregistered,
+oracle_gate,first_schedule_match,>=93.75%,>=93.75%,preregistered,
+oracle_gate,first_16_steps,16/16,16/16,preregistered,
+oracle_gate,purpose,implementation_regression_anchor_only,implementation_regression_anchor_only,preregistered,
+steady_gate,preemptions,10+/-2,10+/-2,preregistered,
+steady_gate,self_preemption,0,0,preregistered,
+steady_gate,repeat_victim,0,0,preregistered,
+steady_gate,failure_action,stop_before_ab,stop_before_ab,preregistered,
+dynamic_ab_gate,six_point_signs,4_worsen_2_improve_until_crossing,4_worsen_2_improve_until_crossing,preregistered,
+dynamic_ab_gate,giant_bucket,n512_trace_only,n512_trace_only,preregistered,
+dynamic_ab_gate,unexpected_sign_action,stop_before_cascade,stop_before_cascade,preregistered,
+stop_line,oracle_structure_regression,stop,stop,preregistered,
+stop_line,out_of_scope_file_change,stop,stop,preregistered,
+stop_line,steady_self_preemption_nonzero,stop,stop,preregistered,
+stop_line,unexpected_ab_sign,stop,stop,preregistered,
+six_point_sign,K2.5-tp8ep8-8k2k,worsen,dynamic_ab,pending_dynamic_ab,real=146.639701; sim=166.072957; current_ratio=1.132524; max_increase_before_fail=0.015431
+six_point_sign,K2.5-tp4ep8dp2-8k2k,improve_until_crossing,dynamic_ab,pending_dynamic_ab,real=162.948516; sim=156.483788; current_ratio=1.041312; max_increase_before_fail=0.197509
+six_point_sign,K2.5-tp8ep8-8k2k-bt65536,worsen,dynamic_ab,pending_dynamic_ab,real=124.016988; sim=153.101636; current_ratio=1.234521; max_increase_before_fail=-0.068465
+six_point_sign,K2.5-tp4ep8dp2-8k2k-bt65536,worsen,dynamic_ab,pending_dynamic_ab,real=109.499911; sim=129.707417; current_ratio=1.184544; max_increase_before_fail=-0.029162
+six_point_sign,K2.5-tp4ep8dp2-32k3k,worsen,dynamic_ab,pending_dynamic_ab,real=53.277429; sim=62.511382; current_ratio=1.173318; max_increase_before_fail=-0.019874
+six_point_sign,K2.5-tp8ep8-32k3k,improve_until_crossing,dynamic_ab,pending_dynamic_ab,real=50.111595; sim=45.407582; current_ratio=1.103595; max_increase_before_fail=0.269135
+cascade,bt65536_rows,138,>=95% weighted coverage,pending_post_2c,
+cascade,dp_rank_spread,8.54x,rebaseline,pending_post_2c,
+cascade,dp2_32k3k,1.173x,rebaseline,pending_post_2c,
+boundary,fallback,none,none,locked,
+boundary,runtime_change_allowed,False,False,ready_for_user_review,
+boundary,default_aic,No-Go,6/6 before Go,locked,
