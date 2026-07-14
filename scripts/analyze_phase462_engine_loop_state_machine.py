@@ -577,6 +577,9 @@ def _run_cb_queue_prototype(
     arrivals: list[TimedInput],
     measured_iteration_latencies_ms: list[float] | None,
     queue_depth: int,
+    scenario: str = SCENARIO,
+    request_limit: int = REQUEST_LIMIT,
+    prototype_osl: int = PROTOTYPE_OSL,
 ) -> dict[str, object]:
     """Run the source-defined queue with current cb scheduler state updates."""
     import scripts.validate_cb_simulator as validate
@@ -584,7 +587,7 @@ def _run_cb_queue_prototype(
     from aiconfigurator.sdk.backends.cb_simulator.datatypes import Request, RequestState
     from aiconfigurator.sdk.backends.cb_simulator.scheduler import CBScheduler
 
-    point = next(item for item in validate.MULTI_CONFIG_DATA if item.name == SCENARIO)
+    point = next(item for item in validate.MULTI_CONFIG_DATA if item.name == scenario)
     model, database, backend = validate._load_model_and_db(
         tp=point.tp,
         dp=point.dp,
@@ -596,7 +599,7 @@ def _run_cb_queue_prototype(
         overlap_factor=0.0,
         ep8_per_iteration_overhead_ms=validate.DEFAULT_EP8_PER_ITERATION_OVERHEAD_MS,
     )
-    config = replace(config, num_requests=REQUEST_LIMIT, warmup_requests=0)
+    config = replace(config, num_requests=request_limit, warmup_requests=0)
     sim = CBSimulator(backend, model, database, config)
     latency_calc = sim._create_latency_calc(0)
     preemption_events: list[dict[str, object]] = []
@@ -672,6 +675,10 @@ def _run_cb_queue_prototype(
                     "victim_output_placeholders": output_placeholders[
                         victim.request_id
                     ],
+                    "recompute_tokens": recompute_tokens_after_preemption(
+                        isl=victim.isl,
+                        sampled_output_tokens=sampled_output_tokens[victim.request_id],
+                    ),
                 }
             )
             released = super()._preempt(
@@ -688,6 +695,8 @@ def _run_cb_queue_prototype(
     waiting: list[Request] = []
     running: list[Request] = []
     first_schedule_steps: dict[int, int] = {}
+    first_prefill_completion_steps: dict[int, int] = {}
+    request_completion_steps: dict[int, int] = {}
     drain_steps: dict[int, int] = {}
     trace: list[dict[str, object]] = []
     schedule_calls = 0
@@ -701,7 +710,7 @@ def _run_cb_queue_prototype(
                 Request(
                     request_id=request_id,
                     isl=point.isl,
-                    osl=PROTOTYPE_OSL,
+                    osl=prototype_osl,
                     arrival_time_ms=_now_ms,
                 )
             )
@@ -709,7 +718,7 @@ def _run_cb_queue_prototype(
 
     def schedule(now_ms: float) -> PrototypeBatch | None:
         nonlocal schedule_calls
-        if len(completed) >= REQUEST_LIMIT:
+        if len(completed) >= request_limit:
             return None
         guarded: list[Request] = []
         for req in running:
@@ -741,14 +750,24 @@ def _run_cb_queue_prototype(
             if result.decode_reqs
             else 0
         )
-        trace.append(
-            {
-                "step": schedule_calls,
-                "prefill_reqs": len(result.prefill_reqs),
-                "prefill_tokens": result.total_prefill_tokens,
-                "decode_reqs": len(result.decode_reqs),
-            }
-        )
+        trace_row = {
+            "step": schedule_calls,
+            "prefill_reqs": len(result.prefill_reqs),
+            "prefill_tokens": result.total_prefill_tokens,
+            "recompute_prefill_tokens": sum(
+                result.prefill_tokens[req.request_id]
+                for req in result.prefill_reqs
+                if req.num_preemptions > 0
+            ),
+            "decode_reqs": len(result.decode_reqs),
+            "decode_phase_counts": dict(
+                Counter(
+                    computed_output_tokens[req.request_id] % config.block_size
+                    for req in result.decode_reqs
+                )
+            ),
+            "preemptions": scheduler.preemptions_this_step,
+        }
         for req in result.prefill_reqs:
             if req.num_preemptions == 0:
                 first_schedule_steps.setdefault(req.request_id, schedule_calls)
@@ -787,6 +806,8 @@ def _run_cb_queue_prototype(
             if schedule_calls > len(measured_iteration_latencies_ms):
                 raise ValueError("measured iteration latency sequence exhausted")
             latency_ms = measured_iteration_latencies_ms[schedule_calls - 1]
+        trace_row["latency_ms"] = latency_ms
+        trace.append(trace_row)
         return PrototypeBatch(
             batch_id=schedule_calls,
             launch_ms=now_ms,
@@ -798,6 +819,9 @@ def _run_cb_queue_prototype(
         )
 
     def on_complete(batch: PrototypeBatch) -> None:
+        for request_id in batch.payload.get("sampled_output_ids", []):
+            if request_id in first_schedule_steps:
+                first_prefill_completion_steps.setdefault(request_id, batch.batch_id)
         for request_id in batch.payload.get("sampled_output_ids", []):
             req = next(
                 (
@@ -825,6 +849,7 @@ def _run_cb_queue_prototype(
                     waiting.remove(req)
                 req.state = RequestState.DONE
                 completed.add(request_id)
+                request_completion_steps[request_id] = batch.batch_id
 
     machine = run_batch_queue_machine(
         queue_depth=queue_depth,
@@ -836,9 +861,14 @@ def _run_cb_queue_prototype(
     return {
         "drain_steps": drain_steps,
         "first_schedule_steps": first_schedule_steps,
+        "first_prefill_completion_steps": first_prefill_completion_steps,
+        "request_completion_steps": request_completion_steps,
         "trace": trace,
         "preemption": summarize_preemption_signature(preemption_events),
         "preemption_events": preemption_events,
+        "request_count": request_limit,
+        "prototype_osl": prototype_osl,
+        "block_size": config.block_size,
         "launched_batches": len(machine.launched),
         "completed_requests": len(completed),
         "wall_ms": machine.final_clock_ms,

@@ -1,0 +1,80 @@
+section,scenario,metric,value,target,status,note
+preregistration,all,steady_window,interval between first completion and final first-prefill completion,state order selects full-admission or replacement plateau; no fixed ramp,locked_before_run,initial all-active-only definition failed closed before A/B: KV-constrained queue reverses the boundaries
+preregistration,all,metric_noise,95% paired-unit variation bands; throughput uses source 16-token phase blocks,A/B delta <= metric noise band,locked_before_run,same-scenario on/off envelope is retained as full-run ramp diagnostic only
+exposure,tp8_32k3k_short,t0_source_batches,"[32, 32, 32, 32]",bench t=0 + runtime tokenizer primitive,delivery_candidate,
+exposure,tp8_32k3k_short,oracle_batches,"[1, 2, 32, 32, 32, 29]",experiment control only,judge_only,
+noise,tp8_32k3k_short,throughput_run_pair_fraction,0.0014616388227170238,same-scenario on/off observed delta,measured,docs/iter_gap_investigation/phase462_preemption_observation/overhead_gate.json
+variant_metric,tp8_32k3k_short:t0,steady_start_step,1201,,,
+variant_metric,tp8_32k3k_short:t0,steady_end_step,10831,,,
+variant_metric,tp8_32k3k_short:t0,steady_window_mode,replacement_plateau_while_waiting_nonempty,,,
+variant_metric,tp8_32k3k_short:t0,steady_steps,9630,,,
+variant_metric,tp8_32k3k_short:t0,steady_throughput_proxy,262.0828447267672,,,
+variant_metric,tp8_32k3k_short:t0,full_throughput_proxy,266.5144133925102,,,
+variant_metric,tp8_32k3k_short:t0,giant_wall_share,0.0,,,
+variant_metric,tp8_32k3k_short:t0,recompute_tokens,325789,,,
+variant_metric,tp8_32k3k_short:t0,preemptions,10,,,
+variant_metric,tp8_32k3k_short:t0,self_preemptions,2,,,
+variant_metric,tp8_32k3k_short:t0,repeat_victim_events,0,,,
+variant_metric,tp8_32k3k_short:oracle,steady_start_step,1201,,,
+variant_metric,tp8_32k3k_short:oracle,steady_end_step,10832,,,
+variant_metric,tp8_32k3k_short:oracle,steady_window_mode,replacement_plateau_while_waiting_nonempty,,,
+variant_metric,tp8_32k3k_short:oracle,steady_steps,9631,,,
+variant_metric,tp8_32k3k_short:oracle,steady_throughput_proxy,262.09776945250485,,,
+variant_metric,tp8_32k3k_short:oracle,full_throughput_proxy,266.51212807611716,,,
+variant_metric,tp8_32k3k_short:oracle,giant_wall_share,0.0,,,
+variant_metric,tp8_32k3k_short:oracle,recompute_tokens,325796,,,
+variant_metric,tp8_32k3k_short:oracle,preemptions,10,,,
+variant_metric,tp8_32k3k_short:oracle,self_preemptions,2,,,
+variant_metric,tp8_32k3k_short:oracle,repeat_victim_events,0,,,
+steady_comparison,tp8_32k3k_short,steady_phase_tv,3.5784867592557335e-05,<=0.014743800267691889,equivalent,
+steady_comparison,tp8_32k3k_short,full_preemptions_per_request,0.0,<=0.0,equivalent,
+steady_comparison,tp8_32k3k_short,full_recompute_tokens_per_request,0.0546875,<=0.5105390923470681,equivalent,
+steady_comparison,tp8_32k3k_short,steady_throughput_proxy,0.8880063381312597,<=43.1390634078534,equivalent,
+ramp_diagnostic,tp8_32k3k_short,full_run_throughput_vs_onoff_envelope,8.574869036576108e-06,<=0.0014616388227170238,inside,diagnostic only; full run includes exposure ramp and does not gate steady equivalence
+self_preemption_attribution,tp8_32k3k_short,t0_vs_oracle,2/2,0/0,engine_loop_residual,"t0_regions={'ramp': 1, 'steady': 1}; oracle_regions={'ramp': 1, 'steady': 1}"
+exposure,tp8_bt65536,t0_source_batches,"[32, 32, 32, 32]",bench t=0 + runtime tokenizer primitive,delivery_candidate,
+exposure,tp8_bt65536,oracle_batches,"[1, 1, 32, 32, 32, 30]",experiment control only,judge_only,
+noise,tp8_bt65536,throughput_run_pair_fraction,0.00030721884512827763,same-scenario on/off observed delta,measured,docs/iter_gap_investigation/phase461_cost_recollect/tp8_bt65536_mixed/overhead_gate.json
+variant_metric,tp8_bt65536:t0,steady_start_step,2001,,,
+variant_metric,tp8_bt65536:t0,steady_end_step,6008,,,
+variant_metric,tp8_bt65536:t0,steady_window_mode,replacement_plateau_while_waiting_nonempty,,,
+variant_metric,tp8_bt65536:t0,steady_steps,4007,,,
+variant_metric,tp8_bt65536:t0,steady_throughput_proxy,1259.09498407954,,,
+variant_metric,tp8_bt65536:t0,full_throughput_proxy,1265.2439658744595,,,
+variant_metric,tp8_bt65536:t0,giant_wall_share,0.0,,,
+variant_metric,tp8_bt65536:t0,recompute_tokens,234963,,,
+variant_metric,tp8_bt65536:t0,preemptions,27,,,
+variant_metric,tp8_bt65536:t0,self_preemptions,1,,,
+variant_metric,tp8_bt65536:t0,repeat_victim_events,9,,,
+variant_metric,tp8_bt65536:oracle,steady_start_step,2001,,,
+variant_metric,tp8_bt65536:oracle,steady_end_step,6012,,,
+variant_metric,tp8_bt65536:oracle,steady_window_mode,replacement_plateau_while_waiting_nonempty,,,
+variant_metric,tp8_bt65536:oracle,steady_steps,4011,,,
+variant_metric,tp8_bt65536:oracle,steady_throughput_proxy,1256.873445405834,,,
+variant_metric,tp8_bt65536:oracle,full_throughput_proxy,1260.8246329065175,,,
+variant_metric,tp8_bt65536:oracle,giant_wall_share,0.0,,,
+variant_metric,tp8_bt65536:oracle,recompute_tokens,234998,,,
+variant_metric,tp8_bt65536:oracle,preemptions,27,,,
+variant_metric,tp8_bt65536:oracle,self_preemptions,0,,,
+variant_metric,tp8_bt65536:oracle,repeat_victim_events,9,,,
+steady_comparison,tp8_bt65536,steady_phase_tv,0.0004600169836529999,<=0.013827170740391833,equivalent,
+steady_comparison,tp8_bt65536,full_preemptions_per_request,0.0,<=0.0,equivalent,
+steady_comparison,tp8_bt65536,full_recompute_tokens_per_request,0.2734375,<=3.587237466738411,equivalent,
+steady_comparison,tp8_bt65536,steady_throughput_proxy,0.37525733905008335,<=3.242840077845482,equivalent,
+steady_comparison,tp8_bt65536,steady_sim_only_giant_wall_share,0.0,<=0.0,equivalent,
+ramp_diagnostic,tp8_bt65536,full_run_throughput_vs_onoff_envelope,0.003498980962017123,<=0.00030721884512827763,outside,diagnostic only; full run includes exposure ramp and does not gate steady equivalence
+self_preemption_attribution,tp8_bt65536,t0_vs_oracle,1/0,0/0,exposure_sensitive,t0_regions={'steady': 1}; oracle_regions={}
+decision,all,step2c_scope,engine_loop_with_t0_workload_exposure,engine_loop_with_t0_workload_exposure,candidate,first_schedule_trajectory_not_modeled
+six_point_sign_prediction,K2.5-tp8ep8-8k2k,engine_loop_reduces_preemption_sim_throughput,worsen,error_ratio<=1.15,pending_dynamic_ab,real=146.639701; sim=166.072957; current_ratio=1.132524; max_increase_before_fail=0.015431
+six_point_sign_prediction,K2.5-tp4ep8dp2-8k2k,engine_loop_reduces_preemption_sim_throughput,improve_until_crossing,error_ratio<=1.15,pending_dynamic_ab,real=162.948516; sim=156.483788; current_ratio=1.041312; max_increase_before_fail=0.197509
+six_point_sign_prediction,K2.5-tp8ep8-8k2k-bt65536,engine_loop_reduces_preemption_sim_throughput,worsen,error_ratio<=1.15,pending_dynamic_ab,real=124.016988; sim=153.101636; current_ratio=1.234521; max_increase_before_fail=-0.068465
+six_point_sign_prediction,K2.5-tp4ep8dp2-8k2k-bt65536,engine_loop_reduces_preemption_sim_throughput,worsen,error_ratio<=1.15,pending_dynamic_ab,real=109.499911; sim=129.707417; current_ratio=1.184544; max_increase_before_fail=-0.029162
+six_point_sign_prediction,K2.5-tp4ep8dp2-32k3k,engine_loop_reduces_preemption_sim_throughput,worsen,error_ratio<=1.15,pending_dynamic_ab,real=53.277429; sim=62.511382; current_ratio=1.173318; max_increase_before_fail=-0.019874
+six_point_sign_prediction,K2.5-tp8ep8-32k3k,engine_loop_reduces_preemption_sim_throughput,improve_until_crossing,error_ratio<=1.15,pending_dynamic_ab,real=50.111595; sim=45.407582; current_ratio=1.103595; max_increase_before_fail=0.269135
+exposure_boundary,all,t0_source_model,delivery_candidate,,pass,
+exposure_boundary,all,oracle_target_timestamps,experiment_only,,pass,
+exposure_boundary,all,target_timestamps_in_runtime,False,,pass,
+report_boundary,all,diagnostic_only,True,,pass,
+report_boundary,all,valid_for_default,False,,pass,
+report_boundary,all,perf_database,False,,pass,
+report_boundary,all,default_aic,No-Go,,blocked,
