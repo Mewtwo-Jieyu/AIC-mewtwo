@@ -1,0 +1,41 @@
+section,mode,metric,value,target,status,note
+prediction_whitelist,full_prediction,bench_protocol,eligible,eligible,pass,
+prediction_whitelist,full_prediction,deployment_config,eligible,eligible,pass,
+prediction_whitelist,full_prediction,perfdb_iteration_cost,eligible,eligible,pass,
+prediction_whitelist,full_prediction,tokenizer_primitive,eligible,eligible,pass,
+prediction_whitelist,full_prediction,source_engine_loop_rules,eligible,eligible,pass,
+prediction_whitelist,full_prediction,target_run_drain_steps,judge_only,not predictor input,pass,
+prediction_whitelist,full_prediction,target_run_first_schedule_steps,judge_only,not predictor input,pass,
+prediction_whitelist,full_prediction,target_run_iteration_trace,judge_only,not predictor input,pass,
+prediction_whitelist,full_prediction,target_run_preemption_signature,judge_only,not predictor input,pass,
+prediction_whitelist,full_prediction,target_run_timestamps,judge_only,not predictor input,pass,
+prediction_input,bench,initial_cohort,128,128,pass,num_prompts/concurrency/isl only; no request timestamp read
+prediction_input,tokenizer,runtime_config,32 requests / 2ms / 1 worker,runtime-observed configuration,pass,Phase462 arrival observation source/config audit
+prediction_input,engine_loop,deployment_config,multiproc / pp=1 / async=true / queue_depth=2,runtime-observed configuration + source rule,pass,Phase462 Step2a-3d deployment audit
+prediction_input,tokenizer,weighted_mape,0.059152858080723195,<=0.10,pass,approved Phase462 measured primitive artifact
+prediction_input,tokenizer,predicted_initial_batch_sizes,"[32, 32, 32, 32]",source-defined from bench/config,pass,computed before judge timeline load
+judge_comparison,tokenizer,target_initial_batch_sizes,"[1, 2, 32, 32, 32, 29]","[32, 32, 32, 32]",fail,judge only; never fed back into prediction
+predictive_signature,full_prediction,drain_step_match,0.0078125,diagnostic only,measured,
+predictive_signature,full_prediction,first_schedule_step_match,0.0078125,0.85,fail,
+predictive_signature,full_prediction,first_16_match,0.0625,>=14/16,fail,
+predictive_signature,full_prediction,preemptions,10,10±2,pass,
+predictive_signature,full_prediction,self_preemptions,2,0,fail,
+predictive_signature,full_prediction,repeat_victim_events,0,0,pass,
+gate,full_prediction,step2a_3e,False,True,fail,
+gate,full_prediction,step2c,locked,candidate,blocked,structure_correct_prediction_limited
+dp_evidence,phase461_stored,ranks,"[0, 1]","[0, 1]",pass,
+dp_evidence,phase461_stored,row_counts,"{""0"": 151684, ""1"": 151644}",non-zero for both ranks,pass,composition and busy-time rows exist
+dp_evidence,phase461_stored,timestamped_rows,{},non-zero for both ranks,fail,DP short run remains deferred unless TP8 predictive gate passes
+six_point_sign_prediction,K2.5-tp8ep8-8k2k,throughput_direction,not_identifiable,falsifiable direction,blocked,full predictive signature gate must pass before sign claims
+six_point_sign_prediction,K2.5-tp4ep8dp2-8k2k,throughput_direction,not_identifiable,falsifiable direction,blocked,full predictive signature gate must pass before sign claims
+six_point_sign_prediction,K2.5-tp8ep8-8k2k-bt65536,throughput_direction,not_identifiable,falsifiable direction,blocked,full predictive signature gate must pass before sign claims
+six_point_sign_prediction,K2.5-tp4ep8dp2-8k2k-bt65536,throughput_direction,not_identifiable,falsifiable direction,blocked,full predictive signature gate must pass before sign claims
+six_point_sign_prediction,K2.5-tp4ep8dp2-32k3k,throughput_direction,not_identifiable,falsifiable direction,blocked,full predictive signature gate must pass before sign claims
+six_point_sign_prediction,K2.5-tp8ep8-32k3k,throughput_direction,not_identifiable,falsifiable direction,blocked,full predictive signature gate must pass before sign claims
+convergence_assessment,K2.5-tp8ep8-8k2k-bt65536,step2c_convergence_claim,not_identifiable,evidence-backed,blocked,structure is correct but predictor misses target signatures
+convergence_assessment,K2.5-tp4ep8dp2-8k2k-bt65536,step2c_convergence_claim,not_identifiable,evidence-backed,blocked,structure is correct but predictor misses target signatures
+convergence_assessment,K2.5-tp4ep8dp2-32k3k,step2c_convergence_claim,not_identifiable,evidence-backed,blocked,structure is correct but predictor misses target signatures
+boundary,all,diagnostic_only,True,,pass,
+boundary,all,valid_for_default,False,,pass,
+boundary,all,perf_database,False,,pass,
+boundary,all,default_aic,No-Go,,blocked,
