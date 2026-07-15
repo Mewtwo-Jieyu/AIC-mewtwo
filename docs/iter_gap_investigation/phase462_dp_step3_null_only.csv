@@ -1,0 +1,27 @@
+section,scenario,metric,value,status,note
+official_path,K2.5-tp4ep8dp2-8k2k-bt65536,assembly,representative_replica_scaled,fail_structural,single 64-concurrency replica multiplied by DP=2
+official_path,K2.5-tp4ep8dp2-8k2k-bt65536,real_tok_s_gpu,109.499910521,recorded,null-only official baseline
+official_path,K2.5-tp4ep8dp2-8k2k-bt65536,sim_tok_s_gpu,131.404059008,fail,null-only official baseline
+official_path,K2.5-tp4ep8dp2-8k2k-bt65536,error_ratio,1.200038049,fail,15% gate
+lockstep_candidate,K2.5-tp4ep8dp2-8k2k-bt65536,sim_tok_s_gpu,119.907410606,diagnostic,offline existing multi-replica path
+lockstep_candidate,K2.5-tp4ep8dp2-8k2k-bt65536,error_ratio,1.095045741,score_pass,phase gate remains mandatory
+lockstep_candidate,K2.5-tp4ep8dp2-8k2k-bt65536,total_iterations,56002,recorded,two replica rows counted
+phase_signature,K2.5-tp4ep8dp2-8k2k-bt65536,real_active_pairs,85,recorded,common local iterations where either rank has prefill
+phase_signature,K2.5-tp4ep8dp2-8k2k-bt65536,real_active_exact_fraction,0.000000000,reference,per-rank prefill/decode composition equality
+phase_signature,K2.5-tp4ep8dp2-8k2k-bt65536,real_phase_type_fraction,0.200000000,recorded,prefill/mixed/decode class equality
+phase_signature,K2.5-tp4ep8dp2-8k2k-bt65536,real_first_prefill_ratio,8.192000000,recorded,larger rank prefill divided by smaller
+phase_signature,K2.5-tp4ep8dp2-8k2k-bt65536,real_mixed_steps_by_rank,53/47,recorded,rank0/rank1
+phase_signature,K2.5-tp4ep8dp2-8k2k-bt65536,candidate_active_pairs,123,recorded,common local iterations where either rank has prefill
+phase_signature,K2.5-tp4ep8dp2-8k2k-bt65536,candidate_active_exact_fraction,1.000000000,fail,per-rank prefill/decode composition equality
+phase_signature,K2.5-tp4ep8dp2-8k2k-bt65536,candidate_phase_type_fraction,1.000000000,recorded,prefill/mixed/decode class equality
+phase_signature,K2.5-tp4ep8dp2-8k2k-bt65536,candidate_first_prefill_ratio,1.000000000,recorded,larger rank prefill divided by smaller
+phase_signature,K2.5-tp4ep8dp2-8k2k-bt65536,candidate_mixed_steps_by_rank,122/122,recorded,rank0/rank1
+cost_evidence,K2.5-tp4ep8dp2-8k2k-bt65536,max_same_cell_rank_spread,8.540214162,real_measured,bucket=6486;decode=15
+cost_evidence,K2.5-tp4ep8dp2-8k2k-bt65536,max_busy_over_wall,0.999712125,pass,"real spike is execution, not logging wait"
+decision,K2.5-tp4ep8dp2-8k2k-bt65536,lockstep_candidate,score_pass_phase_fail_do_not_adopt,blocked,score cannot override a failed phase signature
+tp8_bucket_recheck,K2.5-tp8ep8-8k2k-bt65536,preemptions,149,recorded,N384 null-only validation protocol
+tp8_bucket_recheck,K2.5-tp8ep8-8k2k-bt65536,mixed_steps,173,recorded,null-only
+tp8_bucket_recheck,K2.5-tp8ep8-8k2k-bt65536,sim_only_unique_cells,112,fail,exact Phase458 reference cells
+tp8_bucket_recheck,K2.5-tp8ep8-8k2k-bt65536,sim_only_wall_share,0.513067827,fail,Phase461 value was 0.4215
+tp8_bucket_recheck,K2.5-tp8ep8-8k2k-bt65536,recompute_associated_wall_share,0.635481022,below_original_gate,original common-root gate=0.70
+tp8_bucket_recheck,K2.5-tp8ep8-8k2k-bt65536,recompute_token_share,0.512042351,recorded,within current sim-only cells
