@@ -16,11 +16,6 @@
         "wait_timeout_ms": 2.0,
         "workers": 1
       },
-      "engine_loop": {
-        "queue_depth": 2,
-        "pipeline_parallel_size": 1,
-        "async_scheduling": true
-      },
       "formula": {
         "intercept_ms": 0.029270374,
         "ms_per_prompt_token": 0.001003614837,

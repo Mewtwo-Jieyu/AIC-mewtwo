@@ -9,12 +9,13 @@ from __future__ import annotations
 import logging
 import time
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
 import numpy as np
 
 from .arrival import TokenizerArrivalLayer, TokenizerPrimitive, resolve_tokenizer_primitive
+from .backend_semantic_profile import resolve_backend_semantic_profile
 from .datatypes import CBSimConfig, CBSimResult, Request, RequestState
 from .dp_admission import DPAdmissionRouter, DPReplicaCounts
 from .engine_loop import AsyncCBScheduler, EngineLoopBatch, run_engine_loop
@@ -51,7 +52,33 @@ class CBSimulator:
         database: PerfDatabase,
         config: CBSimConfig | None = None,
     ) -> None:
-        self._config = config or CBSimConfig()
+        base_config = config or CBSimConfig()
+        database_backend = getattr(database, "backend", None)
+        database_version = getattr(database, "version", None)
+        if not isinstance(database_backend, str) or not isinstance(
+            database_version, str
+        ):
+            raise ValueError(
+                "CB simulator requires exact database backend and version metadata"
+            )
+        profile = resolve_backend_semantic_profile(
+            backend=database_backend,
+            version=database_version,
+        )
+        if (
+            base_config.semantic_profile is not None
+            and base_config.semantic_profile != profile
+        ):
+            raise ValueError(
+                "explicit backend semantic profile does not match database profile"
+            )
+        self._semantic_profile = profile
+        self._config = replace(base_config, semantic_profile=profile)
+        self._engine_loop_enabled = profile.engine_loop_default_enabled
+        if base_config.engine_loop_enabled:
+            if not profile.engine_loop_diagnostic_available:
+                raise ValueError("engine loop diagnostics are disabled by profile")
+            self._engine_loop_enabled = True
         self._scheduler = CBScheduler(self._config)
         self._backend = backend
         self._model = model
@@ -154,7 +181,7 @@ class CBSimulator:
         Returns:
             CBSimResult with TTFT, TPOT, throughput metrics.
         """
-        if self._config.engine_loop_enabled:
+        if self._engine_loop_enabled:
             primitive = self._resolve_engine_loop_primitive(isl)
             if primitive is None:
                 raise ValueError(
@@ -173,7 +200,7 @@ class CBSimulator:
         self._last_engine_loop_audit = {
             "path": "legacy",
             "decode_skip_enabled": True,
-            "engine_loop_enabled": self._config.engine_loop_enabled,
+            "engine_loop_enabled": self._engine_loop_enabled,
         }
         self._last_preemption_events = []
         latency_calc = self._create_latency_calc(prefix)
@@ -558,7 +585,7 @@ class CBSimulator:
 
         runtime_start = time.perf_counter()
         machine = run_engine_loop(
-            queue_depth=primitive.queue_depth,
+            queue_depth=self._semantic_profile.batch_queue_depth,
             input_source=arrival,
             on_drain=on_drain,
             schedule=schedule,
@@ -607,7 +634,7 @@ class CBSimulator:
         )
         self._last_engine_loop_audit = {
             "path": "engine_loop",
-            "queue_depth": primitive.queue_depth,
+            "queue_depth": self._semantic_profile.batch_queue_depth,
             "max_queue_depth": machine.max_queue_depth,
             "decode_skip_enabled": False,
             "sim_runtime_seconds": runtime_seconds,
@@ -654,7 +681,7 @@ class CBSimulator:
         adds only the architecture missing from the DP path: independent
         schedulers/clocks/KV states plus a global admission router.
         """
-        if data_parallel_size > 1 and self._config.engine_loop_enabled:
+        if data_parallel_size > 1 and self._engine_loop_enabled:
             raise NotImplementedError(
                 "multi-replica engine loop is deferred to Phase462 Step 3"
             )

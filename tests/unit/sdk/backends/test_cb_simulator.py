@@ -11,6 +11,9 @@ from aiconfigurator.sdk import common
 from aiconfigurator.sdk.backends.cb_simulator.datatypes import (
     CBSimConfig, Request, RequestState,
 )
+from aiconfigurator.sdk.backends.cb_simulator.backend_semantic_profile import (
+    resolve_backend_semantic_profile,
+)
 from aiconfigurator.sdk.backends.cb_simulator.dp_admission import (
     DPAdmissionRouter,
     DPReplicaCounts,
@@ -24,6 +27,12 @@ from aiconfigurator.sdk.inference_summary import InferenceSummary
 from aiconfigurator.sdk.operations import MoEDispatch
 from aiconfigurator.sdk.operations import MoE
 from aiconfigurator.sdk.performance_result import PerformanceResult
+
+
+VLLM_019_PROFILE = resolve_backend_semantic_profile(
+    backend="vllm",
+    version="0.19.0",
+)
 
 
 def _load_diagnose_cb_iter_latency_module():
@@ -220,6 +229,7 @@ class TestCBScheduler:
             max_num_batched_tokens=32,
             num_gpu_blocks=5,
             block_size=16,
+            semantic_profile=VLLM_019_PROFILE,
         )
         sched = CBScheduler(cfg)
         keep = _make_prefilling(0, isl=48, remaining=16)
@@ -241,6 +251,7 @@ class TestCBScheduler:
             max_num_batched_tokens=32,
             num_gpu_blocks=5,
             block_size=16,
+            semantic_profile=VLLM_019_PROFILE,
         )
         sched = CBScheduler(cfg)
         running_req = _make_decoding(0, isl=32, gen=0)
@@ -263,6 +274,7 @@ class TestCBScheduler:
             max_num_batched_tokens=17,
             num_gpu_blocks=7,
             block_size=16,
+            semantic_profile=VLLM_019_PROFILE,
         )
         sched = CBScheduler(cfg)
         running = [_make_decoding(0, isl=64, gen=0)]
@@ -283,6 +295,7 @@ class TestCBScheduler:
             num_gpu_blocks=7,
             block_size=16,
             scheduler_reserve_full_isl=False,
+            semantic_profile=VLLM_019_PROFILE,
         )
         sched = CBScheduler(cfg)
         running = [_make_decoding(0, isl=64, gen=0)]
@@ -424,7 +437,8 @@ def _make_testable_sim(config: CBSimConfig | None = None) -> CBSimulator:
     cfg = config or CBSimConfig(num_requests=20, warmup_requests=5)
     sim = CBSimulator(
         backend=MagicMock(), model=MagicMock(),
-        database=MagicMock(), config=cfg,
+        database=SimpleNamespace(backend="vllm", version="0.19.0"),
+        config=cfg,
     )
     # Override the factory hook (R2-4)
     sim._create_latency_calc = lambda prefix: _FakeLatencyCalc()

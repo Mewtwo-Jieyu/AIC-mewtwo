@@ -41,6 +41,10 @@ from .holdout_budget_mechanism_candidate import (
     load_holdout_budget_mechanism_candidates,
 )
 from .datatypes import CBSimConfig, CBSimResult, Request, ScheduleResult
+from .backend_semantic_profile import (
+    BackendSemanticProfile,
+    resolve_backend_semantic_profile,
+)
 from .dp_admission import DPAdmissionRouter, DPReplicaCounts
 from .forward_descriptor import (
     AttentionRuntimeShapeKey,
@@ -62,6 +66,8 @@ __all__ = [
     "CBSimConfig",
     "CBSimResult",
     "CBSimulator",
+    "BackendSemanticProfile",
+    "resolve_backend_semantic_profile",
     "Request",
     "ScheduleResult",
     "DPAdmissionRouter",

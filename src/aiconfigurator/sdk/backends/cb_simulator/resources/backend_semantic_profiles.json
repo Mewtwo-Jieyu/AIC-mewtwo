@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "data_directory_contract": "systems/data/<hardware>/<backend>/<version>/",
+  "profiles": [
+    {
+      "backend": "vllm",
+      "version": "0.19.0",
+      "null_blocks_per_pool": 1,
+      "batch_queue_depth": 2,
+      "async_scheduling": true,
+      "pipeline_parallel_sizes": [1],
+      "engine_loop_default_enabled": false,
+      "engine_loop_diagnostic_available": true,
+      "request_progress_semantics": "sampled_computed_placeholder",
+      "preemption_victim_policy": "running_tail",
+      "admission_queue_order": "running_then_waiting",
+      "stop_admission_after_preemption": true,
+      "stop_after_partial_prefill": true,
+      "completion_release_order": "future_then_release_then_submit"
+    }
+  ]
+}

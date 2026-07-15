@@ -5,10 +5,9 @@ import logging
 from dataclasses import dataclass, field
 from enum import Enum, auto
 
+from .backend_semantic_profile import BackendSemanticProfile
+
 logger = logging.getLogger(__name__)
-
-VLLM_NULL_BLOCKS_PER_POOL = 1
-
 
 class RequestState(Enum):
     """Explicit request lifecycle state."""
@@ -33,13 +32,26 @@ class CBSimConfig:
     overlap_factor: float = 1.0
     per_iteration_overhead_ms: float = 0.0
     engine_loop_enabled: bool = False
+    semantic_profile: BackendSemanticProfile | None = field(
+        default=None,
+        repr=False,
+    )
 
     @property
     def num_allocatable_gpu_blocks(self) -> int:
         """Blocks available to the scheduler after vLLM's null block reserve."""
         if self.num_gpu_blocks <= 0:
             return 0
-        return self.num_gpu_blocks - VLLM_NULL_BLOCKS_PER_POOL
+        if self.semantic_profile is None:
+            raise ValueError(
+                "finite KV capacity requires an exact backend semantic profile"
+            )
+        allocatable = (
+            self.num_gpu_blocks - self.semantic_profile.null_blocks_per_pool
+        )
+        if allocatable < 0:
+            raise ValueError("null block reserve exceeds physical BlockPool size")
+        return allocatable
 
 
 @dataclass

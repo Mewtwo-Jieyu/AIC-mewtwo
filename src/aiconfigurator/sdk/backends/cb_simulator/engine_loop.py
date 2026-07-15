@@ -67,6 +67,8 @@ class AsyncCBScheduler(CBScheduler):
     """CBScheduler adapter for vLLM's sampled/computed/placeholder states."""
 
     def __init__(self, config: CBSimConfig) -> None:
+        if config.semantic_profile is None:
+            raise ValueError("AsyncCBScheduler requires a backend semantic profile")
         super().__init__(config)
         self.active_trigger = -1
         self.preemptions_this_step = 0
@@ -93,7 +95,11 @@ class AsyncCBScheduler(CBScheduler):
         admitted_ids: set[int],
         preempted_ids: set[int],
     ) -> Request | None:
-        if self.preemptions_this_step:
+        assert self._config.semantic_profile is not None
+        if (
+            self.preemptions_this_step
+            and self._config.semantic_profile.stop_admission_after_preemption
+        ):
             return None
         return super()._next_waiting_candidate(
             waiting,

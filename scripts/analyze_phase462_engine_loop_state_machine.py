@@ -538,6 +538,7 @@ def _run_cb_queue_prototype(
     )
     config = replace(config, num_requests=request_limit, warmup_requests=0)
     sim = CBSimulator(backend, model, database, config)
+    config = sim._config
     latency_calc = sim._create_latency_calc(0)
     preemption_events: list[dict[str, object]] = []
     output_placeholders: Counter[int] = Counter()

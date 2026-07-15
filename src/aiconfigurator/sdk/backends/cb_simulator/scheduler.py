@@ -104,6 +104,9 @@ class CBScheduler:
         """Preempt running-tail requests until block usage fits the limit."""
         if self._config.num_gpu_blocks <= 0:
             return True, 0
+        profile = self._config.semantic_profile
+        if profile is None or profile.preemption_victim_policy != "running_tail":
+            raise ValueError("unsupported or missing preemption victim policy")
 
         released_tokens = 0
         while (
@@ -184,6 +187,9 @@ class CBScheduler:
         Returns:
             ScheduleResult with prefill and decode assignments.
         """
+        profile = self._config.semantic_profile
+        if profile is not None and profile.admission_queue_order != "running_then_waiting":
+            raise ValueError("unsupported admission queue order")
         budget = self._config.max_num_batched_tokens
         result = ScheduleResult()
         preempted_ids: set[int] = set()
@@ -246,7 +252,13 @@ class CBScheduler:
                 break
 
             # If this was a partial prefill, stop admitting more.
-            if chunk < req.prefill_tokens_remaining:
+            if (
+                chunk < req.prefill_tokens_remaining
+                and (
+                    profile is None
+                    or profile.stop_after_partial_prefill
+                )
+            ):
                 break
 
         return result

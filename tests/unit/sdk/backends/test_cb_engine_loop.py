@@ -12,6 +12,9 @@ from aiconfigurator.sdk.backends.cb_simulator.arrival import (
     TokenizerArrivalLayer,
     resolve_tokenizer_primitive,
 )
+from aiconfigurator.sdk.backends.cb_simulator.backend_semantic_profile import (
+    resolve_backend_semantic_profile,
+)
 from aiconfigurator.sdk.backends.cb_simulator.engine_loop import (
     AsyncCBScheduler,
     EngineLoopBatch,
@@ -25,6 +28,12 @@ from aiconfigurator.sdk.backends.cb_simulator.datatypes import (
     RequestState,
 )
 from aiconfigurator.sdk.backends.cb_simulator.simulator import CBSimulator
+
+
+VLLM_019_PROFILE = resolve_backend_semantic_profile(
+    backend="vllm",
+    version="0.19.0",
+)
 
 
 class _ConstantLatency:
@@ -180,7 +189,11 @@ def test_request_tracks_sampled_computed_and_placeholder_states() -> None:
 
 
 def test_async_scheduler_uses_computed_kv_and_resets_it_on_preemption() -> None:
-    config = CBSimConfig(num_gpu_blocks=1, block_size=16)
+    config = CBSimConfig(
+        num_gpu_blocks=1,
+        block_size=16,
+        semantic_profile=VLLM_019_PROFILE,
+    )
     scheduler = AsyncCBScheduler(config)
     request = Request(request_id=1, isl=16, osl=100, arrival_time_ms=0.0)
     request.state = RequestState.DECODING
@@ -199,7 +212,10 @@ def test_async_scheduler_uses_computed_kv_and_resets_it_on_preemption() -> None:
 
 
 def test_gpu_block_config_separates_physical_and_allocatable_capacity() -> None:
-    config = CBSimConfig(num_gpu_blocks=28_825)
+    config = CBSimConfig(
+        num_gpu_blocks=28_825,
+        semantic_profile=VLLM_019_PROFILE,
+    )
 
     assert config.num_gpu_blocks == 28_825
     assert config.num_allocatable_gpu_blocks == 28_824
@@ -213,6 +229,7 @@ def test_null_block_capacity_preempts_peer_before_tail_self_preemption() -> None
         max_num_seqs=128,
         num_gpu_blocks=28_825,
         block_size=16,
+        semantic_profile=VLLM_019_PROFILE,
     )
     scheduler = AsyncCBScheduler(config)
     computed_tokens = [

@@ -24,7 +24,6 @@ class TokenizerPrimitive:
     max_batch_size: int
     wait_timeout_ms: float
     workers: int
-    queue_depth: int
     intercept_ms: float
     ms_per_prompt_token: float
     ms_per_request: float
@@ -63,7 +62,6 @@ def _load_primitives() -> tuple[TokenizerPrimitive, ...]:
             max_batch_size=int(row["support"]["batch_size"][1]),
             wait_timeout_ms=float(row["runtime"]["wait_timeout_ms"]),
             workers=int(row["runtime"]["workers"]),
-            queue_depth=int(row["engine_loop"]["queue_depth"]),
             intercept_ms=float(row["formula"]["intercept_ms"]),
             ms_per_prompt_token=float(row["formula"]["ms_per_prompt_token"]),
             ms_per_request=float(row["formula"]["ms_per_request"]),
@@ -72,8 +70,6 @@ def _load_primitives() -> tuple[TokenizerPrimitive, ...]:
         )
         if primitive.workers != 1:
             raise ValueError("only the measured single-worker tokenizer is supported")
-        if primitive.queue_depth != 2:
-            raise ValueError("unsupported measured EngineCore queue depth")
         if primitive.weighted_mape > 0.10:
             raise ValueError("tokenizer primitive did not pass its WMAPE gate")
         primitives.append(primitive)
