@@ -244,7 +244,7 @@ class TestCBScheduler:
         assert waiting[0] is victim
         assert running == [keep]
         assert result.prefill_tokens[0] == 16
-        assert result.prefill_tokens[2] == 16
+        assert 2 not in result.prefill_tokens
 
     def test_waiting_admission_does_not_preempt_running(self) -> None:
         cfg = CBSimConfig(
@@ -369,7 +369,7 @@ class TestDPAdmissionRouter:
         )
 
         assert first == 0
-        assert second == 1
+        assert second == 0
         assert third == 1
 
 
@@ -2061,8 +2061,8 @@ class TestVLLMCBSimBoundary:
             def __init__(self, *args, **kwargs):
                 pass
 
-            def run(self, **kwargs):
-                calls.append(kwargs["num_gpus"])
+            @staticmethod
+            def _result():
                 return SimpleNamespace(
                     mean_ttft_ms=111.0,
                     mean_tpot_ms=2.0,
@@ -2077,6 +2077,16 @@ class TestVLLMCBSimBoundary:
                     steady_state_time_ms=5000.0,
                     total_iterations=120,
                 )
+
+            def run(self, **kwargs):
+                calls.append(("run", kwargs["num_gpus"]))
+                return self._result()
+
+            def run_multi_replica(self, **kwargs):
+                calls.append(
+                    ("run_multi_replica", kwargs["data_parallel_size"])
+                )
+                return self._result()
 
         def make_model(tp, dp, moe_tp, moe_ep):
             model = MagicMock()
@@ -2130,9 +2140,9 @@ class TestVLLMCBSimBoundary:
             cb_config=cb_config,
         )
 
-        assert calls == [8, 4]
+        assert calls == [("run", 8), ("run_multi_replica", 2)]
         assert first.get_result_dict()["tokens/s"] == pytest.approx(1000.0)
-        assert second.get_result_dict()["tokens/s"] == pytest.approx(4000.0)
+        assert second.get_result_dict()["tokens/s"] == pytest.approx(2000.0)
 
     def test_run_agg_cb_sim_does_not_apply_tp16_throughput_calibration(self, monkeypatch) -> None:
         backend = VLLMBackend()
