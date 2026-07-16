@@ -1,0 +1,8 @@
+{
+  "absolute_delta_pct": 13.84864775746113,
+  "gate": "phase462_bt65536_composition_logging_overhead",
+  "max_overhead_pct": 2.0,
+  "off_output_tok_s": 716.0279106723983,
+  "on_output_tok_s": 815.1880938665272,
+  "passed": false
+}

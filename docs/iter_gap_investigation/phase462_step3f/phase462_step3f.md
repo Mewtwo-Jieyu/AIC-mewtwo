@@ -27,7 +27,7 @@ DP2 采用与 real bench 相同的全局 N512、warmup=0、首个 arrival 到最
 
 相同聚合 cell 内仍有 8.53x 差异，所以已有字段只能复现问题，不能把差异归给 chunk 构成或其他隐藏维。当前 sim 成本查询还需要 decode KV 长度，日志也没有按 fresh/recompute/resume 分开的 context 状态；用常数补齐会造成现场拟合，禁止执行。
 
-## 轻量采集 v2
+## 轻量采集 v2（已否决）
 
 | 项 | 设计 |
 |---|---|
@@ -37,5 +37,7 @@ DP2 采用与 real bench 相同的全局 N512、warmup=0、首个 arrival 到最
 | 新字段 | context chunk token multiset；fresh/recompute/resume token counts；decode KV token sum；cudagraph mode |
 | 明确不采 | request id、arrival 链、逐请求生命周期、每步同步写文件 |
 | 开销结论 | 离线只能证明输出量很小，不能证明 <=2%；下一次仍须独立 off/on GPU 硬门 |
+
+后续 GPU 硬门已经完成：v2/v3/v4 的 off/on 绝对差分别为 `13.8486%`、`8.7915%`、`8.2043%`，均未通过 `<=2%` 门。当前协议路线关闭，没有可采信的构成级 GPU 数据，不得重跑同类采集或据此进入 Step 4；详见 [Phase462 bt65536 度量与构成取证合并判卷](../phase462_bt65536_metric_and_composition_audit/phase462_bt65536_metric_and_composition_audit.md)。
 
 本步未改 simulator runtime、PerfDB 或 gate；Default AIC 维持 No-Go，Step 4 继续顺延。
