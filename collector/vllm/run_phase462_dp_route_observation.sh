@@ -51,10 +51,20 @@ restore_patch() {
 
 record_residuals() {
   mkdir -p "${OUT_ROOT}"
-  nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv,noheader \
-    >"${OUT_ROOT}/gpu_compute_apps_after.txt" 2>/dev/null || true
+  if ! nvidia-smi \
+    --query-compute-apps=pid,process_name,used_memory \
+    --format=csv,noheader \
+    >"${OUT_ROOT}/gpu_compute_apps_after.txt"; then
+    echo "gpu_residual_probe_failed" >&2
+    return 1
+  fi
+  local pgrep_status=0
   pgrep -af "vllm.entrypoints.cli.main serve|VLLM::|run_openai_fixed_shape_benchmark" \
-    >"${OUT_ROOT}/process_residual_after.txt" || true
+    >"${OUT_ROOT}/process_residual_after.txt" || pgrep_status=$?
+  if [[ "${pgrep_status}" != "0" && "${pgrep_status}" != "1" ]]; then
+    echo "process_residual_probe_failed:${pgrep_status}" >&2
+    return "${pgrep_status}"
+  fi
 }
 
 cleanup() {
@@ -67,7 +77,7 @@ cleanup() {
       status=1
     fi
   fi
-  record_residuals
+  record_residuals || status=1
   exit "${status}"
 }
 
