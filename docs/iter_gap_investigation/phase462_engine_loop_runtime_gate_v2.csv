@@ -1,0 +1,18 @@
+section,metric,value,target,status,note
+oracle,drain_step_match,1.0,1.0,pass,
+oracle,first_schedule_step_match,1.0,>=0.9375,pass,
+oracle,first_16_match,1.0,1.0,pass,
+oracle_semantic_gate,all_schedule_steps_exact,12031,12031 exact,pass,
+oracle_semantic_gate,steady_self_preemptions,0,0,pass,
+steady,preemptions,10,10+/-2,pass,
+predictive_attribution_gate,steady_self_preemptions_attributed,2,all mechanically attributed,pass,"[{""admit_aligned_phase_equal"": true, ""chain_complete"": true, ""passed"": true, ""reason"": ""attributed_to_workload_exposure"", ""request_id"": 27, ""root_divergence_step"": 1, ""root_is_initial_workload"": true, ""step"": 2167}, {""admit_aligned_phase_equal"": false, ""chain_complete"": true, ""passed"": true, ""reason"": ""verified_compound_preemption_exception"", ""request_id"": 124, ""root_divergence_step"": 1, ""root_is_initial_workload"": true, ""step"": 10616}]"
+steady,repeat_victim_events,0,0,pass,
+amendment,review_evidence_sha256,524d44ca4df36835e3d0a041b6591ba113d329bac8ca61f9b037dfc3401e8af9,approved Step2c-8 evidence,pass,
+amendment,third_amendment,prohibited,long-real-window stop-loss or implementation gap,pass,
+gate,step2c9,pass,pass,pass,all_runtime_gates_passed
+gate,six_point_ab_allowed,True,True,pass,
+gate,default_engine_loop,False,False,pass,
+boundary,diagnostic_only,True,,pass,
+boundary,valid_for_default,False,,pass,
+boundary,perf_database,False,,pass,
+boundary,default_aic,No-Go,,blocked,
