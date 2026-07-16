@@ -15,7 +15,8 @@ import argparse
 import csv
 import logging
 import sys
-from dataclasses import asdict, dataclass
+from contextlib import contextmanager
+from dataclasses import asdict, dataclass, replace
 from functools import lru_cache
 from pathlib import Path
 
@@ -24,7 +25,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from aiconfigurator.sdk import common
-from aiconfigurator.sdk.backends.cb_simulator import CBSimConfig, CBSimulator
+from aiconfigurator.sdk.backends.cb_simulator import CBSimConfig, CBSimulator, Request
 from aiconfigurator.sdk.backends.cb_simulator.forward_descriptor import (
     compiled_body_runtime_key_from_nccl_summary_csv,
     descriptor_from_scheduled,
@@ -54,6 +55,8 @@ TTFT_GATE_STATUS = "legacy_skip"
 THROUGHPUT_MAX_ACCEPTANCE = 1.4989592822599629
 MULTI_CONFIG_MAX_ACCEPTANCE = 1.50
 TTFT_MAX_ACCEPTANCE = 1.790056498134038
+OFFICIAL_VALIDATION_GLOBAL_REQUESTS = 512
+OFFICIAL_VALIDATION_WARMUP_REQUESTS = 0
 
 
 @dataclass
@@ -97,6 +100,14 @@ class MultiConfigKVCapacity:
     override_num_gpu_blocks: int
     override_line_numbers: tuple[int, ...]
     capacity_scope: str = "per_engine"
+
+
+@dataclass(frozen=True)
+class FullClosedLoopMetric:
+    output_tokens: int
+    wall_ms: float
+    throughput_tok_s: float
+    throughput_tok_s_gpu: float
 
 
 @dataclass(frozen=True)
@@ -886,6 +897,96 @@ def _make_multi_config_cb_config(
     return config
 
 
+def _make_official_validation_cb_config(
+    point: MultiConfigPoint,
+    *,
+    overlap_factor: float,
+    ep8_per_iteration_overhead_ms: float,
+) -> CBSimConfig:
+    config = _make_multi_config_cb_config(
+        point,
+        overlap_factor=overlap_factor,
+        ep8_per_iteration_overhead_ms=ep8_per_iteration_overhead_ms,
+    )
+    if point.dp == 1:
+        return config
+
+    uses_global_dp_run = point.max_num_batched_tokens == point.isl
+    num_requests = OFFICIAL_VALIDATION_GLOBAL_REQUESTS
+    if not uses_global_dp_run:
+        num_requests = (
+            OFFICIAL_VALIDATION_GLOBAL_REQUESTS + point.dp - 1
+        ) // point.dp
+    return replace(
+        config,
+        num_requests=num_requests,
+        warmup_requests=OFFICIAL_VALIDATION_WARMUP_REQUESTS,
+    )
+
+
+def _full_closed_loop_metric(
+    completed: list[Request],
+    *,
+    num_gpus: int,
+    expected_requests: int,
+) -> FullClosedLoopMetric:
+    if len(completed) != expected_requests:
+        raise AssertionError(
+            f"completed_request_count={len(completed)} expected={expected_requests}"
+        )
+    if not completed:
+        raise AssertionError("no_completed_requests")
+    if num_gpus <= 0:
+        raise ValueError("num_gpus_must_be_positive")
+
+    start_ms = min(float(request.arrival_time_ms) for request in completed)
+    finish_ms = max(float(request.finish_ms) for request in completed)
+    wall_ms = finish_ms - start_ms
+    if wall_ms <= 0:
+        raise AssertionError("non_positive_full_closed_loop_window")
+    output_tokens = sum(int(request.osl) for request in completed)
+    throughput_tok_s = output_tokens / (wall_ms / 1000.0)
+    return FullClosedLoopMetric(
+        output_tokens=output_tokens,
+        wall_ms=wall_ms,
+        throughput_tok_s=throughput_tok_s,
+        throughput_tok_s_gpu=throughput_tok_s / num_gpus,
+    )
+
+
+@contextmanager
+def _official_validation_metric_scope(point: MultiConfigPoint):
+    if point.dp == 1:
+        yield
+        return
+
+    original_collect = CBSimulator._collect_metrics
+
+    def collect_full_window(self, completed, num_gpus, total_iters, *args, **kwargs):
+        result = original_collect(
+            self,
+            completed,
+            num_gpus,
+            total_iters,
+            *args,
+            **kwargs,
+        )
+        metric = _full_closed_loop_metric(
+            completed,
+            num_gpus=num_gpus,
+            expected_requests=self._config.num_requests,
+        )
+        result.throughput_tok_s = metric.throughput_tok_s
+        result.throughput_tok_s_gpu = metric.throughput_tok_s_gpu
+        return result
+
+    CBSimulator._collect_metrics = collect_full_window
+    try:
+        yield
+    finally:
+        CBSimulator._collect_metrics = original_collect
+
+
 def _rank_by_output(values: dict[str, float]) -> dict[str, int]:
     ordered = sorted(values.items(), key=lambda item: (-item[1], item[0]))
     return {name: rank for rank, (name, _) in enumerate(ordered, start=1)}
@@ -1181,20 +1282,21 @@ def _run_multi_config_validation(
             loaded[key] = (model, db)
         model, db = loaded[key]
 
-        cb_config = _make_multi_config_cb_config(
+        cb_config = _make_official_validation_cb_config(
             pt,
             overlap_factor=overlap_factor,
             ep8_per_iteration_overhead_ms=ep8_per_iteration_overhead_ms,
         )
-        cb_summary = backend.run_agg(
-            model,
-            db,
-            RuntimeConfig(batch_size=pt.batch_size, isl=pt.isl, osl=pt.osl),
-            ctx_tokens=pt.max_num_batched_tokens,
-            database_mode=common.DatabaseMode.HYBRID,
-            method="cb_sim",
-            cb_config=cb_config,
-        )
+        with _official_validation_metric_scope(pt):
+            cb_summary = backend.run_agg(
+                model,
+                db,
+                RuntimeConfig(batch_size=pt.batch_size, isl=pt.isl, osl=pt.osl),
+                ctx_tokens=pt.max_num_batched_tokens,
+                database_mode=common.DatabaseMode.HYBRID,
+                method="cb_sim",
+                cb_config=cb_config,
+            )
         cb_dict = cb_summary.get_result_dict()
         per_ops = cb_summary.get_per_ops_data()
         sim_gpu = cb_dict["tokens/s/gpu"] if cb_dict else 0.0
