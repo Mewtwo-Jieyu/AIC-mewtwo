@@ -1,0 +1,12 @@
+field,availability,purpose
+dp_rank,available,coarse_iteration_cell
+iteration,available,coarse_iteration_cell
+context_requests,available,coarse_iteration_cell
+context_tokens,available,coarse_iteration_cell
+generation_requests,available,coarse_iteration_cell
+generation_tokens,available,coarse_iteration_cell
+elapsed_ms,available,coarse_iteration_cell
+context_chunk_tokens_multiset,missing,exact_context_composition
+context_state_token_counts,missing,fresh_vs_recompute_vs_resume
+decode_kv_token_sum,missing,sim_cost_query
+cudagraph_mode,missing,execution_regime
