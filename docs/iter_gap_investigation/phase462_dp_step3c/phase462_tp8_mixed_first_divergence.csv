@@ -1,0 +1,7 @@
+iteration,prefill_requests,prefill_tokens,decode_requests,new_admit_count,new_admit_ids,continued_ids,recompute_ids,budget_before_admit,budget_after_schedule,next_request_tokens,max_num_seqs_reached,block_capacity_reached,stopped_after_partial_prefill
+1,9,65536,0,9,0;1;2;3;4;5;6;7;8,,,65536,0,8000,False,False,True
+2,9,65528,8,8,9;10;11;12;13;14;15;16,8,,59064,0,8000,False,False,True
+3,9,65520,16,8,17;18;19;20;21;22;23;24,16,,60584,0,8000,False,False,True
+4,9,65512,24,8,25;26;27;28;29;30;31;32,24,,62096,0,8000,False,False,True
+5,9,65504,32,8,33;34;35;36;37;38;39;40,32,,63600,0,8000,False,False,True
+6,2,8400,40,1,41,40,,65096,57096,8000,False,True,False

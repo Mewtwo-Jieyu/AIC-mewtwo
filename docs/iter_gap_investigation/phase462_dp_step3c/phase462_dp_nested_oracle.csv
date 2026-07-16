@@ -1,0 +1,9 @@
+kind,name,error_ratio,rank_exact_fraction,same_cell_spread,admit_match_fraction,parent,child,delta_error
+oracle,O0,1.0895477855343982,1.0,1.0,0.026041666666666668,,,
+oracle,O1,1.0895477855343982,0.991869918699187,1.0,0.0234375,,,
+oracle,O2,1.1733751112279571,0.9930555555555556,1.0,0.0026041666666666665,,,
+oracle,O3,1.1863226978402444,0.01818181818181818,1.0003696779151745,0.6796875,,,
+attribution,official_to_multi_replica_architecture,,,,,official,O0,-0.11049026366038861
+attribution,route_rank_sequence,,,,,O0,O1,0.0
+attribution,route_to_receive_delay,,,,,O1,O2,0.08382732569355889
+attribution,receive_to_admit_step,,,,,O2,O3,0.012947586612287232
