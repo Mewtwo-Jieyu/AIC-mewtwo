@@ -1,93 +1,81 @@
 # Phase466 low-overhead probe design
 
-结论：本地设计与解析器通过，GPU 开销门尚未执行。该 probe 默认关闭，只使用 vLLM 0.19.0
-自带的 `--enable-logging-iteration-details` 和 Prometheus preemption counter，不修改 vLLM 源码，
-不采 per-request 高频事件。当前状态是 `GPU_GATE_PENDING`，Default AIC 继续 `No-Go`。
+结论：本地执行链已经补齐，GPU 开销门尚未执行。probe 默认关闭，只使用 vLLM 0.19.0 自带的
+`--enable-logging-iteration-details` 和 Prometheus preemption counter，不修改 vLLM 源码，不采
+per-request 高频 composition 事件。当前状态是 `GPU_GATE_PENDING`，Default AIC 继续 `No-Go`。
 
 ## Scope
 
 | 项 | 值 |
 |---|---|
-| base commit | `9ba5ad93ca8805a1eb427593ced8cee01aea6804` |
-| tooling result commit | `7480099f3033befd0f05ed1f17950cf4fe3df183` |
-| branch | `experiment/phase466-low-overhead-probe` |
+| integration base | `822ae421a0b79eb0a69e8f59a2c4d09cba327eaa` |
+| execution branch | `experiment/phase466-probe-execution-hardening` |
 | hardware/runtime | H200 SXM / vLLM 0.19.0 / Kimi-K2.5 |
 | implementation | stock vLLM aggregate iteration details; no source patch |
-| result | local design PASS; GPU gate pending |
+| local result | analyzer, supervisor, simulator exporter and exit gate PASS |
+| remote result | GPU gate pending |
 | flags | `diagnostic_only=true`; `valid_for_default=false`; `perf_database=false` |
-
-Changed files at the tooling commit:
-
-- `scripts/analyze_phase466_low_overhead_probe.py`
-- `tests/unit/scripts/test_analyze_phase466_low_overhead_probe.py`
-
-The analyzer emits the exact serve and benchmark argv, parses one aggregate row per engine iteration,
-joins rank-local preemption deltas, validates source hashes and process cleanup, and refuses formal collection
-when the off/on throughput delta exceeds `2%`.
-
-The parser writes both `iteration_rows.csv` and `rank_summary.csv`. Iteration rows use the same field names as
-the residual-attribution contract: `rank_id`, `iteration_seq`, `iteration_start_offset_ms`,
-`iteration_end_offset_ms`, scheduled prefill/decode tokens, workload digest and cumulative-token progress window.
 
 ## Measurement contract
 
 | Stage | Scenario | Protocol | Decision |
 |---|---|---|---|
-| overhead off/on | `K2.5-tp4ep8dp2-8k2k-bt65536` | N128/C128 | absolute output-throughput delta must be `<=2%` |
-| formal 1 | `K2.5-tp4ep8dp2-32k3k` | N512/C128 | run only after overhead PASS |
-| formal 2 | `K2.5-tp8ep8-8k2k-bt65536` | N512/C128 | topology control, not a pure DP control |
-| formal 3 | `K2.5-tp4ep8dp2-8k2k-bt65536` | N512/C128 | run only after overhead PASS |
+| overhead | `K2.5-tp4ep8dp2-8k2k-bt65536` | 6 paired OFF/ON runs; each run first N128/C128 warmup, then N128/C128 measurement | 90% paired log-ratio CI must be fully inside `[0.98, 1.02]` |
+| formal 1 | `K2.5-tp4ep8dp2-32k3k` | warmup N128/C128; measurement N512/C128 | only after overhead `PASS` |
+| formal 2 | `K2.5-tp8ep8-8k2k-bt65536` | warmup N128/C128; measurement N512/C128 | topology control, not pure DP control |
+| formal 3 | `K2.5-tp4ep8dp2-8k2k-bt65536` | warmup N128/C128; measurement N512/C128 | only after overhead `PASS` |
 
-Each iteration row carries `run_id`, `source`, `workload_cohort_digest`, rank-local elapsed offsets,
-scheduled-token progress bounds and a 65,536-token progress-window id. Real/simulator comparison must use
-the same workload digest and cumulative-token progress window. Absolute clocks and naked iteration indices
-are not alignment keys.
+The six pair orders are fixed as `OFF/ON`, `ON/OFF`, repeated three times. `PASS`, `FAIL`, and
+`INCONCLUSIVE` are distinct results. Only `PASS` permits formal collection. Missing runs, invalid artifacts or a
+confidence interval crossing either equivalence bound produce no formal evidence.
 
-The off/on artifact validator requires exact request/token counts, vLLM 0.19.0 source hashes, empty GPU and
-process residue, two DP rank summaries, non-resetting preemption counters and matching workload digests.
-Any mismatch fails immediately.
+Each measured row carries `run_id`, `source`, `rank_id`, `rank_scope`, `workload_cohort_digest`, rank-local elapsed
+offsets, scheduled-token progress bounds and a 65,536-token progress-window id. Warmup iteration ids are captured
+per rank and excluded from measured rows. Real/simulator comparison requires the same workload digest and joined
+progress windows; absolute clocks and naked iteration ids are not join keys.
 
-This stock probe does not expose prefill chunk histograms, fresh/recompute/resume state, queue occupancy,
-decode KV sums or simulator component costs. Therefore a passing overhead gate and formal collection can screen
-rank/timing hypotheses, but cannot by itself close all Track C disproof conditions or select a Phase467 model.
-If those missing fields remain necessary, the result stays `INCONCLUSIVE`; a separate low-overhead field design
-must pass its own off/on gate before use.
+## Execution contract
 
-## Prior evidence boundary
+| Item | Behavior |
+|---|---|
+| supervisor | serialized runs, atomic status updates and a 30-second heartbeat |
+| preflight | clean GPU/process state, exact vLLM version, git HEAD, GPU identity and exact stock-source hashes |
+| cleanup | terminate service process group, `ray stop --force`, then require empty GPU/process residue |
+| failure handling | normal benchmark failure may continue to the next preregistered run; cleanup or integrity failure stops all runs |
+| gate validation | validates all 6 complete pairs; the old single-pair gate entry no longer exists |
+| formal validation | exact scenario, request/token counts, rank set, source hash, warmup cutoff and passed v2 gate |
+| simulator export | exact H200/vLLM 0.19.0 database; simulator rows use `rank_scope=global_simulator` |
+| exit review | required fields are checked separately on real and simulator sources; blank fields count as missing |
 
-| Evidence | Hash | Reuse decision |
-|---|---|---|
-| `phase462_bt65536_metric_and_composition_audit.md` | `820a3ddbeb07244d5e249f92ee25d23c85e5b6c1007d9a4c6d713d663d65861e` | v2/v3/v4 deltas `13.8486% / 8.7915% / 8.2043%`; inadmissible |
-| `phase463_six_point_latency_recollect.md` | `826149442cb93a43194cdf476a8677c9d4fb824d8c19a349fa73819cb0ccd5e8` | formal measurements used the stock flag, but had no logging-off control |
+The supervisor never reruns a failed measurement automatically. An interrupted or invalid artifact remains evidence
+of that attempt and requires review before another artifact root is started.
 
-Phase463 proves the stock field exists and can be parsed. It does not prove the flag is below the `2%`
-overhead limit. Phase462 custom composition logging cannot be reused because all three variants failed their
-own gate.
+## Evidence boundary
 
-## Verification
+The stock probe exposes identity, rank, iteration elapsed time, aggregate prefill/decode request and token counts,
+preemption deltas and progress windows. It does not expose prefill chunk histograms, fresh/recompute/resume state,
+decode KV sums, cudagraph mode or a simulator serving-state key.
 
-```text
-PYTHONPYCACHEPREFIX=/tmp/phase466_b_pyc python3 -m py_compile \
-  scripts/analyze_phase466_low_overhead_probe.py \
-  tests/unit/scripts/test_analyze_phase466_low_overhead_probe.py
+Therefore a passing overhead gate and three valid formal runs can make the DP-rank candidate evaluable. They cannot
+by themselves make schedule composition or serving-state cost coverage evaluable. Missing fields remain
+`INCONCLUSIVE_MISSING_FIELDS`; fields from one source cannot satisfy requirements on the other source.
 
-PYTHONPYCACHEPREFIX=/tmp/phase466_b_pyc \
-  /Users/mewtwo/2026/work/codebase/AIC-mewtwo/.worktrees/feature-pr403/.venv312/bin/python \
-  -m pytest -q tests/unit/scripts/test_analyze_phase466_low_overhead_probe.py
+| Prior evidence | Reuse decision |
+|---|---|
+| Phase462 custom logging v2/v3/v4 | overhead `13.8486% / 8.7915% / 8.2043%`; inadmissible |
+| Phase463 stock-flag runs | prove the field is available, but have no OFF control and cannot pass this gate |
 
-PYTHONPYCACHEPREFIX=/tmp/phase466_b_pyc python3 \
-  scripts/analyze_phase466_low_overhead_probe.py plan \
-  --output-json /tmp/phase466_b_plan.json
-```
+## Local verification
 
-Result: `py_compile` PASS, analyzer plan generation PASS, `7 passed`, `git diff --check` PASS.
-No SSH or GPU command was run.
+| Check | Result |
+|---|---|
+| Phase466 analyzer/supervisor/exporter/exit tests | PASS |
+| `py_compile` with `/tmp` bytecode cache | PASS |
+| preregistered plan generation | PASS |
+| exact vLLM 0.19.0 simulator export | PASS; 3 scenarios, 28,161 rows |
+| `git diff --check` | PASS |
+| SSH/GPU | not run |
 
-## Gate and next action
-
-The first allowed remote action is only the serialized N128/C128 DP2-bt65536 off/on gate. If its absolute
-throughput delta is above `2%`, stop and record FAIL; do not start the N512 runs. If it passes, collect only
-the three preregistered formal scenarios after Track A is reviewed and integrated.
-
-Forbidden reuse: this design is not GPU evidence, not a PerfDatabase row, not a latency model, and not
-evidence for enabling Default AIC.
+The first allowed remote action is the serialized 6-pair overhead gate. If the result is not `PASS`, stop before the
+N512 formal runs and record the gate result. This design is not GPU evidence, not a PerfDatabase row, not a latency
+model and not evidence for enabling Default AIC.

@@ -18,10 +18,13 @@ from pathlib import Path
 from typing import Any
 
 
-BASE_COMMIT = "9ba5ad93ca8805a1eb427593ced8cee01aea6804"
-SCHEMA = "phase466_low_overhead_probe_v1"
+BASE_COMMIT = "822ae421a0b79eb0a69e8f59a2c4d09cba327eaa"
+SCHEMA = "phase466_stock_probe_v2"
 PROBE_FLAG = "--enable-logging-iteration-details"
 MAX_OVERHEAD_PCT = 2.0
+OVERHEAD_PAIR_COUNT = 6
+EQUIVALENCE_RATIO_BOUNDS = (0.98, 1.02)
+T_CRITICAL_90_DF5 = 2.0150483733330233
 PROGRESS_WINDOW_TOKENS = 65536
 MODEL_PATH = (
     "/mnt/shared-storage-gpfs2/gpfs2-shared-public/huggingface/"
@@ -74,6 +77,7 @@ class Scenario:
 @dataclass(frozen=True)
 class IterationRow:
     rank_id: int
+    rank_scope: str
     run_id: str
     source: str
     workload_cohort_digest: str
@@ -108,11 +112,19 @@ def workload_digest(
     scenario: Scenario, *, num_prompts: int, concurrency: int
 ) -> str:
     payload = {
+        "model": SERVED_MODEL_NAME,
         "scenario": scenario.name,
         "num_prompts": num_prompts,
         "concurrency": concurrency,
         "input_len": scenario.input_len,
         "output_len": scenario.output_len,
+        "tp": scenario.tp,
+        "dp": scenario.dp,
+        "ep": scenario.ep,
+        "max_num_batched_tokens": scenario.max_num_batched_tokens,
+        "max_model_len": scenario.max_model_len,
+        "prompt_variant_mode": "fixed",
+        "stream": True,
     }
     return hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
@@ -209,12 +221,15 @@ def _run_spec(
     probe_enabled: bool,
     num_prompts: int,
     port: int,
+    pair_id: str | None = None,
+    order_index: int | None = None,
 ) -> dict[str, Any]:
-    artifact_dir = (
-        f"overhead/{'on' if probe_enabled else 'off'}"
-        if stage == "overhead"
-        else f"formal/{scenario.name}"
-    )
+    if stage == "overhead":
+        if pair_id is None or order_index is None:
+            raise ValueError("overhead_run_requires_pair_identity")
+        artifact_dir = f"overhead/{pair_id}/{'on' if probe_enabled else 'off'}"
+    else:
+        artifact_dir = f"formal/{scenario.name}"
     serve_argv = _serve_argv(scenario, port=port, probe_enabled=probe_enabled)
     benchmark_argv = _benchmark_argv(
         scenario,
@@ -226,7 +241,7 @@ def _run_spec(
     workload_cohort_digest = workload_digest(
         scenario, num_prompts=num_prompts, concurrency=128
     )
-    return {
+    spec = {
         "id": run_id,
         "stage": stage,
         "scenario": scenario.name,
@@ -236,6 +251,11 @@ def _run_spec(
         "workload_cohort_digest": workload_cohort_digest,
         "num_prompts": num_prompts,
         "concurrency": 128,
+        "warmup_num_prompts": 128,
+        "warmup_concurrency": 128,
+        "measurement_requires_warmup_cutoff": True,
+        "pair_id": pair_id,
+        "order_index": order_index,
         "tp": scenario.tp,
         "dp": scenario.dp,
         "ep": scenario.ep,
@@ -249,29 +269,98 @@ def _run_spec(
         "benchmark_argv": benchmark_argv,
         "benchmark_command": shlex.join(benchmark_argv),
     }
+    warmup_argv = _benchmark_argv(
+        scenario,
+        port=port,
+        num_prompts=128,
+        concurrency=128,
+        artifact_dir=f"{artifact_dir}/warmup",
+    )
+    spec["warmup_benchmark_argv"] = warmup_argv
+    spec["warmup_benchmark_command"] = shlex.join(warmup_argv)
+    spec["run_contract_digest"] = run_contract_digest(spec)
+    return spec
+
+
+def run_contract_digest(spec: dict[str, Any]) -> str:
+    payload = {
+        key: spec.get(key)
+        for key in (
+            "id",
+            "stage",
+            "scenario",
+            "probe_mode",
+            "source",
+            "workload_cohort_digest",
+            "num_prompts",
+            "concurrency",
+            "warmup_num_prompts",
+            "warmup_concurrency",
+            "pair_id",
+            "order_index",
+            "tp",
+            "dp",
+            "ep",
+            "input_len",
+            "output_len",
+            "max_num_batched_tokens",
+        )
+    }
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
+def expected_run_meta(spec: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: spec[key]
+        for key in (
+            "id",
+            "stage",
+            "scenario",
+            "probe_mode",
+            "source",
+            "workload_cohort_digest",
+            "run_contract_digest",
+            "num_prompts",
+            "concurrency",
+            "warmup_num_prompts",
+            "warmup_concurrency",
+            "pair_id",
+            "order_index",
+            "tp",
+            "dp",
+            "ep",
+            "input_len",
+            "output_len",
+            "max_num_batched_tokens",
+        )
+    }
 
 
 def build_run_plan() -> dict[str, Any]:
     """Return the preregistered command and artifact contract without executing it."""
     overhead = SCENARIOS[OVERHEAD_SCENARIO]
-    runs = [
-        _run_spec(
-            run_id="overhead-off",
-            stage="overhead",
-            scenario=overhead,
-            probe_enabled=False,
-            num_prompts=128,
-            port=21460,
-        ),
-        _run_spec(
-            run_id="overhead-on",
-            stage="overhead",
-            scenario=overhead,
-            probe_enabled=True,
-            num_prompts=128,
-            port=21461,
-        ),
-    ]
+    runs: list[dict[str, Any]] = []
+    port = 21460
+    for pair_index in range(1, OVERHEAD_PAIR_COUNT + 1):
+        pair_id = f"pair-{pair_index:02d}"
+        modes = (False, True) if pair_index % 2 else (True, False)
+        for order_index, probe_enabled in enumerate(modes, start=1):
+            mode = "on" if probe_enabled else "off"
+            runs.append(
+                _run_spec(
+                    run_id=f"overhead-{pair_id}-{mode}",
+                    stage="overhead",
+                    scenario=overhead,
+                    probe_enabled=probe_enabled,
+                    num_prompts=128,
+                    port=port,
+                    pair_id=pair_id,
+                    order_index=order_index,
+                )
+            )
+            port += 1
     for index, name in enumerate(FORMAL_SCENARIOS, start=0):
         runs.append(
             _run_spec(
@@ -280,7 +369,7 @@ def build_run_plan() -> dict[str, Any]:
                 scenario=SCENARIOS[name],
                 probe_enabled=True,
                 num_prompts=512,
-                port=21462 + index,
+                port=port + index,
             )
         )
     return {
@@ -324,7 +413,7 @@ def build_run_plan() -> dict[str, Any]:
             "iteration_rank": "one aggregate stock-vLLM line per engine iteration",
             "preemptions": "Prometheus num_preemptions_total before/after per engine",
             "throughput": "one fixed-shape benchmark result per run",
-            "gpu_health": "nvidia-smi every 2 seconds; not a model attribution field",
+            "gpu_health": "before/after compute-app residue snapshots",
             "per_request_events": "forbidden",
             "alignment": (
                 "same workload_cohort_digest; rank-local elapsed offsets; "
@@ -335,33 +424,40 @@ def build_run_plan() -> dict[str, Any]:
             "scenario": OVERHEAD_SCENARIO,
             "num_prompts": 128,
             "concurrency": 128,
-            "max_absolute_delta_pct": MAX_OVERHEAD_PCT,
-            "stop_before_n512_on_failure": True,
+            "pair_count": OVERHEAD_PAIR_COUNT,
+            "pair_order": [
+                "off,on",
+                "on,off",
+                "off,on",
+                "on,off",
+                "off,on",
+                "on,off",
+            ],
+            "equivalence_ratio_bounds": list(EQUIVALENCE_RATIO_BOUNDS),
+            "confidence_interval": 0.90,
+            "method": "paired_log_ratio_tost",
+            "stop_before_n512_unless_pass": True,
         },
         "runs": runs,
         "artifact_contract": [
             "manifest.json",
             "environment.json",
             "source.sha256",
+            "tooling.sha256",
+            "status.json",
+            "phase466_result.json",
             "gpu_compute_apps_before.txt",
             "process_residue_before.txt",
-            "overhead/off/meta.json",
-            "overhead/off/source.sha256",
-            "overhead/off/bench_result.json",
-            "overhead/off/metrics_before.prom",
-            "overhead/off/metrics_after.prom",
-            "overhead/off/serve.log.gz",
-            "overhead/off/gpu_compute_apps_after.txt",
-            "overhead/off/process_residue_after.txt",
-            "overhead/on/meta.json",
-            "overhead/on/source.sha256",
-            "overhead/on/bench_result.json",
-            "overhead/on/metrics_before.prom",
-            "overhead/on/metrics_after.prom",
-            "overhead/on/serve.log.gz",
-            "overhead/on/iteration_rows.csv",
-            "overhead/on/gpu_compute_apps_after.txt",
-            "overhead/on/process_residue_after.txt",
+            "overhead/<pair-id>/<mode>/meta.json",
+            "overhead/<pair-id>/<mode>/source.sha256",
+            "overhead/<pair-id>/<mode>/warmup/bench_result.json",
+            "overhead/<pair-id>/<mode>/bench_result.json",
+            "overhead/<pair-id>/<mode>/metrics_before.prom",
+            "overhead/<pair-id>/<mode>/metrics_after.prom",
+            "overhead/<pair-id>/<mode>/serve.log.gz",
+            "overhead/<pair-id>/<mode>/gpu_compute_apps_after.txt",
+            "overhead/<pair-id>/<mode>/process_residue_after.txt",
+            "overhead/<pair-id>/pair_result.json",
             "overhead/overhead_gate.json",
             "formal/<scenario>/meta.json",
             "formal/<scenario>/source.sha256",
@@ -385,7 +481,7 @@ def build_run_plan() -> dict[str, Any]:
             "missing_or_duplicate_iteration_rank_rows",
             "missing_run_source_or_workload_cohort_digest",
             "prometheus_counter_missing_or_reset",
-            "overhead_absolute_delta_above_2pct_stop_before_n512",
+            "overhead_gate_not_pass_stop_before_n512",
             "postflight_gpu_or_process_residue",
             "scenario_outside_three_formal_targets",
         ],
@@ -398,6 +494,7 @@ def parse_iteration_rows(
     run_id: str = "",
     source: str = "",
     workload_cohort_digest: str = "",
+    after_iteration_by_rank: dict[int, int] | None = None,
 ) -> list[IterationRow]:
     rows: list[IterationRow] = []
     seen: set[tuple[int, int]] = set()
@@ -408,6 +505,12 @@ def parse_iteration_rows(
         if not match:
             continue
         rank = int(match.group("rank") or 0)
+        iteration_seq = int(match.group("iteration"))
+        if after_iteration_by_rank is not None:
+            if rank not in after_iteration_by_rank:
+                raise ValueError(f"missing_warmup_cutoff_rank:{rank}")
+            if iteration_seq <= after_iteration_by_rank[rank]:
+                continue
         elapsed_ms = float(match.group("elapsed_ms"))
         scheduled_tokens = int(match.group("context_tokens")) + int(
             match.group("generation_tokens")
@@ -418,10 +521,11 @@ def parse_iteration_rows(
         cumulative_scheduled_tokens = progress_start_tokens + scheduled_tokens
         row = IterationRow(
             rank_id=rank,
+            rank_scope="dp_rank",
             run_id=run_id,
             source=source,
             workload_cohort_digest=workload_cohort_digest,
-            iteration_seq=int(match.group("iteration")),
+            iteration_seq=iteration_seq,
             progress_start_tokens=progress_start_tokens,
             progress_end_tokens=cumulative_scheduled_tokens,
             prefill_request_count=int(match.group("context_requests")),
@@ -489,6 +593,7 @@ def summarize_ranks(
     run_ids = {row.run_id for row in rows}
     sources = {row.source for row in rows}
     workload_digests = {row.workload_cohort_digest for row in rows}
+    rank_scopes = {row.rank_scope for row in rows}
     if len(run_ids) != 1 or "" in run_ids or len(sources) != 1:
         raise ValueError("missing_run_id_or_source")
     run_id = next(iter(run_ids))
@@ -497,6 +602,8 @@ def summarize_ranks(
         raise ValueError("missing_run_id_or_source")
     if len(workload_digests) != 1:
         raise ValueError("invalid_workload_cohort_digest")
+    if rank_scopes != {"dp_rank"}:
+        raise ValueError("invalid_real_rank_scope")
     workload_cohort_digest = next(iter(workload_digests))
     if not re.fullmatch(r"[0-9a-f]{64}", workload_cohort_digest):
         raise ValueError("invalid_workload_cohort_digest")
@@ -525,6 +632,7 @@ def summarize_ranks(
                 "source": source,
                 "workload_cohort_digest": workload_cohort_digest,
                 "rank_id": rank,
+                "rank_scope": "dp_rank",
                 "iteration_count": len(rank_rows),
                 "context_only_iteration_count": sum(
                     row.scheduled_prefill_tokens > 0
@@ -574,32 +682,69 @@ def summarize_ranks(
     return summaries
 
 
-def evaluate_overhead_gate(
-    *,
-    off_output_tok_s: float,
-    on_output_tok_s: float,
-) -> dict[str, float | bool | str]:
-    if (
-        not math.isfinite(off_output_tok_s)
-        or not math.isfinite(on_output_tok_s)
-        or off_output_tok_s <= 0
-        or on_output_tok_s <= 0
-    ):
-        raise ValueError("overhead_gate_nonpositive_or_nonfinite_throughput")
-    absolute_delta_pct = abs(on_output_tok_s / off_output_tok_s - 1.0) * 100.0
+def evaluate_paired_overhead_gate(
+    pairs: list[dict[str, Any]],
+) -> dict[str, Any]:
+    expected_pairs = {f"pair-{index:02d}" for index in range(1, OVERHEAD_PAIR_COUNT + 1)}
+    pair_ids = [str(pair.get("pair_id", "")) for pair in pairs]
+    if len(pair_ids) != OVERHEAD_PAIR_COUNT or set(pair_ids) != expected_pairs:
+        raise ValueError(f"overhead_pair_set_mismatch:{sorted(pair_ids)}")
+
+    normalized: list[dict[str, Any]] = []
+    log_ratios: list[float] = []
+    for pair in sorted(pairs, key=lambda row: str(row["pair_id"])):
+        off = float(pair["off_output_tok_s"])
+        on = float(pair["on_output_tok_s"])
+        if not math.isfinite(off) or not math.isfinite(on) or off <= 0 or on <= 0:
+            raise ValueError(f"overhead_pair_invalid_throughput:{pair['pair_id']}")
+        ratio = on / off
+        log_ratio = math.log(ratio)
+        log_ratios.append(log_ratio)
+        normalized.append(
+            {
+                "pair_id": pair["pair_id"],
+                "off_output_tok_s": off,
+                "on_output_tok_s": on,
+                "ratio": ratio,
+                "absolute_delta_pct": abs(ratio - 1.0) * 100.0,
+            }
+        )
+
+    mean_log_ratio = statistics.mean(log_ratios)
+    sample_stddev = statistics.stdev(log_ratios)
+    margin = T_CRITICAL_90_DF5 * sample_stddev / math.sqrt(OVERHEAD_PAIR_COUNT)
+    ci_lower = mean_log_ratio - margin
+    ci_upper = mean_log_ratio + margin
+    lower_bound = math.log(EQUIVALENCE_RATIO_BOUNDS[0])
+    upper_bound = math.log(EQUIVALENCE_RATIO_BOUNDS[1])
+    if ci_lower >= lower_bound and ci_upper <= upper_bound:
+        status = "PASS"
+    elif ci_upper < lower_bound or ci_lower > upper_bound:
+        status = "FAIL"
+    else:
+        status = "INCONCLUSIVE"
+
     return {
         "schema": SCHEMA,
-        "gate": "dp2_bt65536_stock_iteration_detail_overhead",
-        "off_output_tok_s": off_output_tok_s,
-        "on_output_tok_s": on_output_tok_s,
-        "absolute_delta_pct": absolute_delta_pct,
-        "max_absolute_delta_pct": MAX_OVERHEAD_PCT,
-        "passed": absolute_delta_pct <= MAX_OVERHEAD_PCT,
+        "gate": "dp2_bt65536_stock_iteration_detail_paired_equivalence",
+        "method": "paired_log_ratio_tost",
+        "pair_count": OVERHEAD_PAIR_COUNT,
+        "pairs": normalized,
+        "geometric_mean_ratio": math.exp(mean_log_ratio),
+        "confidence_interval_ratio": [math.exp(ci_lower), math.exp(ci_upper)],
+        "equivalence_ratio_bounds": list(EQUIVALENCE_RATIO_BOUNDS),
+        "status": status,
+        "passed": status == "PASS",
+        "formal_collection_allowed": status == "PASS",
     }
 
 
 def require_formal_collection(gate: dict[str, Any]) -> None:
-    if gate.get("passed") is not True:
+    if (
+        gate.get("schema") != SCHEMA
+        or gate.get("status") != "PASS"
+        or gate.get("pair_count") != OVERHEAD_PAIR_COUNT
+    ):
         raise ValueError("overhead_gate_failed_stop_before_n512")
 
 
@@ -655,42 +800,55 @@ def _validate_overhead_benchmark(result: dict[str, Any], *, root: Path) -> float
     return throughput
 
 
-def validate_overhead_artifacts(off_dir: Path, on_dir: Path) -> dict[str, Any]:
+def _validate_exact_run_meta(meta: dict[str, Any], spec: dict[str, Any]) -> None:
+    expected = expected_run_meta(spec)
+    for key, value in expected.items():
+        if meta.get(key) != value:
+            raise ValueError(f"run_meta_mismatch:{key}")
+    if meta.get("vllm_version") != "0.19.0":
+        raise ValueError("run_meta_mismatch:vllm_version")
+    cutoffs = meta.get("measurement_start_after_iteration")
+    if not isinstance(cutoffs, dict) or not cutoffs:
+        raise ValueError("run_meta_mismatch:measurement_start_after_iteration")
+    for rank, value in cutoffs.items():
+        if not str(rank).isdigit() or not isinstance(value, int) or value < -1:
+            raise ValueError("run_meta_mismatch:measurement_start_after_iteration")
+
+
+def _validate_source_and_cleanup(root: Path) -> None:
+    hashes = _load_source_hashes(root / "source.sha256")
+    if hashes != SOURCE_FILES:
+        raise ValueError("vllm_source_hash_mismatch")
+    _validate_residue(root)
+
+
+def validate_overhead_pair_artifacts(
+    off_dir: Path,
+    on_dir: Path,
+    *,
+    off_spec: dict[str, Any],
+    on_spec: dict[str, Any],
+) -> dict[str, Any]:
+    if off_spec.get("pair_id") != on_spec.get("pair_id"):
+        raise ValueError("overhead_pair_identity_mismatch")
+    if off_spec.get("probe_mode") != "off" or on_spec.get("probe_mode") != "on":
+        raise ValueError("overhead_probe_mode_mismatch")
+    if {off_spec.get("order_index"), on_spec.get("order_index")} != {1, 2}:
+        raise ValueError("overhead_pair_order_mismatch")
+
     off_meta = _load_json(off_dir / "meta.json")
     on_meta = _load_json(on_dir / "meta.json")
-    expected_meta = {
-        "scenario": OVERHEAD_SCENARIO,
-        "num_prompts": 128,
-        "concurrency": 128,
-        "vllm_version": "0.19.0",
-        "source": "real",
-    }
-    for key, expected in expected_meta.items():
-        if off_meta.get(key) != expected or on_meta.get(key) != expected:
-            raise ValueError(f"overhead_meta_mismatch:{key}")
-    if off_meta.get("probe_mode") != "off" or on_meta.get("probe_mode") != "on":
-        raise ValueError("overhead_probe_mode_mismatch")
-    for meta in (off_meta, on_meta):
-        if not meta.get("run_id"):
-            raise ValueError("missing_run_id_or_source")
-        if not re.fullmatch(r"[0-9a-f]{64}", str(meta.get("workload_cohort_digest", ""))):
-            raise ValueError("invalid_workload_cohort_digest")
-    if off_meta["workload_cohort_digest"] != on_meta["workload_cohort_digest"]:
-        raise ValueError("workload_cohort_digest_mismatch")
+    _validate_exact_run_meta(off_meta, off_spec)
+    _validate_exact_run_meta(on_meta, on_spec)
+    _validate_source_and_cleanup(off_dir)
+    _validate_source_and_cleanup(on_dir)
 
-    off_hashes = _load_source_hashes(off_dir / "source.sha256")
-    on_hashes = _load_source_hashes(on_dir / "source.sha256")
-    if off_hashes != SOURCE_FILES or on_hashes != SOURCE_FILES:
-        raise ValueError("vllm_source_hash_mismatch")
-    if off_hashes != on_hashes:
-        raise ValueError("source_hash_changed_between_off_and_on")
-    _validate_residue(off_dir)
-    _validate_residue(on_dir)
-
-    off_bench = _load_json(off_dir / "bench_result.json")
-    on_bench = _load_json(on_dir / "bench_result.json")
-    off_throughput = _validate_overhead_benchmark(off_bench, root=off_dir)
-    on_throughput = _validate_overhead_benchmark(on_bench, root=on_dir)
+    off_throughput = _validate_overhead_benchmark(
+        _load_json(off_dir / "bench_result.json"), root=off_dir
+    )
+    on_throughput = _validate_overhead_benchmark(
+        _load_json(on_dir / "bench_result.json"), root=on_dir
+    )
 
     serve_log = on_dir / "serve.log.gz"
     if not serve_log.exists():
@@ -701,28 +859,142 @@ def validate_overhead_artifacts(off_dir: Path, on_dir: Path) -> dict[str, Any]:
     metrics_after = on_dir / "metrics_after.prom"
     if not metrics_before.exists() or not metrics_after.exists():
         raise ValueError(f"missing_probe_metrics:{on_dir}")
+    cutoffs = {
+        int(rank): int(value)
+        for rank, value in on_meta["measurement_start_after_iteration"].items()
+    }
+    rows = parse_iteration_rows(
+        _read_text(serve_log),
+        run_id=str(on_meta["id"]),
+        source=str(on_meta["source"]),
+        workload_cohort_digest=str(on_meta["workload_cohort_digest"]),
+        after_iteration_by_rank=cutoffs,
+    )
     rank_summary = summarize_ranks(
-        parse_iteration_rows(
-            _read_text(serve_log),
-            run_id=str(on_meta["run_id"]),
-            source=str(on_meta["source"]),
-            workload_cohort_digest=str(on_meta["workload_cohort_digest"]),
-        ),
+        rows,
         metrics_before=metrics_before.read_text(encoding="utf-8"),
         metrics_after=metrics_after.read_text(encoding="utf-8"),
     )
     if [row["rank_id"] for row in rank_summary] != [0, 1]:
         raise ValueError("overhead_probe_missing_dp_rank")
+    return {
+        "schema": SCHEMA,
+        "pair_id": off_spec["pair_id"],
+        "off_output_tok_s": off_throughput,
+        "on_output_tok_s": on_throughput,
+        "rank_summary": rank_summary,
+        "source_hash_match": True,
+        "cleanup": True,
+    }
 
-    gate = evaluate_overhead_gate(
-        off_output_tok_s=off_throughput,
-        on_output_tok_s=on_throughput,
+
+def validate_overhead_root(root: Path) -> dict[str, Any]:
+    runs = {run["id"]: run for run in build_run_plan()["runs"]}
+    pair_results: list[dict[str, Any]] = []
+    for pair_index in range(1, OVERHEAD_PAIR_COUNT + 1):
+        pair_id = f"pair-{pair_index:02d}"
+        off_id = f"overhead-{pair_id}-off"
+        on_id = f"overhead-{pair_id}-on"
+        off_dir = root / str(runs[off_id]["artifact_dir"])
+        on_dir = root / str(runs[on_id]["artifact_dir"])
+        if not off_dir.is_dir() or not on_dir.is_dir():
+            raise ValueError(f"missing_overhead_pair_artifact:{pair_id}")
+        pair_results.append(
+            validate_overhead_pair_artifacts(
+                off_dir,
+                on_dir,
+                off_spec=runs[off_id],
+                on_spec=runs[on_id],
+            )
+        )
+    return evaluate_paired_overhead_gate(pair_results)
+
+
+def formal_spec(scenario: str) -> dict[str, Any]:
+    matches = [
+        run
+        for run in build_run_plan()["runs"]
+        if run["stage"] == "formal" and run["scenario"] == scenario
+    ]
+    if len(matches) != 1:
+        raise ValueError(f"unknown_formal_scenario:{scenario}")
+    return matches[0]
+
+
+def _validate_formal_benchmark(
+    result: dict[str, Any], *, spec: dict[str, Any]
+) -> float:
+    expected = {
+        "ok_requests": int(spec["num_prompts"]),
+        "failed_requests": 0,
+        "total_prompt_tokens": int(spec["num_prompts"]) * int(spec["input_len"]),
+        "total_completion_tokens": int(spec["num_prompts"])
+        * int(spec["output_len"]),
+    }
+    for key, value in expected.items():
+        if result.get(key) != value:
+            raise ValueError(f"formal_benchmark_mismatch:{key}")
+    throughput = float(result.get("output_tok_s", 0.0))
+    if not math.isfinite(throughput) or throughput <= 0:
+        raise ValueError("formal_benchmark_invalid_throughput")
+    return throughput
+
+
+def validate_formal_artifacts(
+    root: Path,
+    *,
+    spec: dict[str, Any],
+    gate: dict[str, Any],
+) -> dict[str, Any]:
+    require_formal_collection(gate)
+    if spec.get("stage") != "formal" or spec.get("scenario") not in FORMAL_SCENARIOS:
+        raise ValueError("scenario_outside_three_formal_targets")
+    meta = _load_json(root / "meta.json")
+    _validate_exact_run_meta(meta, spec)
+    _validate_source_and_cleanup(root)
+    throughput = _validate_formal_benchmark(
+        _load_json(root / "bench_result.json"), spec=spec
     )
-    gate["source_hash_match"] = True
-    gate["cleanup"] = True
-    gate["formal_collection_allowed"] = gate["passed"]
-    gate["rank_summary"] = rank_summary
-    return gate
+
+    serve_log = root / "serve.log.gz"
+    if not serve_log.exists():
+        serve_log = root / "serve.log"
+    if not serve_log.exists():
+        raise ValueError(f"missing_probe_serve_log:{root}")
+    metrics_before = root / "metrics_before.prom"
+    metrics_after = root / "metrics_after.prom"
+    if not metrics_before.exists() or not metrics_after.exists():
+        raise ValueError(f"missing_probe_metrics:{root}")
+    cutoffs = {
+        int(rank): int(value)
+        for rank, value in meta["measurement_start_after_iteration"].items()
+    }
+    rows = parse_iteration_rows(
+        _read_text(serve_log),
+        run_id=str(meta["id"]),
+        source=str(meta["source"]),
+        workload_cohort_digest=str(meta["workload_cohort_digest"]),
+        after_iteration_by_rank=cutoffs,
+    )
+    rank_summary = summarize_ranks(
+        rows,
+        metrics_before=metrics_before.read_text(encoding="utf-8"),
+        metrics_after=metrics_after.read_text(encoding="utf-8"),
+    )
+    expected_ranks = list(range(int(spec["dp"])))
+    actual_ranks = [row["rank_id"] for row in rank_summary]
+    if actual_ranks != expected_ranks:
+        raise ValueError(f"formal_rank_set_mismatch:{actual_ranks}!={expected_ranks}")
+    return {
+        "schema": SCHEMA,
+        "status": "PASS",
+        "scenario": spec["scenario"],
+        "output_tok_s": throughput,
+        "iteration_rows": [asdict(row) for row in rows],
+        "rank_summary": rank_summary,
+        "source_hash_match": True,
+        "cleanup": True,
+    }
 
 
 def _read_text(path: Path) -> str:
@@ -767,10 +1039,17 @@ def _parse_args() -> argparse.Namespace:
     summarize.add_argument("--output-json", type=Path, required=True)
     summarize.add_argument("--output-csv", type=Path, required=True)
 
-    gate = subparsers.add_parser("gate", help="validate off/on artifact directories")
-    gate.add_argument("--off-dir", type=Path, required=True)
-    gate.add_argument("--on-dir", type=Path, required=True)
+    gate = subparsers.add_parser("gate", help="validate all six overhead pairs")
+    gate.add_argument("--artifact-root", type=Path, required=True)
     gate.add_argument("--output-json", type=Path, required=True)
+
+    formal = subparsers.add_parser("formal", help="validate one preregistered formal run")
+    formal.add_argument("--run-dir", type=Path, required=True)
+    formal.add_argument("--scenario", choices=FORMAL_SCENARIOS, required=True)
+    formal.add_argument("--gate-json", type=Path, required=True)
+    formal.add_argument("--output-json", type=Path, required=True)
+    formal.add_argument("--output-iteration-csv", type=Path, required=True)
+    formal.add_argument("--output-rank-csv", type=Path, required=True)
     return parser.parse_args()
 
 
@@ -803,9 +1082,22 @@ def main() -> int:
         _write_csv(args.output_iteration_csv, [asdict(row) for row in rows])
         _write_csv(args.output_csv, summaries)
         return 0
-    gate = validate_overhead_artifacts(args.off_dir, args.on_dir)
-    _write_json(args.output_json, gate)
-    return 0 if gate["passed"] else 2
+    if args.command == "gate":
+        gate = validate_overhead_root(args.artifact_root)
+        _write_json(args.output_json, gate)
+        return 0 if gate["status"] == "PASS" else 2
+    result = validate_formal_artifacts(
+        args.run_dir,
+        spec=formal_spec(args.scenario),
+        gate=_load_json(args.gate_json),
+    )
+    _write_json(
+        args.output_json,
+        {key: value for key, value in result.items() if key != "iteration_rows"},
+    )
+    _write_csv(args.output_iteration_csv, result["iteration_rows"])
+    _write_csv(args.output_rank_csv, result["rank_summary"])
+    return 0
 
 
 if __name__ == "__main__":

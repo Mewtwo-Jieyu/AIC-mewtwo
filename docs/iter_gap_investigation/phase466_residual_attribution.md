@@ -9,7 +9,7 @@ Phase462 composition logging v2/v3/v4 的开销为 `13.8486% / 8.7915% / 8.2043%
 | Item | Value |
 |---|---|
 | Base commit | `9ba5ad93ca8805a1eb427593ced8cee01aea6804` |
-| Result commit | `99ed1122d61572651d21dd7410f75e3128362909` |
+| Result commit | `4ab587ee` |
 | Remote Phase463 artifact | `/mnt/shared-storage-user/zhaojieyu/backup/aic/phase463_six_point_latency_recollect_263a969` |
 | Protocol | N512/C128 formal; C64 diagnostic only |
 | Outcome | `INCONCLUSIVE` |
@@ -71,6 +71,7 @@ Real 与 sim 不共享绝对时钟。正式 join 使用相同的 `workload_cohor
 Track B 的 stock-vLLM 第一层 probe 只能直接提供 identity、rank、iteration elapsed、prefill/decode
 request/token totals 和 progress window。它不提供本表要求的 chunk/state/queue/KV/component-cost 字段，
 因此即使第一层 GPU gate 通过，也不能单独把本报告升级为根因结论或选择 Phase467 模型。
+Phase466 v2 exit review 按 real/simulator 来源分别检查字段；仿真侧已有字段不能替代真实侧缺失字段，空值也按缺失处理。
 
 ## Machine-checked matrix
 
@@ -93,7 +94,7 @@ request/token totals 和 progress window。它不提供本表要求的 chunk/sta
 
 | Order | Measurement | Reason | Stop rule |
 |---:|---|---|---|
-| 1 | DP2-bt65536 off/on | 同时覆盖构成、cost、rank 三类候选，并承接 Phase462 coarse-cell spread | absolute throughput delta `>2%` immediately stops all formal collection |
+| 1 | DP2-bt65536 off/on (6 pairs) | 同时覆盖构成、cost、rank 三类候选，并承接 Phase462 coarse-cell spread | 90% paired log-ratio CI 未完全落入 `[0.98, 1.02]` 时停止 formal collection |
 | 2 | DP2-bt65536 N512/C128 | 在同一 cell 先形成 composition-cost-rank 联合样本 | incomplete rank or iteration fields => reject artifact |
 | 3 | TP8-bt65536 N512/C128 | 同 workload 的 dp=1 topology control，只排除跨拓扑共同根因 | protocol/hash mismatch => reject comparison |
 | 4 | DP2-32k3k N512/C128 | 用 TP8-32k3k pass cell 作长度/拓扑控制，检查 topology-specific 信号是否复现 | non-repeatable or non-discriminating signal => remain INCONCLUSIVE |
