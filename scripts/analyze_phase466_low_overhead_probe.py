@@ -395,7 +395,7 @@ def build_run_plan() -> dict[str, Any]:
         "source_files": dict(SOURCE_FILES),
         "source_capture_argv": ["sha256sum", *SOURCE_FILES],
         "environment_capture": [
-            "git rev-parse HEAD",
+            "required 40-character source commit from coordinator",
             'python3 -c "import vllm; print(vllm.__version__)"',
             "nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader,nounits",
         ],

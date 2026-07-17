@@ -39,8 +39,9 @@
 | simulator exporter inherited stale vLLM 0.12.0 | exporter explicitly locks exact vLLM 0.19.0 |
 | exit review used a union of real/sim fields | required fields are validated per source; blank values are missing |
 | plan claimed a 2-second GPU sampler that did not exist | contract now states only the implemented before/after residue snapshots |
-| environment contract omitted git/GPU data in artifacts | preflight now records git HEAD and GPU identity |
-| remote code or benchmark could be locally modified | preflight requires a clean git worktree and records analyzer/supervisor/benchmark hashes |
+| environment contract omitted source/GPU identity | preflight requires a 40-character source commit and records GPU identity |
+| remote directory is not a Git checkout | analyzer/supervisor/benchmark hashes are mandatory execution identity; no optional Git fallback |
+| worker image has no Ray package or CLI | cleanup uses the service process group and fails on any remaining GPU/process residue |
 | non-PASS gate returned without a common final result | writes `STOPPED_BEFORE_FORMAL`, compresses logs and keeps Default AIC `No-Go` |
 
 ## Local outputs

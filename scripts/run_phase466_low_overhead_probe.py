@@ -48,7 +48,6 @@ INTEGRITY_ERRORS = {
     "vllm_source_hash_mismatch",
     "postflight_residue",
     "service_exited_during_benchmark",
-    "workdir_dirty",
 }
 
 
@@ -257,7 +256,6 @@ def _stop_service(process: subprocess.Popen[Any], *, cwd: Path, env: dict[str, s
         except subprocess.TimeoutExpired:
             os.killpg(process.pid, signal.SIGKILL)
             process.wait(timeout=30)
-    subprocess.run(["ray", "stop", "--force"], cwd=cwd, env=env, check=False, stdout=subprocess.DEVNULL)
     deadline = time.monotonic() + 120
     while time.monotonic() < deadline:
         if not _gpu_residue(cwd, env) and not _process_residue(cwd, env):
@@ -267,10 +265,20 @@ def _stop_service(process: subprocess.Popen[Any], *, cwd: Path, env: dict[str, s
 
 
 class Supervisor:
-    def __init__(self, *, contract: Any, workdir: Path, artifact_root: Path) -> None:
+    def __init__(
+        self,
+        *,
+        contract: Any,
+        workdir: Path,
+        artifact_root: Path,
+        source_commit: str,
+    ) -> None:
+        if not re.fullmatch(r"[0-9a-f]{40}", source_commit):
+            raise ValueError("invalid_source_commit")
         self.contract = contract
         self.workdir = workdir
         self.artifact_root = artifact_root
+        self.source_commit = source_commit
         self.env = _runtime_env()
         self.status_path = artifact_root / "status.json"
         self._status_lock = threading.Lock()
@@ -333,13 +341,6 @@ class Supervisor:
         self.artifact_root.mkdir(parents=True, exist_ok=False)
         self.status("preflight", "running")
         _assert_clean_worker(self.workdir, self.env, label="preflight")
-        workdir_status = _capture(
-            ["git", "status", "--porcelain"],
-            cwd=self.workdir,
-            env=self.env,
-        )
-        if workdir_status:
-            raise RuntimeError(f"workdir_dirty:{workdir_status}")
         version = _capture(
             ["python3", "-c", "import vllm; print(vllm.__version__)"],
             cwd=self.workdir,
@@ -348,12 +349,6 @@ class Supervisor:
         )
         if version != "0.19.0":
             raise RuntimeError(f"vllm_version_mismatch:{version}")
-        git_head = _capture(
-            ["git", "rev-parse", "HEAD"],
-            cwd=self.workdir,
-            env=self.env,
-            allow_empty=False,
-        )
         gpu = _capture(
             [
                 "nvidia-smi",
@@ -373,7 +368,7 @@ class Supervisor:
         _write_json(
             self.artifact_root / "environment.json",
             {
-                "git_head": git_head,
+                "source_commit": self.source_commit,
                 "gpu": gpu,
                 "vllm_version": version,
                 "VLLM_ENABLE_CUDA_COMPATIBILITY": "1",
@@ -486,10 +481,21 @@ def gate_stop_result(gate: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def run_all(contract: Any, *, workdir: Path, artifact_root: Path) -> int:
+def run_all(
+    contract: Any,
+    *,
+    workdir: Path,
+    artifact_root: Path,
+    source_commit: str,
+) -> int:
     plan = contract.build_run_plan()
     validated = validate_execution_plan(plan)
-    supervisor = Supervisor(contract=contract, workdir=workdir, artifact_root=artifact_root)
+    supervisor = Supervisor(
+        contract=contract,
+        workdir=workdir,
+        artifact_root=artifact_root,
+        source_commit=source_commit,
+    )
     try:
         hashes = supervisor.preflight()
         supervisor.start_heartbeat()
@@ -637,6 +643,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workdir", type=Path, required=True)
     parser.add_argument("--artifact-root", type=Path, required=True)
+    parser.add_argument("--source-commit", required=True)
     parser.add_argument(
         "--contract",
         type=Path,
@@ -648,6 +655,7 @@ def main() -> int:
         contract,
         workdir=args.workdir.resolve(),
         artifact_root=args.artifact_root.resolve(),
+        source_commit=args.source_commit,
     )
 
 

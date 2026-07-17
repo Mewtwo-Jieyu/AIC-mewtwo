@@ -39,8 +39,8 @@ progress windows; absolute clocks and naked iteration ids are not join keys.
 | Item | Behavior |
 |---|---|
 | supervisor | serialized runs, atomic status updates and a 30-second heartbeat |
-| preflight | clean GPU/process state, exact vLLM version, git HEAD, GPU identity and exact stock-source hashes |
-| cleanup | terminate service process group, `ray stop --force`, then require empty GPU/process residue |
+| preflight | clean GPU/process state, required source commit, exact vLLM version, GPU identity and exact tool/stock-source hashes |
+| cleanup | terminate the service process group, then require empty GPU/process residue |
 | failure handling | normal benchmark failure may continue to the next preregistered run; cleanup or integrity failure stops all runs |
 | gate validation | validates all 6 complete pairs; the old single-pair gate entry no longer exists |
 | formal validation | exact scenario, request/token counts, rank set, source hash, warmup cutoff and passed v2 gate |

@@ -78,6 +78,7 @@ def test_supervisor_heartbeat_updates_status_and_stops(tmp_path: Path) -> None:
         contract=SimpleNamespace(SCHEMA="unit-schema"),
         workdir=tmp_path,
         artifact_root=artifact_root,
+        source_commit="a" * 40,
     )
     supervisor.status("formal", "measuring", run_id="run-1")
     first = json.loads(supervisor.status_path.read_text())
@@ -97,7 +98,7 @@ def test_supervisor_heartbeat_updates_status_and_stops(tmp_path: Path) -> None:
     assert not supervisor.heartbeat_alive
 
 
-def test_preflight_captures_git_gpu_and_runtime_environment(
+def test_preflight_captures_source_commit_gpu_and_runtime_environment(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     runner = _load(MODULE_PATH, "run_phase466_low_overhead_probe_preflight")
@@ -106,6 +107,7 @@ def test_preflight_captures_git_gpu_and_runtime_environment(
         contract=SimpleNamespace(SCHEMA="unit-schema"),
         workdir=tmp_path,
         artifact_root=artifact_root,
+        source_commit="a" * 40,
     )
     monkeypatch.setattr(runner, "_assert_clean_worker", lambda *args, **kwargs: None)
     monkeypatch.setattr(runner, "_source_hashes", lambda contract: {})
@@ -116,10 +118,6 @@ def test_preflight_captures_git_gpu_and_runtime_environment(
     )
 
     def capture(argv, **kwargs):
-        if argv[:3] == ["git", "status", "--porcelain"]:
-            return ""
-        if argv[:2] == ["git", "rev-parse"]:
-            return "a" * 40
         if argv[0] == "nvidia-smi":
             return "NVIDIA H200, 143771, 575.57.08"
         if argv[:2] == ["python3", "-c"]:
@@ -131,28 +129,22 @@ def test_preflight_captures_git_gpu_and_runtime_environment(
     supervisor.preflight()
     environment = json.loads((artifact_root / "environment.json").read_text())
 
-    assert environment["git_head"] == "a" * 40
+    assert environment["source_commit"] == "a" * 40
     assert environment["gpu"] == "NVIDIA H200, 143771, 575.57.08"
     assert environment["vllm_version"] == "0.19.0"
     assert (artifact_root / "tooling.sha256").read_text() == f"{'b' * 64}  tool.py\n"
 
 
-def test_preflight_rejects_dirty_worktree(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    runner = _load(MODULE_PATH, "run_phase466_low_overhead_probe_dirty")
-    supervisor = runner.Supervisor(
-        contract=SimpleNamespace(SCHEMA="unit-schema"),
-        workdir=tmp_path,
-        artifact_root=tmp_path / "artifact",
-    )
-    monkeypatch.setattr(runner, "_assert_clean_worker", lambda *args, **kwargs: None)
-    monkeypatch.setattr(
-        runner,
-        "_capture",
-        lambda argv, **kwargs: " M scripts/run_openai_fixed_shape_benchmark.py",
-    )
+def test_supervisor_rejects_invalid_source_commit(tmp_path: Path) -> None:
+    runner = _load(MODULE_PATH, "run_phase466_low_overhead_probe_commit")
 
-    with pytest.raises(RuntimeError, match="workdir_dirty"):
-        supervisor.preflight()
+    with pytest.raises(ValueError, match="invalid_source_commit"):
+        runner.Supervisor(
+            contract=SimpleNamespace(SCHEMA="unit-schema"),
+            workdir=tmp_path,
+            artifact_root=tmp_path / "artifact",
+            source_commit="2f6ad73d",
+        )
 
 
 def test_gate_stop_result_is_explicit_and_never_default_evidence() -> None:
@@ -167,6 +159,26 @@ def test_gate_stop_result_is_explicit_and_never_default_evidence() -> None:
     assert result["valid_for_default"] is False
     assert result["perf_database"] is False
     assert result["default_readiness"] == "No-Go"
+
+
+def test_stop_service_does_not_require_ray_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = _load(MODULE_PATH, "run_phase466_low_overhead_probe_stop")
+
+    class ExitedProcess:
+        def poll(self):
+            return 0
+
+    monkeypatch.setattr(runner, "_gpu_residue", lambda *args, **kwargs: "")
+    monkeypatch.setattr(runner, "_process_residue", lambda *args, **kwargs: "")
+
+    def forbidden_run(*args, **kwargs):
+        raise AssertionError("cleanup must not invoke unavailable ray CLI")
+
+    monkeypatch.setattr(runner.subprocess, "run", forbidden_run)
+
+    assert runner._stop_service(ExitedProcess(), cwd=tmp_path, env={}) is True
 
 
 def test_last_iteration_by_rank_requires_every_expected_rank() -> None:
