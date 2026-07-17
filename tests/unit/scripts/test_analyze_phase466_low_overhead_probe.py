@@ -109,20 +109,20 @@ def test_parser_summarizes_iteration_rank_without_request_identity() -> None:
     )
 
     assert set(rows[0].__dataclass_fields__) == {
-        "rank",
+        "rank_id",
         "run_id",
         "source",
         "workload_cohort_digest",
-        "iteration",
+        "iteration_seq",
         "progress_start_tokens",
         "progress_end_tokens",
-        "context_requests",
-        "context_tokens",
-        "generation_requests",
-        "generation_tokens",
-        "elapsed_ms",
-        "start_offset_ms",
-        "end_offset_ms",
+        "prefill_request_count",
+        "scheduled_prefill_tokens",
+        "decode_request_count",
+        "scheduled_decode_tokens",
+        "iteration_elapsed_ms",
+        "iteration_start_offset_ms",
+        "iteration_end_offset_ms",
         "cumulative_scheduled_tokens",
         "progress_window_id",
     }
@@ -130,7 +130,7 @@ def test_parser_summarizes_iteration_rank_without_request_identity() -> None:
     assert rows[0].progress_end_tokens == 8000
     assert rows[1].progress_start_tokens == 8000
     assert rows[2].progress_start_tokens == 0
-    by_rank = {row["rank"]: row for row in summaries}
+    by_rank = {row["rank_id"]: row for row in summaries}
     assert by_rank[0]["run_id"] == "unit-real"
     assert by_rank[0]["source"] == "real"
     assert by_rank[0]["workload_cohort_digest"] == _cohort_digest()
@@ -146,8 +146,8 @@ def test_parser_summarizes_iteration_rank_without_request_identity() -> None:
     assert by_rank[1]["run_id"] == "unit-real"
     assert by_rank[1]["source"] == "real"
     assert by_rank[1]["workload_cohort_digest"] == _cohort_digest()
-    assert by_rank[1]["start_offset_ms"] == pytest.approx(0.0)
-    assert by_rank[1]["end_offset_ms"] == pytest.approx(142.0)
+    assert by_rank[1]["iteration_start_offset_ms"] == pytest.approx(0.0)
+    assert by_rank[1]["iteration_end_offset_ms"] == pytest.approx(142.0)
     assert by_rank[1]["cumulative_scheduled_tokens"] == 7912
     assert by_rank[1]["elapsed_ms_per_scheduled_token"] == pytest.approx(
         142.0 / (7900 + 4 + 8)
@@ -243,7 +243,7 @@ def test_artifact_validation_requires_hash_match_and_empty_residue(tmp_path: Pat
     gate = phase466.validate_overhead_artifacts(off, on)
     assert gate["passed"] is True
     assert gate["source_hash_match"] is True
-    assert [row["rank"] for row in gate["rank_summary"]] == [0, 1]
+    assert [row["rank_id"] for row in gate["rank_summary"]] == [0, 1]
 
     (on / "process_residue_after.txt").write_text("123 vllm\n")
     with pytest.raises(ValueError, match="nonempty_process_residue"):
@@ -272,6 +272,7 @@ def test_plan_records_source_environment_and_artifact_contract() -> None:
     assert "overhead/on/serve.log.gz" in plan["artifact_contract"]
     assert "overhead/overhead_gate.json" in plan["artifact_contract"]
     assert "formal/<scenario>/rank_summary.csv" in plan["artifact_contract"]
+    assert "formal/<scenario>/iteration_rows.csv" in plan["artifact_contract"]
     assert plan["stop_rules"][0] == "preflight_gpu_or_process_residue"
     assert "cumulative scheduled-token progress windows" in plan["sampling"]["alignment"]
 

@@ -13,7 +13,7 @@ import re
 import shlex
 import statistics
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -73,20 +73,20 @@ class Scenario:
 
 @dataclass(frozen=True)
 class IterationRow:
-    rank: int
+    rank_id: int
     run_id: str
     source: str
     workload_cohort_digest: str
-    iteration: int
+    iteration_seq: int
     progress_start_tokens: int
     progress_end_tokens: int
-    context_requests: int
-    context_tokens: int
-    generation_requests: int
-    generation_tokens: int
-    elapsed_ms: float
-    start_offset_ms: float
-    end_offset_ms: float
+    prefill_request_count: int
+    scheduled_prefill_tokens: int
+    decode_request_count: int
+    scheduled_decode_tokens: int
+    iteration_elapsed_ms: float
+    iteration_start_offset_ms: float
+    iteration_end_offset_ms: float
     cumulative_scheduled_tokens: int
     progress_window_id: int
 
@@ -359,6 +359,7 @@ def build_run_plan() -> dict[str, Any]:
             "overhead/on/metrics_before.prom",
             "overhead/on/metrics_after.prom",
             "overhead/on/serve.log.gz",
+            "overhead/on/iteration_rows.csv",
             "overhead/on/gpu_compute_apps_after.txt",
             "overhead/on/process_residue_after.txt",
             "overhead/overhead_gate.json",
@@ -368,6 +369,7 @@ def build_run_plan() -> dict[str, Any]:
             "formal/<scenario>/metrics_before.prom",
             "formal/<scenario>/metrics_after.prom",
             "formal/<scenario>/serve.log.gz",
+            "formal/<scenario>/iteration_rows.csv",
             "formal/<scenario>/rank_summary.csv",
             "formal/<scenario>/probe_summary.json",
             "formal/<scenario>/gpu_compute_apps_after.txt",
@@ -415,30 +417,32 @@ def parse_iteration_rows(
         progress_start_tokens = tokens_by_rank[rank]
         cumulative_scheduled_tokens = progress_start_tokens + scheduled_tokens
         row = IterationRow(
-            rank=rank,
+            rank_id=rank,
             run_id=run_id,
             source=source,
             workload_cohort_digest=workload_cohort_digest,
-            iteration=int(match.group("iteration")),
+            iteration_seq=int(match.group("iteration")),
             progress_start_tokens=progress_start_tokens,
             progress_end_tokens=cumulative_scheduled_tokens,
-            context_requests=int(match.group("context_requests")),
-            context_tokens=int(match.group("context_tokens")),
-            generation_requests=int(match.group("generation_requests")),
-            generation_tokens=int(match.group("generation_tokens")),
-            elapsed_ms=elapsed_ms,
-            start_offset_ms=start_offset_ms,
-            end_offset_ms=end_offset_ms,
+            prefill_request_count=int(match.group("context_requests")),
+            scheduled_prefill_tokens=int(match.group("context_tokens")),
+            decode_request_count=int(match.group("generation_requests")),
+            scheduled_decode_tokens=int(match.group("generation_tokens")),
+            iteration_elapsed_ms=elapsed_ms,
+            iteration_start_offset_ms=start_offset_ms,
+            iteration_end_offset_ms=end_offset_ms,
             cumulative_scheduled_tokens=cumulative_scheduled_tokens,
             progress_window_id=max(
                 0, (cumulative_scheduled_tokens - 1) // PROGRESS_WINDOW_TOKENS
             ),
         )
-        key = (row.rank, row.iteration)
+        key = (row.rank_id, row.iteration_seq)
         if key in seen:
             raise ValueError(f"duplicate_rank_iteration:{key}")
-        if not math.isfinite(row.elapsed_ms) or row.elapsed_ms <= 0:
-            raise ValueError(f"invalid_iteration_elapsed:{key}:{row.elapsed_ms}")
+        if not math.isfinite(row.iteration_elapsed_ms) or row.iteration_elapsed_ms <= 0:
+            raise ValueError(
+                f"invalid_iteration_elapsed:{key}:{row.iteration_elapsed_ms}"
+            )
         seen.add(key)
         rows.append(row)
         elapsed_by_rank[rank] = end_offset_ms
@@ -500,7 +504,7 @@ def summarize_ranks(
     after = _preemption_values(metrics_after)
     grouped: dict[int, list[IterationRow]] = defaultdict(list)
     for row in rows:
-        grouped[row.rank].append(row)
+        grouped[row.rank_id].append(row)
     summaries: list[dict[str, Any]] = []
     for rank, rank_rows in sorted(grouped.items()):
         if rank not in before or rank not in after:
@@ -508,44 +512,49 @@ def summarize_ranks(
         preemptions = after[rank] - before[rank]
         if preemptions < 0:
             raise ValueError(f"preemption_counter_reset:{rank}")
-        context_tokens = sum(row.context_tokens for row in rank_rows)
-        generation_tokens = sum(row.generation_tokens for row in rank_rows)
+        context_tokens = sum(row.scheduled_prefill_tokens for row in rank_rows)
+        generation_tokens = sum(row.scheduled_decode_tokens for row in rank_rows)
         scheduled_tokens = context_tokens + generation_tokens
         if scheduled_tokens <= 0:
             raise ValueError(f"rank_has_no_scheduled_tokens:{rank}")
-        elapsed = [row.elapsed_ms for row in rank_rows]
+        elapsed = [row.iteration_elapsed_ms for row in rank_rows]
         elapsed_sum = sum(elapsed)
         summaries.append(
             {
                 "run_id": run_id,
                 "source": source,
                 "workload_cohort_digest": workload_cohort_digest,
-                "rank": rank,
+                "rank_id": rank,
                 "iteration_count": len(rank_rows),
                 "context_only_iteration_count": sum(
-                    row.context_tokens > 0 and row.generation_tokens == 0
+                    row.scheduled_prefill_tokens > 0
+                    and row.scheduled_decode_tokens == 0
                     for row in rank_rows
                 ),
                 "generation_only_iteration_count": sum(
-                    row.context_tokens == 0 and row.generation_tokens > 0
+                    row.scheduled_prefill_tokens == 0
+                    and row.scheduled_decode_tokens > 0
                     for row in rank_rows
                 ),
                 "mixed_iteration_count": sum(
-                    row.context_tokens > 0 and row.generation_tokens > 0
+                    row.scheduled_prefill_tokens > 0
+                    and row.scheduled_decode_tokens > 0
                     for row in rank_rows
                 ),
                 "context_requests_total": sum(
-                    row.context_requests for row in rank_rows
+                    row.prefill_request_count for row in rank_rows
                 ),
                 "context_tokens_total": context_tokens,
                 "generation_requests_total": sum(
-                    row.generation_requests for row in rank_rows
+                    row.decode_request_count for row in rank_rows
                 ),
                 "generation_tokens_total": generation_tokens,
                 "scheduled_tokens_total": scheduled_tokens,
                 "elapsed_ms_sum": elapsed_sum,
-                "start_offset_ms": rank_rows[0].start_offset_ms,
-                "end_offset_ms": rank_rows[-1].end_offset_ms,
+                "iteration_start_offset_ms": rank_rows[
+                    0
+                ].iteration_start_offset_ms,
+                "iteration_end_offset_ms": rank_rows[-1].iteration_end_offset_ms,
                 "progress_start_tokens": rank_rows[0].progress_start_tokens,
                 "progress_end_tokens": rank_rows[-1].progress_end_tokens,
                 "cumulative_scheduled_tokens": rank_rows[
@@ -702,7 +711,7 @@ def validate_overhead_artifacts(off_dir: Path, on_dir: Path) -> dict[str, Any]:
         metrics_before=metrics_before.read_text(encoding="utf-8"),
         metrics_after=metrics_after.read_text(encoding="utf-8"),
     )
-    if [row["rank"] for row in rank_summary] != [0, 1]:
+    if [row["rank_id"] for row in rank_summary] != [0, 1]:
         raise ValueError("overhead_probe_missing_dp_rank")
 
     gate = evaluate_overhead_gate(
@@ -754,6 +763,7 @@ def _parse_args() -> argparse.Namespace:
     summarize.add_argument("--run-id", required=True)
     summarize.add_argument("--source", choices=("real", "sim"), required=True)
     summarize.add_argument("--workload-cohort-digest", required=True)
+    summarize.add_argument("--output-iteration-csv", type=Path, required=True)
     summarize.add_argument("--output-json", type=Path, required=True)
     summarize.add_argument("--output-csv", type=Path, required=True)
 
@@ -790,6 +800,7 @@ def main() -> int:
                 "request_identity_collected": False,
             },
         )
+        _write_csv(args.output_iteration_csv, [asdict(row) for row in rows])
         _write_csv(args.output_csv, summaries)
         return 0
     gate = validate_overhead_artifacts(args.off_dir, args.on_dir)
