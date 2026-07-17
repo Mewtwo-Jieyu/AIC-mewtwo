@@ -58,6 +58,8 @@ ALIGNMENT_FIELDS = {
     "run_id",
     "source",
     "rank_id",
+    "iteration_start_offset_ms",
+    "iteration_end_offset_ms",
     "workload_cohort_digest",
     "cumulative_scheduled_tokens",
     "progress_window_id",
@@ -281,6 +283,8 @@ def validate_report(
         "workload_cohort_digest",
         "cumulative_scheduled_tokens",
         "progress_window_id",
+        "iteration_start_offset_ms",
+        "iteration_end_offset_ms",
         *FAILED_SCENARIOS,
         *CANDIDATES,
     }

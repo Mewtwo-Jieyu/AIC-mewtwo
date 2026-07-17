@@ -9,7 +9,7 @@ Phase462 composition logging v2/v3/v4 的开销为 `13.8486% / 8.7915% / 8.2043%
 | Item | Value |
 |---|---|
 | Base commit | `9ba5ad93ca8805a1eb427593ced8cee01aea6804` |
-| Result commit | the independent report-only commit containing this file |
+| Result commit | `99ed1122d61572651d21dd7410f75e3128362909` |
 | Remote Phase463 artifact | `/mnt/shared-storage-user/zhaojieyu/backup/aic/phase463_six_point_latency_recollect_263a969` |
 | Protocol | N512/C128 formal; C64 diagnostic only |
 | Outcome | `INCONCLUSIVE` |
@@ -40,7 +40,7 @@ Phase462 composition logging v2/v3/v4 的开销为 `13.8486% / 8.7915% / 8.2043%
 
 | Required Phase466B fields | Expected discriminator | Disproof rule |
 |---|---|---|
-| run_id;source;rank_id;iteration_start_offset_ns;iteration_end_offset_ns;workload_cohort_digest;cumulative_scheduled_tokens;progress_window_id;iteration_elapsed_ms;prefill_request_count;decode_request_count;prefill_chunk_token_histogram;fresh_prefill_tokens;recompute_prefill_tokens;resume_prefill_tokens;decode_kv_token_sum;running_count;waiting_count;cudagraph_mode | See per-scenario expected_signal in the CSV; the signal must repeat under the formal protocol. | See per-scenario disproof_condition in the CSV; any disproof keeps this route closed. |
+| run_id;source;rank_id;iteration_start_offset_ms;iteration_end_offset_ms;workload_cohort_digest;cumulative_scheduled_tokens;progress_window_id;iteration_elapsed_ms;prefill_request_count;decode_request_count;prefill_chunk_token_histogram;fresh_prefill_tokens;recompute_prefill_tokens;resume_prefill_tokens;decode_kv_token_sum;running_count;waiting_count;cudagraph_mode | See per-scenario expected_signal in the CSV; the signal must repeat under the formal protocol. | See per-scenario disproof_condition in the CSV; any disproof keeps this route closed. |
 ### `iteration_cost_serving_state_coverage`
 
 | Scenario | Status | Existing support | Existing counterevidence |
@@ -51,7 +51,7 @@ Phase462 composition logging v2/v3/v4 的开销为 `13.8486% / 8.7915% / 8.2043%
 
 | Required Phase466B fields | Expected discriminator | Disproof rule |
 |---|---|---|
-| run_id;source;rank_id;iteration_start_offset_ns;iteration_end_offset_ns;workload_cohort_digest;cumulative_scheduled_tokens;progress_window_id;iteration_elapsed_ms;scheduled_prefill_tokens;scheduled_decode_tokens;prefill_chunk_token_histogram;fresh_prefill_tokens;recompute_prefill_tokens;resume_prefill_tokens;decode_kv_token_sum;cudagraph_mode;sim_serving_state_key;sim_predicted_iteration_ms;sim_component_cost_ms | See per-scenario expected_signal in the CSV; the signal must repeat under the formal protocol. | See per-scenario disproof_condition in the CSV; any disproof keeps this route closed. |
+| run_id;source;rank_id;iteration_start_offset_ms;iteration_end_offset_ms;workload_cohort_digest;cumulative_scheduled_tokens;progress_window_id;iteration_elapsed_ms;scheduled_prefill_tokens;scheduled_decode_tokens;prefill_chunk_token_histogram;fresh_prefill_tokens;recompute_prefill_tokens;resume_prefill_tokens;decode_kv_token_sum;cudagraph_mode;sim_serving_state_key;sim_predicted_iteration_ms;sim_component_cost_ms | See per-scenario expected_signal in the CSV; the signal must repeat under the formal protocol. | See per-scenario disproof_condition in the CSV; any disproof keeps this route closed. |
 ### `dp_rank_synchronization_asymmetry`
 
 | Scenario | Status | Existing support | Existing counterevidence |
@@ -62,11 +62,15 @@ Phase462 composition logging v2/v3/v4 的开销为 `13.8486% / 8.7915% / 8.2043%
 
 | Required Phase466B fields | Expected discriminator | Disproof rule |
 |---|---|---|
-| run_id;source;rank_id;iteration_start_offset_ns;iteration_end_offset_ns;workload_cohort_digest;cumulative_scheduled_tokens;progress_window_id;iteration_elapsed_ms;scheduled_prefill_tokens;scheduled_decode_tokens;running_count;waiting_count;completed_request_count | See per-scenario expected_signal in the CSV; the signal must repeat under the formal protocol. | See per-scenario disproof_condition in the CSV; any disproof keeps this route closed. |
+| run_id;source;rank_id;iteration_start_offset_ms;iteration_end_offset_ms;workload_cohort_digest;cumulative_scheduled_tokens;progress_window_id;iteration_elapsed_ms;scheduled_prefill_tokens;scheduled_decode_tokens;running_count;waiting_count;completed_request_count | See per-scenario expected_signal in the CSV; the signal must repeat under the formal protocol. | See per-scenario disproof_condition in the CSV; any disproof keeps this route closed. |
 
 Real 与 sim 不共享绝对时钟。正式 join 使用相同的 `workload_cohort_digest`，再按
 `cumulative_scheduled_tokens` 切分 `progress_window_id`；start/end offset 只在各自 run 内计算窗口 wall，
 禁止用裸 iteration index 或跨进程绝对时间直接配对。
+
+Track B 的 stock-vLLM 第一层 probe 只能直接提供 identity、rank、iteration elapsed、prefill/decode
+request/token totals 和 progress window。它不提供本表要求的 chunk/state/queue/KV/component-cost 字段，
+因此即使第一层 GPU gate 通过，也不能单独把本报告升级为根因结论或选择 Phase467 模型。
 
 ## Machine-checked matrix
 
