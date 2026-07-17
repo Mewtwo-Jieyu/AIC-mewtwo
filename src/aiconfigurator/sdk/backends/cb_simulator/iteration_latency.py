@@ -28,6 +28,7 @@ from aiconfigurator.sdk.config import RuntimeConfig
 logger = logging.getLogger(__name__)
 
 _KV_LEN_BUCKET = 512
+_SERVING_STATE_RUNTIME_MODEL = "moonshotai/Kimi-K2.5"
 _SERVING_STATE_PERFDB_MODEL = "kimi-k2.5"
 _SERVING_STATE_HARDWARE = "h200_sxm"
 _SERVING_STATE_VERSION = "0.19.0"
@@ -163,13 +164,20 @@ class IterationLatencyCalculator:
         if topology is None:
             return False
         config = getattr(self._model, "config", None)
-        return (
+        database_scope = (
             getattr(self._database, "backend", None) == "vllm"
             and getattr(self._database, "system", None) == _SERVING_STATE_HARDWARE
             and getattr(self._database, "version", None) == _SERVING_STATE_VERSION
             and getattr(config, "moe_tp_size", None) == 1
             and getattr(config, "moe_ep_size", None) == 8
-            and hasattr(self._database, "query_vllm_serving_state")
+        )
+        if not database_scope:
+            return False
+        model_path = getattr(self._model, "model_path", None)
+        if model_path is None:
+            raise ValueError("vLLM serving-state scope requires model.model_path metadata")
+        return model_path == _SERVING_STATE_RUNTIME_MODEL and hasattr(
+            self._database, "query_vllm_serving_state"
         )
 
     def _serving_state_query_max_num_batched_tokens(self) -> int | None:

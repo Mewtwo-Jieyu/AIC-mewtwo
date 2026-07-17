@@ -697,6 +697,8 @@ class _FakeModelForIteration:
 
 
 class _FakeKimiDP2ModelForServingState:
+    model_path = "moonshotai/Kimi-K2.5"
+
     class config:
         tp_size = 4
         attention_dp_size = 2
@@ -705,6 +707,8 @@ class _FakeKimiDP2ModelForServingState:
 
 
 class _FakeKimiTP8ModelForServingState:
+    model_path = "moonshotai/Kimi-K2.5"
+
     class config:
         tp_size = 8
         attention_dp_size = 1
@@ -896,6 +900,47 @@ class TestIterationLatencyCalculator:
 
         assert total == pytest.approx(165.0)
         assert {call["category"] for call in db.calls} >= {"moe_gemm_or_aux", "ep_a2a"}
+
+    def test_serving_state_does_not_read_kimi_rows_for_another_model(self) -> None:
+        db = _ForwardTotalServingStateDB()
+        model = _FakeKimiDP2ModelForServingState()
+        model.model_path = "another/model"
+        calc = IterationLatencyCalculator(
+            backend=_ServingStateBackendForIteration(),
+            model=model,
+            database=db,
+            serving_state_max_num_batched_tokens=8000,
+        )
+
+        total = calc.compute(
+            prefill_tokens=0,
+            prefill_batch_size=0,
+            prefill_seq_len=1,
+            decode_batch_size=64,
+            decode_avg_kv_len=8000,
+        )
+
+        assert total == pytest.approx(33.0)
+        assert db.calls == []
+
+    def test_serving_state_requires_model_identity_in_measured_scope(self) -> None:
+        db = _ForwardTotalServingStateDB()
+        model = SimpleNamespace(config=_FakeKimiDP2ModelForServingState.config)
+        calc = IterationLatencyCalculator(
+            backend=_ServingStateBackendForIteration(),
+            model=model,
+            database=db,
+            serving_state_max_num_batched_tokens=8000,
+        )
+
+        with pytest.raises(ValueError, match="requires model.model_path metadata"):
+            calc.compute(
+                prefill_tokens=0,
+                prefill_batch_size=0,
+                prefill_seq_len=1,
+                decode_batch_size=64,
+                decode_avg_kv_len=8000,
+            )
 
     def test_serving_state_non_attn_total_replaces_whole_block_when_categories_miss(self) -> None:
         db = _NonAttnTotalServingStateDB()
@@ -1291,6 +1336,7 @@ class _FakePerfDbForMoEDispatch:
         self.custom_allreduce_volumes = []
         self.nccl_volumes = []
         self.vllm_module_calls = []
+        self.vllm_ep8_calls = []
 
     def query_custom_allreduce(self, quant_mode, num_gpus, volume):
         self.custom_allreduce_volumes.append(volume)
@@ -1299,6 +1345,14 @@ class _FakePerfDbForMoEDispatch:
     def query_nccl(self, quant_mode, num_gpus, op, volume):
         self.nccl_volumes.append((op, volume))
         return 2.0
+
+    def get_vllm_ep8_a2a_decode_coverage(self, *, hidden_size, topk, moe_ep_size):
+        assert (hidden_size, topk, moe_ep_size) == (7168, 8, 8)
+        return 8, 128
+
+    def query_vllm_ep8_a2a_decode(self, *, bucket_tokens, hidden_size, topk, moe_ep_size):
+        self.vllm_ep8_calls.append((bucket_tokens, hidden_size, topk, moe_ep_size))
+        return PerformanceResult(0.5, energy=0.0)
 
     def query_vllm_module(
         self,
@@ -1348,6 +1402,7 @@ class TestMoEDispatchScaling:
         )
 
         assert float(latency) == pytest.approx(3.0)
+        assert latency.provenance == "vllm_module_measured"
         assert db.custom_allreduce_volumes == []
         assert db.nccl_volumes == []
         assert db.vllm_module_calls == [
@@ -1361,6 +1416,27 @@ class TestMoEDispatchScaling:
                 "CompressedTensorsWNA16MarlinMoEMethod",
             )
         ]
+
+    def test_vllm_dispatch_kimi_scope_requires_topology(self) -> None:
+        op = MoEDispatch(
+            "dispatch",
+            1.0,
+            hidden_size=1024,
+            topk=8,
+            num_experts=256,
+            moe_tp_size=1,
+            moe_ep_size=1,
+            attention_dp_size=4,
+            pre_dispatch=True,
+            scale_num_tokens=1,
+        )
+
+        with pytest.raises(ValueError, match="requires vllm_module_topology metadata"):
+            op.query(
+                _FakePerfDbForMoEDispatch(),
+                x=8192,
+                model_name="moonshotai/Kimi-K2.5",
+            )
 
     def test_vllm_dispatch_falls_back_for_non_exact_bucket(self) -> None:
         op = MoEDispatch(
@@ -1412,9 +1488,36 @@ class TestMoEDispatchScaling:
         )
 
         assert float(latency) >= 489.3
+        assert latency.provenance == "structural_bidirectional_bandwidth"
         assert db.vllm_module_calls == []
         assert db.custom_allreduce_volumes == []
         assert db.nccl_volumes == []
+
+    def test_vllm_ep8_dispatch_records_measured_source_inside_coverage(self) -> None:
+        op = MoEDispatch(
+            "dispatch",
+            60.0,
+            hidden_size=7168,
+            topk=8,
+            num_experts=384,
+            moe_tp_size=1,
+            moe_ep_size=8,
+            attention_dp_size=2,
+            pre_dispatch=True,
+            scale_num_tokens=4,
+        )
+        db = _FakePerfDbForMoEDispatch()
+
+        latency = op.query(
+            db,
+            x=48,
+            model_name="moonshotai/Kimi-K2.5",
+            vllm_module_topology="tp4dp2ep8",
+        )
+
+        assert float(latency) == pytest.approx(30.0)
+        assert latency.provenance == "phase431_ep8_a2a_measured"
+        assert db.vllm_ep8_calls == [(12, 7168, 8, 8)]
 
     def test_vllm_dispatch_post_scope_is_zero_to_avoid_double_count(self) -> None:
         op = MoEDispatch(
@@ -1439,6 +1542,7 @@ class TestMoEDispatchScaling:
         )
 
         assert float(latency) == pytest.approx(0.0)
+        assert latency.provenance == "vllm_module_measured_combined_in_pre_dispatch"
         assert db.custom_allreduce_volumes == []
         assert db.nccl_volumes == []
         assert db.vllm_module_calls == []
@@ -1562,6 +1666,7 @@ class _FakePerfDbForMoE:
         moe_backend,
         is_gated,
         enable_eplb,
+        model,
     ):
         self.calls.append(num_tokens)
         return type("PerfResult", (), {"energy": 0.0, "__float__": lambda self: 1.0})()
@@ -1689,6 +1794,30 @@ class TestMoEScaling:
                 "CompressedTensorsWNA16MarlinMoEMethod",
             )
         ]
+
+    def test_vllm_moe_kimi_scope_requires_topology(self) -> None:
+        op = MoE(
+            "moe",
+            1.0,
+            hidden_size=1024,
+            inter_size=2048,
+            topk=8,
+            num_experts=256,
+            moe_tp_size=1,
+            moe_ep_size=8,
+            quant_mode=common.MoEQuantMode.float16,
+            workload_distribution="uniform",
+            attention_dp_size=1,
+            is_context=True,
+            scale_num_tokens=1,
+        )
+
+        with pytest.raises(ValueError, match="requires vllm_module_topology metadata"):
+            op.query(
+                _FakeVLLMModulePerfDbForMoE(),
+                x=241,
+                model_name="moonshotai/Kimi-K2.5",
+            )
 
     def test_vllm_moe_uses_module_perf_paired_bucket(self) -> None:
         op = MoE(

@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 
 from aiconfigurator.sdk import common
-from aiconfigurator.sdk.operations import _query_vllm_ep8_alltoall_fallback
-from aiconfigurator.sdk.perf_database import PerfDatabase
+from aiconfigurator.sdk import operations
+from aiconfigurator.sdk.perf_database import PerfDataNotAvailableError, PerfDatabase
 
 
 REAL_SYSTEMS_ROOT = Path(__file__).resolve().parents[4] / "src/aiconfigurator/systems"
@@ -17,7 +17,15 @@ def _database() -> PerfDatabase:
     return PerfDatabase("h200_sxm", "vllm", "0.19.0", str(REAL_SYSTEMS_ROOT))
 
 
-def _query_int4_moe(db: PerfDatabase, *, moe_tp: int, moe_ep: int, mode=None):
+def _query_int4_moe(
+    db: PerfDatabase,
+    *,
+    moe_tp: int,
+    moe_ep: int,
+    mode=None,
+    model: str = "moonshotai/Kimi-K2.5",
+    workload_distribution: str = "power_law_1.2",
+):
     return db.query_moe(
         num_tokens=128,
         hidden_size=7168,
@@ -27,7 +35,9 @@ def _query_int4_moe(db: PerfDatabase, *, moe_tp: int, moe_ep: int, mode=None):
         moe_tp_size=moe_tp,
         moe_ep_size=moe_ep,
         quant_mode=common.MoEQuantMode.int4_wo,
-        workload_distribution="power_law_1.01",
+        workload_distribution=workload_distribution,
+        is_context=False,
+        model=model,
         database_mode=mode,
     )
 
@@ -56,6 +66,7 @@ def test_phase417_int4_wo_large_context_uses_measured_moe_perf_when_covered() ->
         quant_mode=common.MoEQuantMode.int4_wo,
         workload_distribution="power_law_1.01",
         is_context=True,
+        model="moonshotai/Kimi-K2.5",
     )
 
     assert float(result) == pytest.approx(float(expected), rel=1e-9)
@@ -75,6 +86,7 @@ def test_phase417_int4_wo_decode_anchor_keeps_calibrated_sol() -> None:
         quant_mode=common.MoEQuantMode.int4_wo,
         workload_distribution="power_law_1.2",
         is_context=False,
+        model="moonshotai/Kimi-K2.5",
     )
 
     assert float(result) == pytest.approx(PHASE397L_EP8_ANCHOR_MS_PER_LAYER, rel=1e-9)
@@ -99,6 +111,7 @@ def test_phase431_int4_wo_decode_uses_phase431_measured_distribution_when_presen
         quant_mode=common.MoEQuantMode.int4_wo,
         workload_distribution=workload_distribution,
         is_context=False,
+        model="moonshotai/Kimi-K2.5",
     )
 
     assert float(result) == pytest.approx(0.152, rel=1e-9)
@@ -119,6 +132,7 @@ def test_phase431_int4_wo_decode_uses_committed_phase431_rows() -> None:
         quant_mode=common.MoEQuantMode.int4_wo,
         workload_distribution="power_law_1.01",
         is_context=False,
+        model="moonshotai/Kimi-K2.5",
     )
 
     assert float(result) == pytest.approx(0.38183471679687503, rel=1e-9)
@@ -140,16 +154,50 @@ def test_phase431_vllm_ep8_a2a_decode_uses_measured_curve_inside_coverage() -> N
 
 def test_phase431_ep8_alltoall_fallback_uses_measured_curve_before_byte_model() -> None:
     db = _database()
+    query = getattr(operations, "_query_vllm_ep8_alltoall", None)
 
-    measured = _query_vllm_ep8_alltoall_fallback(
+    assert query is not None
+
+    measured = query(
         db,
         bucket_tokens=64,
         hidden_size=7168,
         topk=8,
         scale_factor=60,
+        source="measured",
     )
 
     assert float(measured) == pytest.approx(0.0852 * 60, rel=1e-9)
+    assert measured.provenance == "phase431_ep8_a2a_measured"
+
+
+def test_phase431_ep8_structural_source_is_explicit() -> None:
+    db = _database()
+    query = getattr(operations, "_query_vllm_ep8_alltoall", None)
+
+    assert query is not None
+
+    structural = query(
+        db,
+        bucket_tokens=32000,
+        hidden_size=7168,
+        topk=8,
+        scale_factor=60,
+        source="structural",
+    )
+
+    assert float(structural) > 0.0
+    assert structural.provenance == "structural_bidirectional_bandwidth"
+
+
+def test_phase431_ep8_coverage_metadata_fails_closed_when_table_is_missing() -> None:
+    db = _database()
+    db._vllm_ep8_a2a_decode_data = None
+
+    coverage = getattr(db, "get_vllm_ep8_a2a_decode_coverage", None)
+    assert coverage is not None
+    with pytest.raises(PerfDataNotAvailableError, match="EP8 A2A decode perf table is missing"):
+        coverage(hidden_size=7168, topk=8, moe_ep_size=8)
 
 
 def test_phase435_serving_state_query_matches_exact_scope_inside_coverage() -> None:
@@ -231,6 +279,7 @@ def test_phase417_int4_wo_large_context_missing_family_uses_calibrated_sol() -> 
         quant_mode=common.MoEQuantMode.int4_wo,
         workload_distribution="power_law_1.01",
         is_context=True,
+        model="moonshotai/Kimi-K2.5",
         database_mode=common.DatabaseMode.SOL_FULL,
     )[0]
     sol_ep8 = _query_int4_moe(db, moe_tp=1, moe_ep=8, mode=common.DatabaseMode.SOL_FULL)[0]
@@ -247,9 +296,55 @@ def test_phase417_int4_wo_large_context_missing_family_uses_calibrated_sol() -> 
         quant_mode=common.MoEQuantMode.int4_wo,
         workload_distribution="power_law_1.01",
         is_context=True,
+        model="moonshotai/Kimi-K2.5",
     )
 
     assert float(result) == pytest.approx(expected, rel=1e-9)
+
+
+def test_phase397v_int4_wo_anchor_does_not_apply_to_another_model() -> None:
+    db = _database()
+
+    with pytest.raises(PerfDataNotAvailableError, match="outside its measured scope"):
+        _query_int4_moe(db, moe_tp=1, moe_ep=8, model="another/int4-model")
+
+
+def test_phase431_measured_decode_row_does_not_apply_to_another_model() -> None:
+    db = _database()
+
+    with pytest.raises(PerfDataNotAvailableError, match="outside its measured scope"):
+        db.query_moe(
+            num_tokens=64,
+            hidden_size=7168,
+            inter_size=2048,
+            topk=8,
+            num_experts=384,
+            moe_tp_size=1,
+            moe_ep_size=8,
+            quant_mode=common.MoEQuantMode.int4_wo,
+            workload_distribution="power_law_1.01",
+            is_context=False,
+            model="another/int4-model",
+        )
+
+
+def test_phase397v_int4_wo_anchor_rejects_unmeasured_model_shape() -> None:
+    db = _database()
+
+    with pytest.raises(PerfDataNotAvailableError, match="outside its measured scope"):
+        db.query_moe(
+            num_tokens=128,
+            hidden_size=4096,
+            inter_size=2048,
+            topk=8,
+            num_experts=384,
+            moe_tp_size=1,
+            moe_ep_size=8,
+            quant_mode=common.MoEQuantMode.int4_wo,
+            workload_distribution="power_law_1.01",
+            is_context=False,
+            model="moonshotai/Kimi-K2.5",
+        )
 
 
 def test_phase397v_sol_full_still_returns_uncalibrated_roofline_components() -> None:
