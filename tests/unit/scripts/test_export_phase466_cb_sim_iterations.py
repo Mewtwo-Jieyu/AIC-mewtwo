@@ -23,7 +23,7 @@ def _load_module():
     return module
 
 
-def test_normalize_rows_uses_global_simulator_scope_and_progress_windows() -> None:
+def test_normalize_rows_uses_rank_scope_and_progress_windows() -> None:
     export = _load_module()
     rows = [
         SimpleNamespace(
@@ -54,7 +54,7 @@ def test_normalize_rows_uses_global_simulator_scope_and_progress_windows() -> No
             gen_attn_ms=2.0,
             running_requests=128,
             waiting_requests=0,
-            completed_requests=0,
+            completed_requests=128,
         ),
     ]
 
@@ -62,11 +62,12 @@ def test_normalize_rows_uses_global_simulator_scope_and_progress_windows() -> No
         rows,
         run_id="sim-test",
         workload_cohort_digest="a" * 64,
+        expected_num_prompts=128,
     )
 
     assert normalized[0]["source"] == "sim"
     assert normalized[0]["rank_id"] == 0
-    assert normalized[0]["rank_scope"] == "global_simulator"
+    assert normalized[0]["rank_scope"] == "dp_rank"
     assert normalized[0]["progress_start_tokens"] == 0
     assert normalized[0]["progress_end_tokens"] == 64004
     assert normalized[0]["progress_window_id"] == 0
@@ -101,11 +102,82 @@ def test_normalize_rows_rejects_nonmonotonic_simulator_clock() -> None:
     ]
 
     try:
-        export.normalize_rows(rows, run_id="sim-test", workload_cohort_digest="a" * 64)
+        export.normalize_rows(
+            rows,
+            run_id="sim-test",
+            workload_cohort_digest="a" * 64,
+            expected_num_prompts=1,
+        )
     except ValueError as exc:
         assert str(exc) == "simulator_clock_mismatch:1"
     else:
         raise AssertionError("expected simulator clock validation failure")
+
+
+def test_normalize_rows_rejects_incomplete_simulation() -> None:
+    export = _load_module()
+    row = SimpleNamespace(
+        iter_index=1,
+        prefill_requests=1,
+        prefill_tokens=1,
+        decode_batch_size=0,
+        iter_lat_ms=1.0,
+        clock_ms=1.0,
+        ctx_non_attn_ms=1.0,
+        ctx_attn_ms=0.0,
+        gen_non_attn_ms=0.0,
+        gen_attn_ms=0.0,
+        running_requests=1,
+        waiting_requests=0,
+        completed_requests=0,
+    )
+
+    with pytest.raises(ValueError, match="simulator_incomplete_requests"):
+        export.normalize_rows(
+            [row],
+            run_id="sim-test",
+            workload_cohort_digest="a" * 64,
+            expected_num_prompts=1,
+        )
+
+
+def test_multi_replica_trace_preserves_rank_local_progress() -> None:
+    export = _load_module()
+    trace = [
+        {
+            "replica_id": 0,
+            "local_iter": 1,
+            "start_ms": 0.0,
+            "end_ms": 10.0,
+            "prefill_reqs": 1,
+            "prefill_tokens": 32000,
+            "decode_reqs": 0,
+            "total_tokens": 32000,
+        },
+        {
+            "replica_id": 1,
+            "local_iter": 1,
+            "start_ms": 0.0,
+            "end_ms": 10.0,
+            "prefill_reqs": 1,
+            "prefill_tokens": 31000,
+            "decode_reqs": 1,
+            "total_tokens": 31001,
+        },
+    ]
+
+    rows = export.normalize_multi_replica_trace(
+        trace,
+        run_id="sim-dp2",
+        workload_cohort_digest="a" * 64,
+        expected_dp=2,
+    )
+
+    assert [row["rank_id"] for row in rows] == [0, 1]
+    assert all(row["rank_scope"] == "dp_rank" for row in rows)
+    assert rows[0]["progress_start_tokens"] == 0
+    assert rows[1]["progress_start_tokens"] == 0
+    assert rows[1]["scheduled_decode_tokens"] == 1
 
 
 def test_configure_diagnose_locks_exact_vllm_database() -> None:
@@ -119,4 +191,20 @@ def test_configure_diagnose_locks_exact_vllm_database() -> None:
     with pytest.raises(ValueError, match="unexpected_simulator_backend"):
         export.configure_diagnose(
             SimpleNamespace(BACKEND="trtllm", SYSTEM="h200_sxm", DB_VERSION="0.19.0")
+        )
+
+
+def test_dp_trace_rejects_legacy_single_replica_backend_path() -> None:
+    export = _load_module()
+
+    with pytest.raises(
+        ValueError, match="unsupported_dp_trace_backend_legacy_single_replica"
+    ):
+        export.validate_scenario_exportability(
+            {
+                "scenario": "K2.5-tp4ep8dp2-8k2k-bt65536",
+                "dp": 2,
+                "input_len": 8000,
+                "max_num_batched_tokens": 65536,
+            }
         )

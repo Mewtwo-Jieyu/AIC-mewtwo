@@ -1,7 +1,8 @@
 # Phase466 probe execution hardening
 
-结论：Phase466 的本地采集工具已从“可生成命令”补齐到“可 fail-closed 执行”，但没有产生 GPU 证据。
-下一步只能在指定 H200 worker 上执行 6 对 overhead gate；gate 不是 `PASS` 时禁止 N512 formal collection。
+结论：Phase466 的执行链已补成 fail-closed，但第一次远端试跑在独立 review 发现 contract blocker 后受控终止，
+没有形成有效 overhead gate。当前不能直接重跑：stock probe 缺少预注册的 queue/state 字段，且
+`tp4dp2-8k2k-bt65536` 的 simulator 仍是代表性单-replica 路径，无法生成可对齐的 DP-rank trace。
 
 | 项 | 结果 |
 |---|---|
@@ -10,10 +11,11 @@
 | runtime/model/PerfDB change | none |
 | analyzer schema | `phase466_stock_probe_v2` |
 | overhead design | 6 counterbalanced OFF/ON pairs; paired log-ratio TOST |
-| supervisor | serialized, heartbeat, exact preflight, strict cleanup, no automatic rerun |
-| simulator export | exact H200 / vLLM 0.19.0, global simulator rank scope |
-| exit gate | source-specific required fields; at most one human-reviewed route may be selected |
-| current gate | `GPU_GATE_PENDING` |
+| supervisor | node lock, heartbeat, immutable execution manifest, signal cleanup, no automatic rerun |
+| simulator export | exact H200 / vLLM 0.19.0; DP rank scope only; unsupported legacy DP path fails closed |
+| exit gate | exact three scenarios; rank-local join; incomplete fields cannot be human-overridden to `PASS` |
+| invalid remote attempt | `ABORTED_BY_REVIEW`; `gate_status=NOT_EVALUATED`; no formal runs |
+| current gate | `BLOCKED_BEFORE_RERUN` |
 | readiness | `diagnostic_only=true`; `valid_for_default=false`; `perf_database=false`; `No-Go` |
 
 ## Changed files
@@ -43,26 +45,40 @@
 | remote directory is not a Git checkout | analyzer/supervisor/benchmark hashes are mandatory execution identity; no optional Git fallback |
 | worker image has no Ray package or CLI | cleanup uses the service process group and fails on any remaining GPU/process residue |
 | non-PASS gate returned without a common final result | writes `STOPPED_BEFORE_FORMAL`, compresses logs and keeps Default AIC `No-Go` |
+| all capture commands accepted exit code 1 | only `pgrep` accepts 0/1; `nvidia-smi` and identity commands require 0 and preserve stderr |
+| serialization existed only inside one Python process | fixed node-level `flock` is held through final cleanup and result write |
+| source hash was cached from preflight | source files are rehashed before and after every run; actual imported module paths are exact-checked |
+| 40-character commit was not bound to uploaded tools | coordinator emits a content-addressed manifest binding commit, contract, supervisor, benchmark and vLLM source hashes |
+| TERM/HUP could orphan the service process group | supervisor tracks active service/benchmark and converts signals into cleanup plus terminal `ABORTED` |
+| process leader exit was treated as process-group exit | service and benchmark PGIDs are checked directly; lingering groups receive TERM then KILL and block continuation |
+| signal could race the final PASS/FAILED write | terminal result uses a single commit point; pre-commit signals rewrite the final artifact to `ABORTED` |
+| startup or validation failure could be treated like a skippable benchmark error | only an explicit benchmark command failure may continue; every other exception stops all runs |
+| uploaded tooling was checked only at preflight | contract, supervisor and benchmark hashes are revalidated before and after every run |
+| coordinator commit could be paired with an arbitrary contract path | production contract override is removed; all three tool paths must be the exact clean checkout paths for `source_commit` |
+| formal execution and artifact validation shared one catch | artifact validation failure always stops remaining formal runs |
+| PASS result could precede compression/final audit | `phase466_result.json` is the final atomic write |
+| zero-token iterations disappeared from elapsed time | zero-token rows retain wall time and unchanged progress |
+| exit review accepted a non-empty scenario subset | exact three formal scenarios, passed gate, manifest digest and per-run artifacts are required |
+| real DP-rank and global simulator windows were joined by bare id | both sides must use `dp_rank` and join `(rank_id, progress_window_id)` |
+| one joined rank could make a DP scenario look evaluable | every expected rank must have at least one joined progress window |
+| iteration CSVs were checked only for existence | real result, probe summary and simulator manifest bind CSV SHA256, row identity and rank bounds |
+| old exporter over-batched DP2 on one scheduler | 32k3k uses the formal lockstep path; unsupported bt65536 legacy DP trace fails before writing output |
 
-## Local outputs
+## Invalidated outputs
 
-The simulator exporter produced three temporary local CSVs under `/tmp/phase466-sim-export-codex-v2-822ae421`:
+| Artifact | Decision |
+|---|---|
+| `/mnt/shared-storage-user/zhaojieyu/backup/aic/phase466_stock_probe_4a9cb6b_20260717` | `ABORTED_BY_REVIEW`; partial overhead data is not gate evidence |
+| `/tmp/phase466-sim-export-codex-v2-822ae421` | invalidated; old exporter used global single-scheduler DP semantics |
 
-| Scenario | Rows |
-|---|---:|
-| `K2.5-tp4ep8dp2-32k3k` | 12,131 |
-| `K2.5-tp8ep8-8k2k-bt65536` | 8,015 |
-| `K2.5-tp4ep8dp2-8k2k-bt65536` | 8,015 |
-
-These rows are reproducibility evidence for the local exporter only and are not committed as model data.
+The remote service and benchmark process groups were stopped manually after freezing the supervisor. GPU and matching process residue were empty.
 
 ## Next gate
 
-1. Verify the worker is clean and the exact source hashes still match.
-2. Launch one supervisor artifact root; do not manually start individual pairs.
-3. Wait for all 6 pairs and inspect `overhead/overhead_gate.json`.
-4. Only a v2 `PASS` with `pair_count=6` permits the three formal runs.
-5. Run simulator export and exit review against valid formal rows.
-6. Select at most one Phase467 route. Zero or multiple passing routes stay `INCONCLUSIVE`.
+1. Decide whether the next run only collects rank timing, or must select one Phase467 route.
+2. If route selection is required, first close both known evidence gaps: stock real rows need the preregistered queue/state fields, and
+   the bt65536 DP simulator needs a validated per-rank execution semantic.
+3. Only after that amendment passes review may a fresh artifact root run the six counterbalanced pairs.
+4. Gate is not `PASS` means stop before N512. Gate `PASS` still does not waive the exact-three-scenario exit contract.
 
 No result from this phase may be written to PerfDatabase or used to enable Default AIC.

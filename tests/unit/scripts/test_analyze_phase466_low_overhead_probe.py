@@ -55,6 +55,19 @@ def _cohort_digest() -> str:
     return "a" * 64
 
 
+def _pass_gate(phase466):
+    return phase466.evaluate_paired_overhead_gate(
+        [
+            {
+                "pair_id": f"pair-{index:02d}",
+                "off_output_tok_s": 100.0,
+                "on_output_tok_s": 100.0,
+            }
+            for index in range(1, 7)
+        ]
+    )
+
+
 def test_plan_is_default_off_and_gates_formal_collection() -> None:
     phase466 = _load_module()
 
@@ -336,6 +349,65 @@ def test_parser_applies_rank_local_warmup_cutoff() -> None:
     assert all(row.iteration_start_offset_ms == 0.0 for row in rows)
 
 
+def test_parser_retains_zero_token_iteration_wall_time() -> None:
+    phase466 = _load_module()
+    log = "\n".join(
+        [
+            "(EngineCore_DP0 pid=10) INFO Iteration(1): 0 context requests, "
+            "0 context tokens, 0 generation requests, 0 generation tokens, "
+            "iteration elapsed time: 7.0 ms",
+            "(EngineCore_DP0 pid=10) INFO Iteration(2): 0 context requests, "
+            "0 context tokens, 8 generation requests, 8 generation tokens, "
+            "iteration elapsed time: 3.0 ms",
+        ]
+    )
+
+    rows = phase466.parse_iteration_rows(
+        log,
+        run_id="unit-real",
+        source="real",
+        workload_cohort_digest=_cohort_digest(),
+        after_iteration_by_rank={0: 0},
+        through_iteration_by_rank={0: 2},
+    )
+
+    assert len(rows) == 2
+    assert rows[0].scheduled_prefill_tokens == 0
+    assert rows[0].scheduled_decode_tokens == 0
+    assert rows[0].iteration_end_offset_ms == 7.0
+    assert rows[1].iteration_start_offset_ms == 7.0
+
+
+def test_iteration_csv_identity_binds_content_and_rank_bounds(tmp_path: Path) -> None:
+    phase466 = _load_module()
+    path = tmp_path / "iteration_rows.csv"
+    rows = [
+        {
+            "run_id": "real-test",
+            "source": "real",
+            "rank_id": rank,
+            "rank_scope": "dp_rank",
+            "workload_cohort_digest": _cohort_digest(),
+            "iteration_seq": iteration,
+            "progress_start_tokens": 0,
+            "progress_end_tokens": 8,
+            "iteration_start_offset_ms": 0.0,
+            "iteration_end_offset_ms": 1.0,
+        }
+        for rank, iteration in ((0, 4), (1, 7))
+    ]
+    phase466._write_csv(path, rows)
+
+    identity = phase466.iteration_csv_identity(path)
+
+    assert identity["row_count"] == 2
+    assert identity["run_id"] == "real-test"
+    assert identity["workload_cohort_digest"] == _cohort_digest()
+    assert identity["rank_bounds"]["0"]["first_iteration_seq"] == 4
+    assert identity["rank_bounds"]["1"]["last_iteration_seq"] == 7
+    assert len(identity["sha256"]) == 64
+
+
 def test_overhead_meta_requires_exact_run_identity_and_recomputed_digest(tmp_path: Path) -> None:
     phase466 = _load_module()
     off = tmp_path / "off"
@@ -349,7 +421,14 @@ def test_overhead_meta_requires_exact_run_identity_and_recomputed_digest(tmp_pat
 
     for root, spec, throughput in ((off, off_spec, 100.0), (on, on_spec, 100.0)):
         meta = phase466.expected_run_meta(spec)
-        meta.update({"vllm_version": "0.19.0", "measurement_start_after_iteration": {"0": 0, "1": 0}})
+        meta.update(
+            {
+                "vllm_version": "0.19.0",
+                "execution_manifest_sha256": "c" * 64,
+                "measurement_start_after_iteration": {"0": 0, "1": 0},
+                "measurement_end_at_iteration": {"0": 1, "1": 1},
+            }
+        )
         (root / "meta.json").write_text(json.dumps(meta) + "\n")
         (root / "bench_result.json").write_text(
             json.dumps(
@@ -388,13 +467,19 @@ def test_overhead_meta_requires_exact_run_identity_and_recomputed_digest(tmp_pat
 def test_formal_collection_requires_complete_passed_v2_gate() -> None:
     phase466 = _load_module()
 
-    phase466.require_formal_collection(
-        {"schema": "phase466_stock_probe_v2", "status": "PASS", "pair_count": 6}
-    )
+    phase466.require_formal_collection(_pass_gate(phase466))
     for gate in (
-        {"schema": "phase466_stock_probe_v2", "status": "INCONCLUSIVE", "pair_count": 6},
-        {"schema": "phase466_stock_probe_v2", "status": "PASS", "pair_count": 5},
-        {"schema": "phase466_low_overhead_probe_v1", "status": "PASS", "pair_count": 6},
+        {"schema": "phase466_stock_probe_v2", "status": "PASS", "pair_count": 6},
+        phase466.evaluate_paired_overhead_gate(
+            [
+                {
+                    "pair_id": f"pair-{index:02d}",
+                    "off_output_tok_s": 100.0,
+                    "on_output_tok_s": 95.0,
+                }
+                for index in range(1, 7)
+            ]
+        ),
     ):
         with pytest.raises(ValueError, match="overhead_gate_failed_stop_before_n512"):
             phase466.require_formal_collection(gate)
@@ -410,12 +495,15 @@ def test_formal_artifact_validation_enforces_gate_meta_tokens_and_rank_set(tmp_p
     )
     root = tmp_path / "formal"
     root.mkdir()
-    gate = {"schema": phase466.SCHEMA, "status": "PASS", "pair_count": 6}
+    gate = _pass_gate(phase466)
     meta = phase466.expected_run_meta(spec)
     meta.update(
         {
             "vllm_version": "0.19.0",
+            "execution_manifest_sha256": "c" * 64,
             "measurement_start_after_iteration": {"0": 0, "1": 0},
+            "measurement_end_at_iteration": {"0": 1, "1": 1},
+            "overhead_gate_sha256": phase466.overhead_gate_digest(gate),
         }
     )
     (root / "meta.json").write_text(json.dumps(meta) + "\n")
@@ -447,7 +535,8 @@ def test_formal_artifact_validation_enforces_gate_meta_tokens_and_rank_set(tmp_p
     assert result["status"] == "PASS"
     assert [row["rank_id"] for row in result["rank_summary"]] == [0, 1]
 
-    bad_gate = {"schema": phase466.SCHEMA, "status": "INCONCLUSIVE", "pair_count": 6}
+    bad_gate = dict(gate)
+    bad_gate["status"] = "INCONCLUSIVE"
     with pytest.raises(ValueError, match="overhead_gate_failed_stop_before_n512"):
         phase466.validate_formal_artifacts(root, spec=spec, gate=bad_gate)
 

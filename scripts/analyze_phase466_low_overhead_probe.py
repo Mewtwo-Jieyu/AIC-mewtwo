@@ -495,11 +495,13 @@ def parse_iteration_rows(
     source: str = "",
     workload_cohort_digest: str = "",
     after_iteration_by_rank: dict[int, int] | None = None,
+    through_iteration_by_rank: dict[int, int] | None = None,
 ) -> list[IterationRow]:
     rows: list[IterationRow] = []
     seen: set[tuple[int, int]] = set()
     elapsed_by_rank: dict[int, float] = defaultdict(float)
     tokens_by_rank: dict[int, int] = defaultdict(int)
+    observed_by_rank: dict[int, list[int]] = defaultdict(list)
     for line in text.splitlines():
         match = ITERATION_RE.search(line)
         if not match:
@@ -511,6 +513,12 @@ def parse_iteration_rows(
                 raise ValueError(f"missing_warmup_cutoff_rank:{rank}")
             if iteration_seq <= after_iteration_by_rank[rank]:
                 continue
+        if through_iteration_by_rank is not None:
+            if rank not in through_iteration_by_rank:
+                raise ValueError(f"missing_measurement_end_rank:{rank}")
+            if iteration_seq > through_iteration_by_rank[rank]:
+                continue
+        observed_by_rank[rank].append(iteration_seq)
         elapsed_ms = float(match.group("elapsed_ms"))
         scheduled_tokens = int(match.group("context_tokens")) + int(
             match.group("generation_tokens")
@@ -551,6 +559,16 @@ def parse_iteration_rows(
         rows.append(row)
         elapsed_by_rank[rank] = end_offset_ms
         tokens_by_rank[rank] = cumulative_scheduled_tokens
+    if through_iteration_by_rank is not None:
+        if after_iteration_by_rank is None:
+            raise ValueError("measurement_end_requires_warmup_cutoff")
+        if set(through_iteration_by_rank) != set(after_iteration_by_rank):
+            raise ValueError("measurement_rank_set_mismatch")
+        for rank, end in through_iteration_by_rank.items():
+            start = after_iteration_by_rank[rank] + 1
+            expected = list(range(start, end + 1))
+            if observed_by_rank.get(rank, []) != expected:
+                raise ValueError(f"measurement_iteration_gap:{rank}")
     if not rows:
         raise ValueError("missing_iteration_rank_rows")
     return rows
@@ -582,6 +600,48 @@ def _percentile(values: list[float], pct: float) -> float:
     upper = min(lower + 1, len(ordered) - 1)
     weight = position - lower
     return ordered[lower] * (1.0 - weight) + ordered[upper] * weight
+
+
+def iteration_csv_identity(path: Path) -> dict[str, Any]:
+    content = path.read_bytes()
+    with path.open(newline="", encoding="utf-8") as stream:
+        rows = list(csv.DictReader(stream))
+    if not rows:
+        raise ValueError(f"empty_iteration_csv:{path}")
+    run_ids = {row.get("run_id", "") for row in rows}
+    sources = {row.get("source", "") for row in rows}
+    digests = {row.get("workload_cohort_digest", "") for row in rows}
+    if len(run_ids) != 1 or "" in run_ids:
+        raise ValueError(f"iteration_csv_run_id_mismatch:{path}")
+    if len(sources) != 1 or "" in sources:
+        raise ValueError(f"iteration_csv_source_mismatch:{path}")
+    if len(digests) != 1 or not re.fullmatch(r"[0-9a-f]{64}", next(iter(digests))):
+        raise ValueError(f"iteration_csv_workload_digest_mismatch:{path}")
+    grouped: dict[int, list[dict[str, str]]] = defaultdict(list)
+    for row in rows:
+        grouped[int(row["rank_id"])].append(row)
+    rank_bounds: dict[str, dict[str, Any]] = {}
+    for rank, rank_rows in sorted(grouped.items()):
+        ordered = sorted(rank_rows, key=lambda row: int(row["iteration_seq"]))
+        first = ordered[0]
+        last = ordered[-1]
+        rank_bounds[str(rank)] = {
+            "row_count": len(ordered),
+            "first_iteration_seq": int(first["iteration_seq"]),
+            "last_iteration_seq": int(last["iteration_seq"]),
+            "first_progress_start_tokens": int(first["progress_start_tokens"]),
+            "last_progress_end_tokens": int(last["progress_end_tokens"]),
+            "first_start_offset_ms": float(first["iteration_start_offset_ms"]),
+            "last_end_offset_ms": float(last["iteration_end_offset_ms"]),
+        }
+    return {
+        "sha256": hashlib.sha256(content).hexdigest(),
+        "row_count": len(rows),
+        "run_id": next(iter(run_ids)),
+        "source": next(iter(sources)),
+        "workload_cohort_digest": next(iter(digests)),
+        "rank_bounds": rank_bounds,
+    }
 
 
 def summarize_ranks(
@@ -740,12 +800,21 @@ def evaluate_paired_overhead_gate(
 
 
 def require_formal_collection(gate: dict[str, Any]) -> None:
-    if (
-        gate.get("schema") != SCHEMA
-        or gate.get("status") != "PASS"
-        or gate.get("pair_count") != OVERHEAD_PAIR_COUNT
-    ):
+    pairs = gate.get("pairs")
+    if not isinstance(pairs, list):
         raise ValueError("overhead_gate_failed_stop_before_n512")
+    try:
+        recomputed = evaluate_paired_overhead_gate(pairs)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("overhead_gate_failed_stop_before_n512") from exc
+    if gate != recomputed or recomputed.get("status") != "PASS":
+        raise ValueError("overhead_gate_failed_stop_before_n512")
+
+
+def overhead_gate_digest(gate: dict[str, Any]) -> str:
+    require_formal_collection(gate)
+    payload = json.dumps(gate, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(payload).hexdigest()
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -800,7 +869,12 @@ def _validate_overhead_benchmark(result: dict[str, Any], *, root: Path) -> float
     return throughput
 
 
-def _validate_exact_run_meta(meta: dict[str, Any], spec: dict[str, Any]) -> None:
+def _validate_exact_run_meta(
+    meta: dict[str, Any],
+    spec: dict[str, Any],
+    *,
+    expected_gate_digest: str | None = None,
+) -> None:
     expected = expected_run_meta(spec)
     for key, value in expected.items():
         if meta.get(key) != value:
@@ -813,6 +887,22 @@ def _validate_exact_run_meta(meta: dict[str, Any], spec: dict[str, Any]) -> None
     for rank, value in cutoffs.items():
         if not str(rank).isdigit() or not isinstance(value, int) or value < -1:
             raise ValueError("run_meta_mismatch:measurement_start_after_iteration")
+    ends = meta.get("measurement_end_at_iteration")
+    if not isinstance(ends, dict) or set(ends) != set(cutoffs):
+        raise ValueError("run_meta_mismatch:measurement_end_at_iteration")
+    for rank, value in ends.items():
+        if not str(rank).isdigit() or not isinstance(value, int):
+            raise ValueError("run_meta_mismatch:measurement_end_at_iteration")
+        if value < int(cutoffs[rank]):
+            raise ValueError("run_meta_mismatch:measurement_end_at_iteration")
+    manifest_digest = meta.get("execution_manifest_sha256")
+    if not isinstance(manifest_digest, str) or not re.fullmatch(
+        r"[0-9a-f]{64}", manifest_digest
+    ):
+        raise ValueError("run_meta_mismatch:execution_manifest_sha256")
+    if expected_gate_digest is not None:
+        if meta.get("overhead_gate_sha256") != expected_gate_digest:
+            raise ValueError("run_meta_mismatch:overhead_gate_sha256")
 
 
 def _validate_source_and_cleanup(root: Path) -> None:
@@ -863,12 +953,17 @@ def validate_overhead_pair_artifacts(
         int(rank): int(value)
         for rank, value in on_meta["measurement_start_after_iteration"].items()
     }
+    ends = {
+        int(rank): int(value)
+        for rank, value in on_meta["measurement_end_at_iteration"].items()
+    }
     rows = parse_iteration_rows(
         _read_text(serve_log),
         run_id=str(on_meta["id"]),
         source=str(on_meta["source"]),
         workload_cohort_digest=str(on_meta["workload_cohort_digest"]),
         after_iteration_by_rank=cutoffs,
+        through_iteration_by_rank=ends,
     )
     rank_summary = summarize_ranks(
         rows,
@@ -946,11 +1041,11 @@ def validate_formal_artifacts(
     spec: dict[str, Any],
     gate: dict[str, Any],
 ) -> dict[str, Any]:
-    require_formal_collection(gate)
+    gate_digest = overhead_gate_digest(gate)
     if spec.get("stage") != "formal" or spec.get("scenario") not in FORMAL_SCENARIOS:
         raise ValueError("scenario_outside_three_formal_targets")
     meta = _load_json(root / "meta.json")
-    _validate_exact_run_meta(meta, spec)
+    _validate_exact_run_meta(meta, spec, expected_gate_digest=gate_digest)
     _validate_source_and_cleanup(root)
     throughput = _validate_formal_benchmark(
         _load_json(root / "bench_result.json"), spec=spec
@@ -969,12 +1064,17 @@ def validate_formal_artifacts(
         int(rank): int(value)
         for rank, value in meta["measurement_start_after_iteration"].items()
     }
+    ends = {
+        int(rank): int(value)
+        for rank, value in meta["measurement_end_at_iteration"].items()
+    }
     rows = parse_iteration_rows(
         _read_text(serve_log),
         run_id=str(meta["id"]),
         source=str(meta["source"]),
         workload_cohort_digest=str(meta["workload_cohort_digest"]),
         after_iteration_by_rank=cutoffs,
+        through_iteration_by_rank=ends,
     )
     rank_summary = summarize_ranks(
         rows,
@@ -994,6 +1094,7 @@ def validate_formal_artifacts(
         "rank_summary": rank_summary,
         "source_hash_match": True,
         "cleanup": True,
+        "overhead_gate_sha256": gate_digest,
     }
 
 
@@ -1046,7 +1147,7 @@ def _parse_args() -> argparse.Namespace:
     formal = subparsers.add_parser("formal", help="validate one preregistered formal run")
     formal.add_argument("--run-dir", type=Path, required=True)
     formal.add_argument("--scenario", choices=FORMAL_SCENARIOS, required=True)
-    formal.add_argument("--gate-json", type=Path, required=True)
+    formal.add_argument("--artifact-root", type=Path, required=True)
     formal.add_argument("--output-json", type=Path, required=True)
     formal.add_argument("--output-iteration-csv", type=Path, required=True)
     formal.add_argument("--output-rank-csv", type=Path, required=True)
@@ -1089,7 +1190,7 @@ def main() -> int:
     result = validate_formal_artifacts(
         args.run_dir,
         spec=formal_spec(args.scenario),
-        gate=_load_json(args.gate_json),
+        gate=validate_overhead_root(args.artifact_root),
     )
     _write_json(
         args.output_json,

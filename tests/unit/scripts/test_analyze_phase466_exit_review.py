@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import csv
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -29,6 +31,12 @@ def _real_row(rank: int) -> dict[str, object]:
         "rank_id": rank,
         "rank_scope": "dp_rank",
         "workload_cohort_digest": "a" * 64,
+        "iteration_seq": 1,
+        "iteration_start_offset_ms": 0.0,
+        "iteration_end_offset_ms": 10.0 + rank,
+        "cumulative_scheduled_tokens": 64004,
+        "progress_start_tokens": 0,
+        "progress_end_tokens": 64004,
         "progress_window_id": 0,
         "iteration_elapsed_ms": 10.0 + rank,
         "scheduled_prefill_tokens": 64000,
@@ -41,13 +49,19 @@ def _real_row(rank: int) -> dict[str, object]:
     }
 
 
-def _sim_row() -> dict[str, object]:
+def _sim_row(rank: int = 0) -> dict[str, object]:
     return {
         "run_id": "sim-test",
         "source": "sim",
-        "rank_id": 0,
-        "rank_scope": "global_simulator",
+        "rank_id": rank,
+        "rank_scope": "dp_rank",
         "workload_cohort_digest": "a" * 64,
+        "iteration_seq": 1,
+        "iteration_start_offset_ms": 0.0,
+        "iteration_end_offset_ms": 8.0,
+        "cumulative_scheduled_tokens": 64004,
+        "progress_start_tokens": 0,
+        "progress_end_tokens": 64004,
         "progress_window_id": 0,
         "iteration_elapsed_ms": 8.0,
         "scheduled_prefill_tokens": 64000,
@@ -66,10 +80,10 @@ def test_evidence_coverage_keeps_stock_probe_missing_fields_explicit() -> None:
     analysis = _load_module()
 
     coverage = analysis.evaluate_evidence_coverage(
-        [_real_row(0), _real_row(1)], [_sim_row()]
+        [_real_row(0), _real_row(1)], [_sim_row(0), _sim_row(1)]
     )
 
-    assert coverage["joined_progress_windows"] == 1
+    assert coverage["joined_progress_windows"] == 2
     assert coverage["real_rank_ids"] == [0, 1]
     assert coverage["candidate_coverage"]["dp_rank_synchronization_asymmetry"]["status"] == "EVALUABLE"
     schedule = coverage["candidate_coverage"]["schedule_merged_batch_composition"]
@@ -116,6 +130,60 @@ def test_evidence_coverage_rejects_wrong_scope_or_unjoinable_digest() -> None:
         analysis.evaluate_evidence_coverage([_real_row(0)], [sim])
 
 
+def test_rank_window_coverage_requires_every_dp_rank() -> None:
+    analysis = _load_module()
+    rank1_sim = _sim_row(1)
+    rank1_sim["progress_window_id"] = 1
+    rank1_sim["cumulative_scheduled_tokens"] = 65537
+    rank1_sim["progress_end_tokens"] = 65537
+    rank1_sim["scheduled_prefill_tokens"] = 65533
+
+    coverage = analysis.evaluate_evidence_coverage(
+        [_real_row(0), _real_row(1)],
+        [_sim_row(0), rank1_sim],
+        expected_dp=2,
+    )
+
+    assert coverage["missing_joined_rank_ids"] == [1]
+    assert all(
+        item["status"] == "INCONCLUSIVE_MISSING_RANK_WINDOWS"
+        for item in coverage["candidate_coverage"].values()
+    )
+
+
+def test_alignment_retains_zero_token_iteration_wall_time() -> None:
+    analysis = _load_module()
+    zero_real = _real_row(0)
+    zero_real.update(
+        {
+            "iteration_seq": 1,
+            "iteration_start_offset_ms": 0.0,
+            "iteration_end_offset_ms": 7.0,
+            "iteration_elapsed_ms": 7.0,
+            "scheduled_prefill_tokens": 0,
+            "scheduled_decode_tokens": 0,
+            "prefill_request_count": 0,
+            "decode_request_count": 0,
+            "progress_end_tokens": 0,
+            "cumulative_scheduled_tokens": 0,
+        }
+    )
+    real = _real_row(0)
+    real.update(
+        {
+            "iteration_seq": 2,
+            "iteration_start_offset_ms": 7.0,
+            "iteration_end_offset_ms": 17.0,
+            "iteration_elapsed_ms": 10.0,
+        }
+    )
+    sim = _sim_row(0)
+
+    coverage = analysis.evaluate_evidence_coverage([zero_real, real], [sim])
+
+    assert coverage["joined_progress_windows"] == 1
+
+
 def test_candidate_fields_must_exist_on_the_required_source() -> None:
     analysis = _load_module()
     real = _real_row(0)
@@ -139,3 +207,199 @@ def test_candidate_fields_must_exist_on_the_required_source() -> None:
     dp = coverage["candidate_coverage"]["dp_rank_synchronization_asymmetry"]
     assert "completed_request_count" in dp["missing_real_fields"]
     assert dp["status"] == "INCONCLUSIVE_MISSING_FIELDS"
+
+
+def test_route_selection_rejects_pass_without_evaluable_coverage() -> None:
+    analysis = _load_module()
+    judgements = {candidate: "DISPROVED" for candidate in analysis.CANDIDATES}
+    judgements["schedule_merged_batch_composition"] = "PASS"
+    coverage = {
+        scenario: {
+            "candidate_coverage": {
+                candidate: {
+                    "status": (
+                        "INCONCLUSIVE_MISSING_FIELDS"
+                        if candidate == "schedule_merged_batch_composition"
+                        else "EVALUABLE"
+                    )
+                }
+                for candidate in analysis.CANDIDATES
+            }
+        }
+        for scenario in analysis.FORMAL_SCENARIOS
+    }
+
+    with pytest.raises(ValueError, match="pass_without_evaluable_coverage"):
+        analysis.select_route(judgements, coverage=coverage)
+
+
+def test_real_artifact_root_requires_passed_gate_and_exact_three_scenarios(
+    tmp_path: Path,
+) -> None:
+    analysis = _load_module()
+    (tmp_path / "overhead").mkdir()
+    (tmp_path / "phase466_result.json").write_text(
+        json.dumps(
+            {
+                "status": "PASS",
+                "gate_status": "PASS",
+                "formal_scenarios": list(analysis.FORMAL_SCENARIOS),
+                "execution_manifest_sha256": "a" * 64,
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "overhead" / "overhead_gate.json").write_text(
+        json.dumps({"status": "PASS", "pair_count": 6}),
+        encoding="utf-8",
+    )
+    (tmp_path / "expected_execution_manifest.json").write_text(
+        json.dumps({"schema": "phase466_execution_manifest_v1"}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="execution_manifest_digest_mismatch"):
+        analysis.validate_real_artifact_root(tmp_path)
+
+
+def test_real_artifact_root_rejects_incomplete_formal_set(tmp_path: Path) -> None:
+    analysis = _load_module()
+    manifest = {"schema": "phase466_execution_manifest_v1"}
+    digest = analysis.execution_manifest_digest(manifest)
+    gate = {
+        "status": "PASS",
+        "pair_count": 6,
+        "pairs": [{"pair_id": f"pair-{index:02d}"} for index in range(1, 7)],
+    }
+    gate_digest = analysis.execution_manifest_digest(gate)
+    (tmp_path / "overhead").mkdir()
+    (tmp_path / "phase466_result.json").write_text(
+        json.dumps(
+            {
+                "status": "PASS",
+                "gate_status": "PASS",
+                "formal_scenarios": [analysis.FORMAL_SCENARIOS[0]],
+                "execution_manifest_sha256": digest,
+                "overhead_gate_sha256": gate_digest,
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "overhead" / "overhead_gate.json").write_text(
+        json.dumps(gate), encoding="utf-8"
+    )
+    (tmp_path / "expected_execution_manifest.json").write_text(
+        json.dumps(manifest), encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match="formal_scenario_set_mismatch"):
+        analysis.validate_real_artifact_root(tmp_path)
+
+
+def _write_iteration_csv(path: Path, row: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as stream:
+        writer = csv.DictWriter(stream, fieldnames=list(row))
+        writer.writeheader()
+        writer.writerow(row)
+
+
+def test_real_artifact_root_rejects_iteration_csv_tampering(tmp_path: Path) -> None:
+    analysis = _load_module()
+    manifest = {
+        "schema": "phase466_execution_manifest_v1",
+        "tool_sha256": {
+            "contract": "1" * 64,
+            "supervisor": "2" * 64,
+            "benchmark": "3" * 64,
+        },
+    }
+    digest = analysis.execution_manifest_digest(manifest)
+    gate = {
+        "status": "PASS",
+        "pair_count": 6,
+        "pairs": [{"pair_id": f"pair-{index:02d}"} for index in range(1, 7)],
+    }
+    gate_digest = analysis.execution_manifest_digest(gate)
+    (tmp_path / "overhead").mkdir()
+    (tmp_path / "overhead" / "overhead_gate.json").write_text(json.dumps(gate))
+    (tmp_path / "expected_execution_manifest.json").write_text(json.dumps(manifest))
+    identities = {}
+    for scenario in analysis.FORMAL_SCENARIOS:
+        run_dir = tmp_path / "formal" / scenario
+        csv_path = run_dir / "iteration_rows.csv"
+        _write_iteration_csv(csv_path, _real_row(0))
+        identity = analysis.iteration_csv_identity(csv_path)
+        identities[scenario] = identity
+        (run_dir / "probe_summary.json").write_text(
+            json.dumps({"status": "PASS", "iteration_rows_identity": identity})
+        )
+        (run_dir / "meta.json").write_text(
+            json.dumps(
+                {
+                    "execution_manifest_sha256": digest,
+                    "overhead_gate_sha256": gate_digest,
+                    "execution_tool_sha256": manifest["tool_sha256"],
+                }
+            )
+        )
+        (run_dir / "tooling.sha256").write_text(
+            "".join(
+                f"{value}  {key}\n"
+                for key, value in manifest["tool_sha256"].items()
+            )
+        )
+        (run_dir / "gpu_compute_apps_after.txt").write_text("")
+        (run_dir / "process_residue_after.txt").write_text("")
+    (tmp_path / "phase466_result.json").write_text(
+        json.dumps(
+            {
+                "status": "PASS",
+                "gate_status": "PASS",
+                "formal_scenarios": list(analysis.FORMAL_SCENARIOS),
+                "execution_manifest_sha256": digest,
+                "overhead_gate_sha256": gate_digest,
+                "formal_artifacts": identities,
+            }
+        )
+    )
+
+    analysis.validate_real_artifact_root(tmp_path)
+    target = tmp_path / "formal" / analysis.FORMAL_SCENARIOS[0] / "iteration_rows.csv"
+    target.write_text(target.read_text() + "\n")
+
+    with pytest.raises(ValueError, match="formal_iteration_identity_mismatch"):
+        analysis.validate_real_artifact_root(tmp_path)
+
+
+def test_sim_artifact_root_rejects_iteration_csv_tampering(tmp_path: Path) -> None:
+    analysis = _load_module()
+    scenarios = []
+    for scenario in analysis.FORMAL_SCENARIOS:
+        path = tmp_path / scenario / "iteration_rows.csv"
+        _write_iteration_csv(path, _sim_row())
+        scenarios.append(
+            {
+                "scenario": scenario,
+                "iteration_rows_identity": analysis.iteration_csv_identity(path),
+            }
+        )
+    (tmp_path / "manifest.json").write_text(
+        json.dumps(
+            {
+                "source": "sim",
+                "rank_scope": "dp_rank",
+                "backend": "vllm",
+                "system": "h200_sxm",
+                "database_version": "0.19.0",
+                "scenarios": scenarios,
+            }
+        )
+    )
+
+    analysis.validate_sim_artifact_root(tmp_path)
+    target = tmp_path / analysis.FORMAL_SCENARIOS[-1] / "iteration_rows.csv"
+    target.write_text(target.read_text().replace("sim-test", "sim-other"))
+
+    with pytest.raises(ValueError, match="simulator_iteration_identity_mismatch"):
+        analysis.validate_sim_artifact_root(tmp_path)

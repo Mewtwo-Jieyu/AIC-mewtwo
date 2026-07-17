@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import gzip
 import hashlib
 import importlib.util
@@ -25,6 +26,8 @@ PROCESS_PATTERN = (
     "vllm.entrypoints.cli.main serve|ray::|raylet|gcs_server|"
     "VLLM::APIServer|VLLM::EngineCore"
 )
+NODE_LOCK_PATH = Path("/tmp/phase466_low_overhead_probe.lock")
+EXECUTION_MANIFEST_SCHEMA = "phase466_execution_manifest_v1"
 LD_LIBRARY_PATH = (
     "/nccl/lib:/usr/local/cuda/lib64:/usr/local/nvidia/lib:"
     "/usr/local/nvidia/lib64:/usr/lib/x86_64-linux-gnu:"
@@ -48,7 +51,23 @@ INTEGRITY_ERRORS = {
     "vllm_source_hash_mismatch",
     "postflight_residue",
     "service_exited_during_benchmark",
+    "formal_benchmark_mismatch",
+    "formal_benchmark_invalid_throughput",
+    "formal_rank_set_mismatch",
+    "missing_probe_serve_log",
+    "missing_probe_metrics",
+    "missing_iteration_rank_rows",
+    "execution_manifest",
+    "execution_tool_hash_mismatch",
 }
+
+
+class AbortRequested(RuntimeError):
+    pass
+
+
+class BenchmarkCommandError(RuntimeError):
+    pass
 
 
 def _load_contract(path: Path):
@@ -87,8 +106,14 @@ def validate_execution_plan(plan: dict[str, Any]) -> dict[str, list[dict[str, An
     return {"overhead_runs": overhead, "formal_runs": formal}
 
 
-def failure_action(*, stage: str, cleanup: bool, integrity_failure: bool) -> str:
-    if not cleanup or integrity_failure:
+def failure_action(
+    *,
+    stage: str,
+    cleanup: bool,
+    integrity_failure: bool,
+    benchmark_failure: bool = False,
+) -> str:
+    if not cleanup or integrity_failure or not benchmark_failure:
         return "STOP_ALL"
     if stage == "overhead":
         return "CONTINUE_GATE"
@@ -115,7 +140,12 @@ def last_iteration_by_rank(text: str, *, expected_ranks: list[int]) -> dict[int,
 
 def _write_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    temporary.write_text(
+        json.dumps(value, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(path)
 
 
 def _run(argv: list[str], *, cwd: Path, env: dict[str, str], output: Path | None = None) -> None:
@@ -127,18 +157,29 @@ def _run(argv: list[str], *, cwd: Path, env: dict[str, str], output: Path | None
         subprocess.run(argv, cwd=cwd, env=env, stdout=stream, stderr=subprocess.STDOUT, check=True)
 
 
-def _capture(argv: list[str], *, cwd: Path, env: dict[str, str], allow_empty: bool = True) -> str:
+def _capture(
+    argv: list[str],
+    *,
+    cwd: Path,
+    env: dict[str, str],
+    allow_empty: bool = True,
+    accepted_returncodes: set[int] | None = None,
+) -> str:
+    accepted = {0} if accepted_returncodes is None else accepted_returncodes
     completed = subprocess.run(
         argv,
         cwd=cwd,
         env=env,
         text=True,
         stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
         check=False,
     )
-    if completed.returncode not in (0, 1):
-        raise RuntimeError(f"command_failed:{argv[0]}:{completed.returncode}")
+    if completed.returncode not in accepted:
+        stderr = completed.stderr.strip().replace("\n", " ")
+        raise RuntimeError(
+            f"command_failed:{argv[0]}:{completed.returncode}:{stderr}"
+        )
     text = completed.stdout.strip()
     if not allow_empty and not text:
         raise RuntimeError(f"command_empty:{argv[0]}")
@@ -174,7 +215,12 @@ def _gpu_residue(cwd: Path, env: dict[str, str]) -> str:
 
 
 def _process_residue(cwd: Path, env: dict[str, str]) -> str:
-    return _capture(["pgrep", "-af", PROCESS_PATTERN], cwd=cwd, env=env)
+    return _capture(
+        ["pgrep", "-af", PROCESS_PATTERN],
+        cwd=cwd,
+        env=env,
+        accepted_returncodes={0, 1},
+    )
 
 
 def _assert_clean_worker(cwd: Path, env: dict[str, str], *, label: str) -> None:
@@ -196,6 +242,37 @@ def _source_hashes(contract: Any) -> dict[str, str]:
     return hashes
 
 
+def assert_source_identity(contract: Any) -> dict[str, str]:
+    hashes = _source_hashes(contract)
+    if hashes != contract.SOURCE_FILES:
+        raise RuntimeError("vllm_source_hash_mismatch")
+    return hashes
+
+
+def assert_imported_vllm_source_paths(
+    contract: Any,
+    *,
+    cwd: Path,
+    env: dict[str, str],
+) -> None:
+    command = (
+        "import json; "
+        "from vllm.v1.engine import core; "
+        "from vllm.v1.core.sched import scheduler; "
+        "print(json.dumps([core.__file__, scheduler.__file__]))"
+    )
+    raw = _capture(
+        ["python3", "-c", command],
+        cwd=cwd,
+        env=env,
+        allow_empty=False,
+    )
+    paths = json.loads(raw)
+    expected = list(contract.SOURCE_FILES)
+    if paths != expected:
+        raise RuntimeError(f"vllm_import_path_mismatch:{paths}!={expected}")
+
+
 def _write_source_hashes(path: Path, hashes: dict[str, str]) -> None:
     path.write_text(
         "".join(f"{digest}  {source}\n" for source, digest in hashes.items()),
@@ -203,18 +280,162 @@ def _write_source_hashes(path: Path, hashes: dict[str, str]) -> None:
     )
 
 
-def _execution_tool_hashes(contract: Any, workdir: Path) -> dict[str, str]:
-    paths = (
-        Path(contract.__file__).resolve(),
-        Path(__file__).resolve(),
-        (workdir / "scripts" / "run_openai_fixed_shape_benchmark.py").resolve(),
+def _tool_paths(
+    contract: Any,
+    *,
+    supervisor_path: Path,
+    benchmark_path: Path,
+) -> dict[str, Path]:
+    return {
+        "contract": Path(contract.__file__).resolve(),
+        "supervisor": supervisor_path.resolve(),
+        "benchmark": benchmark_path.resolve(),
+    }
+
+
+def _execution_tool_hashes(
+    contract: Any,
+    workdir: Path,
+    *,
+    supervisor_path: Path | None = None,
+) -> dict[str, str]:
+    paths = _tool_paths(
+        contract,
+        supervisor_path=supervisor_path or Path(__file__),
+        benchmark_path=workdir / "scripts" / "run_openai_fixed_shape_benchmark.py",
     )
     hashes: dict[str, str] = {}
-    for path in paths:
+    for name, path in paths.items():
         if not path.is_file():
             raise RuntimeError(f"execution_tool_missing:{path}")
-        hashes[str(path)] = hashlib.sha256(path.read_bytes()).hexdigest()
+        hashes[name] = hashlib.sha256(path.read_bytes()).hexdigest()
     return hashes
+
+
+def build_execution_manifest(
+    contract: Any,
+    *,
+    source_commit: str,
+    supervisor_path: Path,
+    benchmark_path: Path,
+) -> dict[str, Any]:
+    if not re.fullmatch(r"[0-9a-f]{40}", source_commit):
+        raise ValueError("invalid_source_commit")
+    paths = _tool_paths(
+        contract,
+        supervisor_path=supervisor_path,
+        benchmark_path=benchmark_path,
+    )
+    tool_hashes: dict[str, str] = {}
+    for name, path in paths.items():
+        if not path.is_file():
+            raise RuntimeError(f"execution_tool_missing:{path}")
+        tool_hashes[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return {
+        "schema": EXECUTION_MANIFEST_SCHEMA,
+        "contract_schema": contract.SCHEMA,
+        "source_commit": source_commit,
+        "tool_sha256": tool_hashes,
+        "vllm_source_sha256": dict(contract.SOURCE_FILES),
+    }
+
+
+def execution_manifest_digest(manifest: dict[str, Any]) -> str:
+    payload = json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(payload).hexdigest()
+
+
+def validate_execution_manifest(
+    manifest: dict[str, Any],
+    *,
+    expected_digest: str,
+    contract: Any,
+    source_commit: str,
+    supervisor_path: Path,
+    benchmark_path: Path,
+) -> None:
+    if not re.fullmatch(r"[0-9a-f]{64}", expected_digest):
+        raise RuntimeError("execution_manifest_digest_invalid")
+    if execution_manifest_digest(manifest) != expected_digest:
+        raise RuntimeError("execution_manifest_digest_mismatch")
+    if manifest.get("schema") != EXECUTION_MANIFEST_SCHEMA:
+        raise RuntimeError("execution_manifest_schema_mismatch")
+    if manifest.get("contract_schema") != contract.SCHEMA:
+        raise RuntimeError("execution_manifest_contract_schema_mismatch")
+    if manifest.get("source_commit") != source_commit:
+        raise RuntimeError("execution_manifest_source_commit_mismatch")
+    if manifest.get("vllm_source_sha256") != contract.SOURCE_FILES:
+        raise RuntimeError("execution_manifest_vllm_source_mismatch")
+    actual = build_execution_manifest(
+        contract,
+        source_commit=source_commit,
+        supervisor_path=supervisor_path,
+        benchmark_path=benchmark_path,
+    )["tool_sha256"]
+    expected = manifest.get("tool_sha256")
+    if not isinstance(expected, dict):
+        raise RuntimeError("execution_manifest_tool_hashes_missing")
+    for name in ("contract", "supervisor", "benchmark"):
+        if actual.get(name) != expected.get(name):
+            raise RuntimeError(f"execution_tool_hash_mismatch:{name}")
+
+
+def verify_coordinator_checkout(
+    workdir: Path,
+    source_commit: str,
+    *,
+    contract_path: Path,
+    supervisor_path: Path,
+    benchmark_path: Path,
+) -> None:
+    head = _capture(
+        ["git", "rev-parse", "HEAD"],
+        cwd=workdir,
+        env=dict(os.environ),
+        allow_empty=False,
+    )
+    if head != source_commit:
+        raise RuntimeError(f"coordinator_head_mismatch:{head}!={source_commit}")
+    expected_paths = {
+        "contract": workdir / "scripts" / "analyze_phase466_low_overhead_probe.py",
+        "supervisor": workdir / "scripts" / "run_phase466_low_overhead_probe.py",
+        "benchmark": workdir / "scripts" / "run_openai_fixed_shape_benchmark.py",
+    }
+    actual_paths = {
+        "contract": contract_path,
+        "supervisor": supervisor_path,
+        "benchmark": benchmark_path,
+    }
+    for name, expected in expected_paths.items():
+        if actual_paths[name].resolve() != expected.resolve():
+            raise RuntimeError(f"coordinator_tool_path_mismatch:{name}")
+    paths = [str(path.relative_to(workdir)) for path in expected_paths.values()]
+    _capture(
+        ["git", "diff", "--quiet", "HEAD", "--", *paths],
+        cwd=workdir,
+        env=dict(os.environ),
+    )
+    _capture(
+        ["git", "diff", "--cached", "--quiet", "HEAD", "--", *paths],
+        cwd=workdir,
+        env=dict(os.environ),
+    )
+
+
+def acquire_node_lock(path: Path = NODE_LOCK_PATH):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    stream = path.open("a+", encoding="utf-8")
+    try:
+        fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError as exc:
+        stream.close()
+        raise RuntimeError(f"phase466_node_lock_busy:{path}") from exc
+    return stream
+
+
+def release_node_lock(stream: Any) -> None:
+    fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+    stream.close()
 
 
 def _wait_for_service(process: subprocess.Popen[Any], port: int, timeout_s: int = 2400) -> None:
@@ -248,14 +469,58 @@ def _materialize_argv(argv: list[str], *, relative_root: str, absolute_root: Pat
     ]
 
 
-def _stop_service(process: subprocess.Popen[Any], *, cwd: Path, env: dict[str, str]) -> bool:
-    if process.poll() is None:
-        os.killpg(process.pid, signal.SIGTERM)
+def _process_group_alive(pgid: int) -> bool:
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _terminate_process_group(
+    process: subprocess.Popen[Any],
+    *,
+    term_timeout_s: float = 120,
+    kill_timeout_s: float = 30,
+) -> tuple[bool, bool]:
+    pgid = process.pid
+    had_group = _process_group_alive(pgid)
+    if had_group:
         try:
-            process.wait(timeout=120)
+            os.killpg(pgid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+    process.poll()
+    deadline = time.monotonic() + term_timeout_s
+    while _process_group_alive(pgid) and time.monotonic() < deadline:
+        process.poll()
+        time.sleep(0.1)
+    if _process_group_alive(pgid):
+        try:
+            os.killpg(pgid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    process.poll()
+    deadline = time.monotonic() + kill_timeout_s
+    while _process_group_alive(pgid) and time.monotonic() < deadline:
+        process.poll()
+        time.sleep(0.1)
+    process.poll()
+    clean = not _process_group_alive(pgid)
+    if process.poll() is None:
+        try:
+            process.wait(timeout=1)
         except subprocess.TimeoutExpired:
-            os.killpg(process.pid, signal.SIGKILL)
-            process.wait(timeout=30)
+            clean = False
+    return had_group, clean
+
+
+def _stop_service(process: subprocess.Popen[Any], *, cwd: Path, env: dict[str, str]) -> bool:
+    unused_had_group, group_clean = _terminate_process_group(process)
+    if not group_clean:
+        return False
     deadline = time.monotonic() + 120
     while time.monotonic() < deadline:
         if not _gpu_residue(cwd, env) and not _process_residue(cwd, env):
@@ -272,6 +537,8 @@ class Supervisor:
         workdir: Path,
         artifact_root: Path,
         source_commit: str,
+        execution_manifest: dict[str, Any],
+        execution_manifest_sha256: str,
     ) -> None:
         if not re.fullmatch(r"[0-9a-f]{40}", source_commit):
             raise ValueError("invalid_source_commit")
@@ -279,12 +546,85 @@ class Supervisor:
         self.workdir = workdir
         self.artifact_root = artifact_root
         self.source_commit = source_commit
+        self.execution_manifest = execution_manifest
+        self.execution_manifest_sha256 = execution_manifest_sha256
         self.env = _runtime_env()
         self.status_path = artifact_root / "status.json"
         self._status_lock = threading.Lock()
         self._last_status: dict[str, Any] | None = None
         self._heartbeat_stop = threading.Event()
         self._heartbeat_thread: threading.Thread | None = None
+        self._abort_event = threading.Event()
+        self._abort_reason = ""
+        self._result_committed = False
+        self._active_service: subprocess.Popen[Any] | None = None
+        self._active_command: subprocess.Popen[Any] | None = None
+        self._previous_signal_handlers: dict[int, Any] = {}
+        self.owns_artifact_root = False
+
+    @property
+    def abort_requested(self) -> bool:
+        return self._abort_event.is_set()
+
+    def request_abort(self, signum: int) -> None:
+        if self._result_committed:
+            return
+        self._abort_reason = f"signal_{signal.Signals(signum).name}"
+        self._abort_event.set()
+        command = self._active_command
+        if command is not None and command.poll() is None:
+            try:
+                os.killpg(command.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+        service = self._active_service
+        if service is not None and service.poll() is None:
+            try:
+                os.killpg(service.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+
+    def raise_if_aborted(self) -> None:
+        if self.abort_requested:
+            raise AbortRequested(self._abort_reason)
+
+    def validate_tool_identity(self) -> dict[str, str]:
+        validate_execution_manifest(
+            self.execution_manifest,
+            expected_digest=self.execution_manifest_sha256,
+            contract=self.contract,
+            source_commit=self.source_commit,
+            supervisor_path=Path(__file__),
+            benchmark_path=self.workdir / "scripts" / "run_openai_fixed_shape_benchmark.py",
+        )
+        return _execution_tool_hashes(self.contract, self.workdir)
+
+    def commit_terminal_result(
+        self,
+        result: dict[str, Any],
+        *,
+        terminal_status: Any,
+    ) -> str:
+        while True:
+            if self.abort_requested and result.get("status") != "ABORTED":
+                result["status"] = "ABORTED"
+                result["reason"] = self._abort_reason
+            terminal_status(str(result["status"]))
+            _write_json(self.artifact_root / "phase466_result.json", result)
+            self._result_committed = True
+            if not self.abort_requested or result.get("status") == "ABORTED":
+                return str(result["status"])
+            self._result_committed = False
+
+    def install_signal_handlers(self) -> None:
+        for signum in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
+            self._previous_signal_handlers[signum] = signal.getsignal(signum)
+            signal.signal(signum, lambda received, frame: self.request_abort(received))
+
+    def restore_signal_handlers(self) -> None:
+        for signum, handler in self._previous_signal_handlers.items():
+            signal.signal(signum, handler)
+        self._previous_signal_handlers.clear()
 
     def status(self, stage: str, state: str, **extra: Any) -> None:
         with self._status_lock:
@@ -300,9 +640,7 @@ class Supervisor:
     def _write_status_locked(self) -> None:
         if self._last_status is None:
             return
-        temporary = self.status_path.with_suffix(".json.tmp")
-        _write_json(temporary, self._last_status)
-        temporary.replace(self.status_path)
+        _write_json(self.status_path, self._last_status)
 
     @property
     def heartbeat_alive(self) -> bool:
@@ -339,7 +677,9 @@ class Supervisor:
 
     def preflight(self) -> dict[str, str]:
         self.artifact_root.mkdir(parents=True, exist_ok=False)
+        self.owns_artifact_root = True
         self.status("preflight", "running")
+        tooling_hashes = self.validate_tool_identity()
         _assert_clean_worker(self.workdir, self.env, label="preflight")
         version = _capture(
             ["python3", "-c", "import vllm; print(vllm.__version__)"],
@@ -359,8 +699,16 @@ class Supervisor:
             env=self.env,
             allow_empty=False,
         )
-        hashes = _source_hashes(self.contract)
-        tooling_hashes = _execution_tool_hashes(self.contract, self.workdir)
+        hashes = assert_source_identity(self.contract)
+        assert_imported_vllm_source_paths(
+            self.contract,
+            cwd=self.workdir,
+            env=self.env,
+        )
+        _write_json(
+            self.artifact_root / "expected_execution_manifest.json",
+            self.execution_manifest,
+        )
         _write_source_hashes(self.artifact_root / "source.sha256", hashes)
         _write_source_hashes(self.artifact_root / "tooling.sha256", tooling_hashes)
         (self.artifact_root / "gpu_compute_apps_before.txt").write_text("", encoding="utf-8")
@@ -369,6 +717,7 @@ class Supervisor:
             self.artifact_root / "environment.json",
             {
                 "source_commit": self.source_commit,
+                "execution_manifest_sha256": self.execution_manifest_sha256,
                 "gpu": gpu,
                 "vllm_version": version,
                 "VLLM_ENABLE_CUDA_COMPATIBILITY": "1",
@@ -378,7 +727,57 @@ class Supervisor:
         self.status("preflight", "passed")
         return hashes
 
-    def execute_run(self, spec: dict[str, Any], hashes: dict[str, str]) -> Path:
+    def run_command(self, argv: list[str], *, output: Path) -> None:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with output.open("w", encoding="utf-8") as stream:
+            process = subprocess.Popen(
+                argv,
+                cwd=self.workdir,
+                env=self.env,
+                stdout=stream,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+            self._active_command = process
+            try:
+                while True:
+                    try:
+                        returncode = process.wait(timeout=5)
+                        break
+                    except subprocess.TimeoutExpired:
+                        if not self.abort_requested:
+                            continue
+                        try:
+                            os.killpg(process.pid, signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
+                        returncode = process.wait(timeout=30)
+                        break
+            finally:
+                self._active_command = None
+        had_group, group_clean = _terminate_process_group(
+            process,
+            term_timeout_s=5,
+            kill_timeout_s=30,
+        )
+        if not group_clean:
+            raise RuntimeError("benchmark_process_group_cleanup_failed")
+        if self.abort_requested:
+            raise AbortRequested(self._abort_reason)
+        if had_group:
+            raise RuntimeError("benchmark_process_group_residue")
+        if returncode != 0:
+            raise BenchmarkCommandError(f"benchmark_command_failed:{returncode}")
+
+    def execute_run(
+        self,
+        spec: dict[str, Any],
+        hashes: dict[str, str],
+        *,
+        overhead_gate_sha256: str | None = None,
+    ) -> Path:
+        self.raise_if_aborted()
+        run_start_tool_hashes = self.validate_tool_identity()
         run_dir = self.artifact_root / str(spec["artifact_dir"])
         if run_dir.exists():
             raise RuntimeError(f"artifact_already_exists:{run_dir}")
@@ -387,6 +786,9 @@ class Supervisor:
         serve_log = run_dir / "serve.log"
         port = int(spec["serve_argv"][spec["serve_argv"].index("--port") + 1])
         expected_ranks = list(range(int(spec["dp"])))
+        run_start_hashes = assert_source_identity(self.contract)
+        if run_start_hashes != hashes:
+            raise RuntimeError("vllm_source_hash_changed_before_run")
         self.status(spec["stage"], "starting", run_id=spec["id"])
         log_stream = serve_log.open("w", encoding="utf-8")
         process = subprocess.Popen(
@@ -397,7 +799,10 @@ class Supervisor:
             stderr=subprocess.STDOUT,
             start_new_session=True,
         )
+        self._active_service = process
         cleanup = False
+        run_end_hashes: dict[str, str] | None = None
+        run_end_tool_hashes: dict[str, str] | None = None
         try:
             _wait_for_service(process, port)
             warmup_argv = _materialize_argv(
@@ -405,7 +810,7 @@ class Supervisor:
                 relative_root=f"{spec['artifact_dir']}/warmup",
                 absolute_root=run_dir / "warmup",
             )
-            _run(warmup_argv, cwd=self.workdir, env=self.env, output=run_dir / "warmup" / "bench.log")
+            self.run_command(warmup_argv, output=run_dir / "warmup" / "bench.log")
             time.sleep(2)
             log_stream.flush()
             if spec["probe_mode"] == "on":
@@ -422,12 +827,22 @@ class Supervisor:
                 absolute_root=run_dir,
             )
             self.status(spec["stage"], "measuring", run_id=spec["id"])
-            _run(bench_argv, cwd=self.workdir, env=self.env, output=run_dir / "bench.log")
+            self.run_command(bench_argv, output=run_dir / "bench.log")
             (run_dir / "metrics_after.prom").write_text(_fetch_metrics(port), encoding="utf-8")
+            time.sleep(2)
+            log_stream.flush()
+            if spec["probe_mode"] == "on":
+                measurement_ends = last_iteration_by_rank(
+                    serve_log.read_text(encoding="utf-8", errors="replace"),
+                    expected_ranks=expected_ranks,
+                )
+            else:
+                measurement_ends = {rank: -1 for rank in expected_ranks}
             if process.poll() is not None:
                 raise RuntimeError("service_exited_during_benchmark")
         finally:
             cleanup = _stop_service(process, cwd=self.workdir, env=self.env)
+            self._active_service = None
             log_stream.close()
             gpu_residue = _gpu_residue(self.workdir, self.env)
             process_residue = _process_residue(self.workdir, self.env)
@@ -439,17 +854,32 @@ class Supervisor:
                 process_residue + ("\n" if process_residue else ""),
                 encoding="utf-8",
             )
+            run_end_hashes = assert_source_identity(self.contract)
+            run_end_tool_hashes = self.validate_tool_identity()
         if not cleanup:
             raise RuntimeError("postflight_residue")
+        if run_end_hashes != run_start_hashes:
+            raise RuntimeError("vllm_source_hash_changed_during_run")
+        if run_end_tool_hashes != run_start_tool_hashes:
+            raise RuntimeError("execution_tool_hash_changed_during_run")
+        self.raise_if_aborted()
         meta = self.contract.expected_run_meta(spec)
         meta.update(
             {
                 "vllm_version": "0.19.0",
+                "execution_manifest_sha256": self.execution_manifest_sha256,
+                "execution_tool_sha256": run_end_tool_hashes,
                 "measurement_start_after_iteration": {str(rank): value for rank, value in cutoffs.items()},
+                "measurement_end_at_iteration": {
+                    str(rank): value for rank, value in measurement_ends.items()
+                },
             }
         )
+        if overhead_gate_sha256 is not None:
+            meta["overhead_gate_sha256"] = overhead_gate_sha256
         _write_json(run_dir / "meta.json", meta)
-        _write_source_hashes(run_dir / "source.sha256", hashes)
+        _write_source_hashes(run_dir / "source.sha256", run_end_hashes)
+        _write_source_hashes(run_dir / "tooling.sha256", run_end_tool_hashes)
         self.status(spec["stage"], "run_complete", run_id=spec["id"])
         return run_dir
 
@@ -467,6 +897,42 @@ def _compress_logs(artifact_root: Path) -> None:
         _compress(path)
 
 
+def finalize_result(
+    *,
+    supervisor: Supervisor,
+    result: dict[str, Any],
+    final_residue_check: Any,
+    terminal_status: Any,
+) -> str:
+    _compress_logs(supervisor.artifact_root)
+    final_residue_check()
+    return supervisor.commit_terminal_result(result, terminal_status=terminal_status)
+
+
+def finalize_failure_result(
+    *,
+    supervisor: Supervisor,
+    result: dict[str, Any],
+    terminal_status: Any,
+) -> str:
+    try:
+        _compress_logs(supervisor.artifact_root)
+    except Exception as exc:
+        result["log_compression_error"] = str(exc)
+    try:
+        gpu = _gpu_residue(supervisor.workdir, supervisor.env)
+        processes = _process_residue(supervisor.workdir, supervisor.env)
+        result["cleanup"] = not gpu and not processes
+        if gpu:
+            result["gpu_residue"] = gpu
+        if processes:
+            result["process_residue"] = processes
+    except Exception as exc:
+        result["cleanup"] = False
+        result["residue_check_error"] = str(exc)
+    return supervisor.commit_terminal_result(result, terminal_status=terminal_status)
+
+
 def gate_stop_result(gate: dict[str, Any]) -> dict[str, Any]:
     return {
         "schema": gate.get("schema"),
@@ -481,12 +947,20 @@ def gate_stop_result(gate: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _assert_terminal_clean(supervisor: Supervisor, *, label: str) -> None:
+    supervisor.raise_if_aborted()
+    _assert_clean_worker(supervisor.workdir, supervisor.env, label=label)
+
+
 def run_all(
     contract: Any,
     *,
     workdir: Path,
     artifact_root: Path,
     source_commit: str,
+    execution_manifest: dict[str, Any],
+    execution_manifest_sha256: str,
+    node_lock_path: Path = NODE_LOCK_PATH,
 ) -> int:
     plan = contract.build_run_plan()
     validated = validate_execution_plan(plan)
@@ -495,9 +969,15 @@ def run_all(
         workdir=workdir,
         artifact_root=artifact_root,
         source_commit=source_commit,
+        execution_manifest=execution_manifest,
+        execution_manifest_sha256=execution_manifest_sha256,
     )
+    node_lock = None
     try:
+        node_lock = acquire_node_lock(node_lock_path)
+        supervisor.install_signal_handlers()
         hashes = supervisor.preflight()
+        supervisor.raise_if_aborted()
         supervisor.start_heartbeat()
         return _execute_plan(
             contract,
@@ -508,8 +988,53 @@ def run_all(
             supervisor=supervisor,
             hashes=hashes,
         )
+    except AbortRequested as exc:
+        result = {
+            "schema": contract.SCHEMA,
+            "status": "ABORTED",
+            "reason": str(exc),
+            "gate_status": "NOT_EVALUATED",
+            "formal_scenarios": [],
+            "diagnostic_only": True,
+            "valid_for_default": False,
+            "perf_database": False,
+            "default_readiness": "No-Go",
+            "execution_manifest_sha256": execution_manifest_sha256,
+        }
+        if supervisor.owns_artifact_root:
+            finalize_failure_result(
+                supervisor=supervisor,
+                result=result,
+                terminal_status=lambda status: supervisor.status("complete", status),
+            )
+        return 130
+    except Exception as exc:
+        result = {
+            "schema": contract.SCHEMA,
+            "status": "FAILED",
+            "reason": str(exc),
+            "gate_status": "NOT_EVALUATED",
+            "formal_scenarios": [],
+            "diagnostic_only": True,
+            "valid_for_default": False,
+            "perf_database": False,
+            "default_readiness": "No-Go",
+            "execution_manifest_sha256": execution_manifest_sha256,
+        }
+        if supervisor.owns_artifact_root:
+            committed = finalize_failure_result(
+                supervisor=supervisor,
+                result=result,
+                terminal_status=lambda status: supervisor.status("complete", status),
+            )
+            return 130 if committed == "ABORTED" else 4
+        return 130 if supervisor.abort_requested else 4
     finally:
-        supervisor.stop_heartbeat()
+        if supervisor.heartbeat_alive:
+            supervisor.stop_heartbeat()
+        supervisor.restore_signal_handlers()
+        if node_lock is not None:
+            release_node_lock(node_lock)
 
 
 def _execute_plan(
@@ -529,6 +1054,7 @@ def _execute_plan(
         try:
             run_dirs[run["id"]] = supervisor.execute_run(run, hashes)
         except Exception as exc:
+            supervisor.raise_if_aborted()
             error = str(exc)
             cleanup = not _gpu_residue(workdir, supervisor.env) and not _process_residue(workdir, supervisor.env)
             failures.append({"run_id": run["id"], "stage": "overhead", "error": error, "cleanup": cleanup})
@@ -536,6 +1062,7 @@ def _execute_plan(
                 stage="overhead",
                 cleanup=cleanup,
                 integrity_failure=is_integrity_failure(error),
+                benchmark_failure=isinstance(exc, BenchmarkCommandError),
             )
             supervisor.status("overhead", "run_failed", run_id=run["id"], error=error, action=action)
             if action == "STOP_ALL":
@@ -563,6 +1090,7 @@ def _execute_plan(
                     result,
                 )
             except Exception as exc:
+                supervisor.raise_if_aborted()
                 error = str(exc)
                 failures.append(
                     {
@@ -592,25 +1120,32 @@ def _execute_plan(
     _write_json(artifact_root / "overhead" / "overhead_gate.json", gate)
     if gate.get("status") != "PASS":
         final = gate_stop_result(gate)
-        _write_json(artifact_root / "phase466_result.json", final)
-        _compress_logs(artifact_root)
-        supervisor.status("complete", final["status"], gate_status=gate.get("status"))
-        return 2
+        final["execution_manifest_sha256"] = supervisor.execution_manifest_sha256
+        committed = finalize_result(
+            supervisor=supervisor,
+            result=final,
+            final_residue_check=lambda: _assert_terminal_clean(
+                supervisor, label="gate_postflight"
+            ),
+            terminal_status=lambda status: supervisor.status(
+                "complete", status, gate_status=gate.get("status")
+            ),
+        )
+        return 130 if committed == "ABORTED" else 2
 
     formal_results: list[dict[str, Any]] = []
     formal_failures: list[dict[str, Any]] = []
     for run in validated["formal_runs"]:
         try:
-            run_dir = supervisor.execute_run(run, hashes)
-            result = contract.validate_formal_artifacts(run_dir, spec=run, gate=gate)
-            formal_results.append(result)
-            _write_json(
-                run_dir / "probe_summary.json",
-                {key: value for key, value in result.items() if key != "iteration_rows"},
+            run_dir = supervisor.execute_run(
+                run,
+                hashes,
+                overhead_gate_sha256=contract.overhead_gate_digest(gate),
             )
-            contract._write_csv(run_dir / "iteration_rows.csv", result["iteration_rows"])
-            contract._write_csv(run_dir / "rank_summary.csv", result["rank_summary"])
+        except AbortRequested:
+            raise
         except Exception as exc:
+            supervisor.raise_if_aborted()
             error = str(exc)
             cleanup = not _gpu_residue(workdir, supervisor.env) and not _process_residue(workdir, supervisor.env)
             formal_failures.append({"run_id": run["id"], "error": error, "cleanup": cleanup})
@@ -618,10 +1153,41 @@ def _execute_plan(
                 stage="formal",
                 cleanup=cleanup,
                 integrity_failure=is_integrity_failure(error),
+                benchmark_failure=isinstance(exc, BenchmarkCommandError),
             )
             supervisor.status("formal", "run_failed", run_id=run["id"], error=error, action=action)
             if action == "STOP_ALL":
                 break
+            continue
+        try:
+            result = contract.validate_formal_artifacts(run_dir, spec=run, gate=gate)
+            contract._write_csv(run_dir / "iteration_rows.csv", result["iteration_rows"])
+            contract._write_csv(run_dir / "rank_summary.csv", result["rank_summary"])
+            result["iteration_rows_identity"] = contract.iteration_csv_identity(
+                run_dir / "iteration_rows.csv"
+            )
+            formal_results.append(result)
+            _write_json(
+                run_dir / "probe_summary.json",
+                {
+                    key: value
+                    for key, value in result.items()
+                    if key not in {"iteration_rows", "rank_summary"}
+                },
+            )
+        except Exception as exc:
+            supervisor.raise_if_aborted()
+            error = str(exc)
+            cleanup = not _gpu_residue(workdir, supervisor.env) and not _process_residue(workdir, supervisor.env)
+            formal_failures.append({"run_id": run["id"], "error": error, "cleanup": cleanup})
+            supervisor.status(
+                "formal",
+                "artifact_validation_failed",
+                run_id=run["id"],
+                error=error,
+                action="STOP_ALL",
+            )
+            break
     final = {
         "schema": contract.SCHEMA,
         "status": "PASS" if len(formal_results) == 3 and not formal_failures else "INCOMPLETE",
@@ -632,30 +1198,73 @@ def _execute_plan(
         "valid_for_default": False,
         "perf_database": False,
         "default_readiness": "No-Go",
+        "execution_manifest_sha256": supervisor.execution_manifest_sha256,
+        "overhead_gate_sha256": contract.overhead_gate_digest(gate),
+        "formal_artifacts": {
+            result["scenario"]: result["iteration_rows_identity"]
+            for result in formal_results
+        },
     }
-    _write_json(artifact_root / "phase466_result.json", final)
-    _compress_logs(artifact_root)
-    supervisor.status("complete", final["status"])
+    committed = finalize_result(
+        supervisor=supervisor,
+        result=final,
+        final_residue_check=lambda: _assert_terminal_clean(
+            supervisor, label="final_postflight"
+        ),
+        terminal_status=lambda status: supervisor.status("complete", status),
+    )
+    if committed == "ABORTED":
+        return 130
     return 0 if final["status"] == "PASS" else 3
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workdir", type=Path, required=True)
-    parser.add_argument("--artifact-root", type=Path, required=True)
+    parser.add_argument("--artifact-root", type=Path)
     parser.add_argument("--source-commit", required=True)
-    parser.add_argument(
-        "--contract",
-        type=Path,
-        default=Path(__file__).with_name("analyze_phase466_low_overhead_probe.py"),
-    )
+    parser.add_argument("--expected-execution-manifest", type=Path)
+    parser.add_argument("--expected-execution-manifest-sha256")
+    parser.add_argument("--write-execution-manifest", type=Path)
     args = parser.parse_args()
-    contract = _load_contract(args.contract.resolve())
+    workdir = args.workdir.resolve()
+    supervisor_path = Path(__file__).resolve()
+    contract_path = supervisor_path.with_name("analyze_phase466_low_overhead_probe.py")
+    benchmark_path = workdir / "scripts" / "run_openai_fixed_shape_benchmark.py"
+    contract = _load_contract(contract_path)
+    if args.write_execution_manifest is not None:
+        verify_coordinator_checkout(
+            workdir,
+            args.source_commit,
+            contract_path=contract_path,
+            supervisor_path=supervisor_path,
+            benchmark_path=benchmark_path,
+        )
+        manifest = build_execution_manifest(
+            contract,
+            source_commit=args.source_commit,
+            supervisor_path=supervisor_path,
+            benchmark_path=benchmark_path,
+        )
+        _write_json(args.write_execution_manifest, manifest)
+        print(execution_manifest_digest(manifest))
+        return 0
+    if args.artifact_root is None:
+        parser.error("--artifact-root is required for execution")
+    if args.expected_execution_manifest is None:
+        parser.error("--expected-execution-manifest is required for execution")
+    if args.expected_execution_manifest_sha256 is None:
+        parser.error("--expected-execution-manifest-sha256 is required for execution")
+    manifest = json.loads(args.expected_execution_manifest.read_text(encoding="utf-8"))
+    if not isinstance(manifest, dict):
+        raise ValueError("expected_execution_manifest_must_be_object")
     return run_all(
         contract,
-        workdir=args.workdir.resolve(),
+        workdir=workdir,
         artifact_root=args.artifact_root.resolve(),
         source_commit=args.source_commit,
+        execution_manifest=manifest,
+        execution_manifest_sha256=args.expected_execution_manifest_sha256,
     )
 
 

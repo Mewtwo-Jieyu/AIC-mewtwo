@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import signal
 import sys
 import time
 from pathlib import Path
@@ -55,10 +56,32 @@ def test_validate_execution_plan_rejects_missing_preregistered_run() -> None:
 def test_failure_action_is_fail_closed() -> None:
     runner = _load(MODULE_PATH, "run_phase466_low_overhead_probe_failure_action")
 
-    assert runner.failure_action(stage="overhead", cleanup=True, integrity_failure=False) == "CONTINUE_GATE"
+    assert runner.failure_action(
+        stage="overhead",
+        cleanup=True,
+        integrity_failure=False,
+        benchmark_failure=True,
+    ) == "CONTINUE_GATE"
+    assert runner.failure_action(
+        stage="overhead",
+        cleanup=True,
+        integrity_failure=False,
+        benchmark_failure=False,
+    ) == "STOP_ALL"
     assert runner.failure_action(stage="overhead", cleanup=False, integrity_failure=False) == "STOP_ALL"
     assert runner.failure_action(stage="overhead", cleanup=True, integrity_failure=True) == "STOP_ALL"
-    assert runner.failure_action(stage="formal", cleanup=True, integrity_failure=False) == "CONTINUE_FORMAL"
+    assert runner.failure_action(
+        stage="formal",
+        cleanup=True,
+        integrity_failure=False,
+        benchmark_failure=True,
+    ) == "CONTINUE_FORMAL"
+    assert runner.failure_action(
+        stage="formal",
+        cleanup=True,
+        integrity_failure=False,
+        benchmark_failure=False,
+    ) == "STOP_ALL"
     assert runner.failure_action(stage="formal", cleanup=False, integrity_failure=False) == "STOP_ALL"
 
 
@@ -66,8 +89,314 @@ def test_integrity_error_detection_matches_nested_validation_errors() -> None:
     runner = _load(MODULE_PATH, "run_phase466_low_overhead_probe_integrity")
 
     assert runner.is_integrity_failure("validation:vllm_source_hash_mismatch")
+    assert runner.is_integrity_failure("formal_benchmark_mismatch:ok_requests")
+    assert runner.is_integrity_failure("missing_probe_metrics:/tmp/run")
     assert runner.is_integrity_failure("nonempty_gpu_residue:/tmp/run")
     assert not runner.is_integrity_failure("benchmark_command_failed:1")
+
+
+def test_capture_only_accepts_explicit_return_codes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = _load(MODULE_PATH, "run_phase466_low_overhead_probe_capture")
+
+    monkeypatch.setattr(
+        runner.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=1,
+            stdout="",
+            stderr="nvidia failed",
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="command_failed:nvidia-smi:1:nvidia failed"):
+        runner._capture(["nvidia-smi"], cwd=tmp_path, env={})
+    assert runner._capture(
+        ["pgrep"], cwd=tmp_path, env={}, accepted_returncodes={0, 1}
+    ) == ""
+
+
+def test_node_lock_is_exclusive_and_released(tmp_path: Path) -> None:
+    runner = _load(MODULE_PATH, "run_phase466_low_overhead_probe_lock")
+    lock_path = tmp_path / "phase466.lock"
+
+    first = runner.acquire_node_lock(lock_path)
+    with pytest.raises(RuntimeError, match="phase466_node_lock_busy"):
+        runner.acquire_node_lock(lock_path)
+    runner.release_node_lock(first)
+    second = runner.acquire_node_lock(lock_path)
+    runner.release_node_lock(second)
+
+
+def test_execution_manifest_binds_commit_tools_and_source_hashes(tmp_path: Path) -> None:
+    runner = _load(MODULE_PATH, "run_phase466_low_overhead_probe_manifest")
+    contract_path = tmp_path / "contract.py"
+    supervisor_path = tmp_path / "supervisor.py"
+    benchmark_path = tmp_path / "benchmark.py"
+    for path, value in (
+        (contract_path, "contract"),
+        (supervisor_path, "supervisor"),
+        (benchmark_path, "benchmark"),
+    ):
+        path.write_text(value, encoding="utf-8")
+    contract = SimpleNamespace(
+        SCHEMA="unit-schema",
+        SOURCE_FILES={"/vllm/core.py": "a" * 64},
+        __file__=str(contract_path),
+    )
+
+    manifest = runner.build_execution_manifest(
+        contract,
+        source_commit="b" * 40,
+        supervisor_path=supervisor_path,
+        benchmark_path=benchmark_path,
+    )
+    digest = runner.execution_manifest_digest(manifest)
+
+    runner.validate_execution_manifest(
+        manifest,
+        expected_digest=digest,
+        contract=contract,
+        source_commit="b" * 40,
+        supervisor_path=supervisor_path,
+        benchmark_path=benchmark_path,
+    )
+    supervisor_path.write_text("changed", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="execution_tool_hash_mismatch:supervisor"):
+        runner.validate_execution_manifest(
+            manifest,
+            expected_digest=digest,
+            contract=contract,
+            source_commit="b" * 40,
+            supervisor_path=supervisor_path,
+            benchmark_path=benchmark_path,
+        )
+
+
+def test_coordinator_manifest_requires_exact_clean_head(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = _load(MODULE_PATH, "run_phase466_low_overhead_probe_coordinator")
+    monkeypatch.setattr(
+        runner,
+        "_capture",
+        lambda *args, **kwargs: "c" * 40,
+    )
+
+    with pytest.raises(RuntimeError, match="coordinator_head_mismatch"):
+        runner.verify_coordinator_checkout(
+            tmp_path,
+            "d" * 40,
+            contract_path=tmp_path / "scripts" / "analyze_phase466_low_overhead_probe.py",
+            supervisor_path=tmp_path / "scripts" / "run_phase466_low_overhead_probe.py",
+            benchmark_path=tmp_path / "scripts" / "run_openai_fixed_shape_benchmark.py",
+        )
+
+
+def test_coordinator_rejects_tool_outside_exact_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = _load(MODULE_PATH, "run_phase466_low_overhead_probe_tool_path")
+    monkeypatch.setattr(
+        runner,
+        "_capture",
+        lambda *args, **kwargs: "a" * 40 if args[0][1:3] == ["rev-parse", "HEAD"] else "",
+    )
+
+    with pytest.raises(RuntimeError, match="coordinator_tool_path_mismatch:contract"):
+        runner.verify_coordinator_checkout(
+            tmp_path,
+            "a" * 40,
+            contract_path=tmp_path / "outside-contract.py",
+            supervisor_path=tmp_path / "scripts" / "run_phase466_low_overhead_probe.py",
+            benchmark_path=tmp_path / "scripts" / "run_openai_fixed_shape_benchmark.py",
+        )
+
+
+def test_source_identity_is_resampled_for_each_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _load(MODULE_PATH, "run_phase466_low_overhead_probe_source_identity")
+    contract = SimpleNamespace(SOURCE_FILES={"/vllm/core.py": "a" * 64})
+    samples = iter(
+        [
+            {"/vllm/core.py": "a" * 64},
+            {"/vllm/core.py": "b" * 64},
+        ]
+    )
+    monkeypatch.setattr(runner, "_source_hashes", lambda unused: next(samples))
+
+    assert runner.assert_source_identity(contract) == {"/vllm/core.py": "a" * 64}
+    with pytest.raises(RuntimeError, match="vllm_source_hash_mismatch"):
+        runner.assert_source_identity(contract)
+
+
+def test_signal_abort_terminates_active_children(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = _load(MODULE_PATH, "run_phase466_low_overhead_probe_signal")
+    supervisor = runner.Supervisor(
+        contract=SimpleNamespace(SCHEMA="unit-schema", SOURCE_FILES={}),
+        workdir=tmp_path,
+        artifact_root=tmp_path / "artifact",
+        source_commit="a" * 40,
+        execution_manifest={},
+        execution_manifest_sha256="b" * 64,
+    )
+    service = SimpleNamespace(pid=123, poll=lambda: None)
+    command = SimpleNamespace(pid=456, poll=lambda: None)
+    supervisor._active_service = service
+    supervisor._active_command = command
+    killed: list[tuple[int, int]] = []
+    monkeypatch.setattr(runner.os, "killpg", lambda pid, sig: killed.append((pid, sig)))
+
+    supervisor.request_abort(signal.SIGTERM)
+
+    assert supervisor.abort_requested
+    assert killed == [(456, signal.SIGTERM), (123, signal.SIGTERM)]
+    with pytest.raises(runner.AbortRequested, match="signal_SIGTERM"):
+        supervisor.raise_if_aborted()
+
+
+def test_process_group_cleanup_does_not_trust_exited_leader(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = _load(MODULE_PATH, "run_phase466_low_overhead_probe_group_cleanup")
+    killed = False
+    reaped = False
+    sent: list[int] = []
+
+    class Process:
+        pid = 321
+
+        def poll(self):
+            nonlocal reaped
+            if killed:
+                reaped = True
+                return 0
+            return None
+
+        def wait(self, timeout: float):
+            return self.poll()
+
+    def killpg(unused_pid: int, signum: int) -> None:
+        nonlocal killed
+        if signum == 0:
+            if reaped:
+                raise ProcessLookupError
+            return
+        sent.append(signum)
+        if signum == signal.SIGKILL:
+            killed = True
+
+    monkeypatch.setattr(runner.os, "killpg", killpg)
+
+    had_group, clean = runner._terminate_process_group(
+        Process(),
+        term_timeout_s=0,
+        kill_timeout_s=0,
+    )
+
+    assert had_group
+    assert clean
+    assert sent == [signal.SIGTERM, signal.SIGKILL]
+
+
+def test_tool_identity_is_rechecked_against_manifest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = _load(MODULE_PATH, "run_phase466_low_overhead_probe_tool_recheck")
+    supervisor = runner.Supervisor(
+        contract=SimpleNamespace(SCHEMA="unit-schema"),
+        workdir=tmp_path,
+        artifact_root=tmp_path / "artifact",
+        source_commit="a" * 40,
+        execution_manifest={},
+        execution_manifest_sha256="b" * 64,
+    )
+    calls: list[bool] = []
+    monkeypatch.setattr(
+        runner,
+        "validate_execution_manifest",
+        lambda *args, **kwargs: calls.append(True),
+    )
+    monkeypatch.setattr(
+        runner,
+        "_execution_tool_hashes",
+        lambda *args, **kwargs: {"contract": "c" * 64},
+    )
+
+    assert supervisor.validate_tool_identity() == {"contract": "c" * 64}
+    assert calls == [True]
+
+
+def test_finalize_writes_pass_result_only_after_log_compression(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = _load(MODULE_PATH, "run_phase466_low_overhead_probe_finalize")
+    supervisor = runner.Supervisor(
+        contract=SimpleNamespace(SCHEMA="unit-schema", SOURCE_FILES={}),
+        workdir=tmp_path,
+        artifact_root=tmp_path,
+        source_commit="a" * 40,
+        execution_manifest={},
+        execution_manifest_sha256="b" * 64,
+    )
+    result = {"status": "PASS"}
+    monkeypatch.setattr(
+        runner,
+        "_compress_logs",
+        lambda root: (_ for _ in ()).throw(RuntimeError("compression_failed")),
+    )
+
+    with pytest.raises(RuntimeError, match="compression_failed"):
+        runner.finalize_result(
+            supervisor=supervisor,
+            result=result,
+            final_residue_check=lambda: None,
+            terminal_status=lambda unused_status: None,
+        )
+    assert not (tmp_path / "phase466_result.json").exists()
+
+
+def test_terminal_commit_rewrites_pass_as_aborted_when_signal_arrives_during_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = _load(MODULE_PATH, "run_phase466_low_overhead_probe_terminal_race")
+    artifact_root = tmp_path / "artifact"
+    artifact_root.mkdir()
+    supervisor = runner.Supervisor(
+        contract=SimpleNamespace(SCHEMA="unit-schema", SOURCE_FILES={}),
+        workdir=tmp_path,
+        artifact_root=artifact_root,
+        source_commit="a" * 40,
+        execution_manifest={},
+        execution_manifest_sha256="b" * 64,
+    )
+    original_write = runner._write_json
+    injected = False
+
+    def write_with_signal(path: Path, value: object) -> None:
+        nonlocal injected
+        if path.name == "phase466_result.json" and not injected:
+            injected = True
+            supervisor.request_abort(signal.SIGTERM)
+        original_write(path, value)
+
+    monkeypatch.setattr(runner, "_write_json", write_with_signal)
+    statuses: list[str] = []
+
+    committed = supervisor.commit_terminal_result(
+        {"status": "PASS", "gate_status": "PASS"},
+        terminal_status=statuses.append,
+    )
+
+    result = json.loads((artifact_root / "phase466_result.json").read_text())
+    assert committed == "ABORTED"
+    assert statuses == ["PASS", "ABORTED"]
+    assert result["status"] == "ABORTED"
+    assert result["reason"] == "signal_SIGTERM"
 
 
 def test_supervisor_heartbeat_updates_status_and_stops(tmp_path: Path) -> None:
@@ -75,10 +404,12 @@ def test_supervisor_heartbeat_updates_status_and_stops(tmp_path: Path) -> None:
     artifact_root = tmp_path / "artifact"
     artifact_root.mkdir()
     supervisor = runner.Supervisor(
-        contract=SimpleNamespace(SCHEMA="unit-schema"),
+        contract=SimpleNamespace(SCHEMA="unit-schema", SOURCE_FILES={}),
         workdir=tmp_path,
         artifact_root=artifact_root,
         source_commit="a" * 40,
+        execution_manifest={},
+        execution_manifest_sha256="b" * 64,
     )
     supervisor.status("formal", "measuring", run_id="run-1")
     first = json.loads(supervisor.status_path.read_text())
@@ -104,12 +435,20 @@ def test_preflight_captures_source_commit_gpu_and_runtime_environment(
     runner = _load(MODULE_PATH, "run_phase466_low_overhead_probe_preflight")
     artifact_root = tmp_path / "artifact"
     supervisor = runner.Supervisor(
-        contract=SimpleNamespace(SCHEMA="unit-schema"),
+        contract=SimpleNamespace(SCHEMA="unit-schema", SOURCE_FILES={}),
         workdir=tmp_path,
         artifact_root=artifact_root,
         source_commit="a" * 40,
+        execution_manifest={},
+        execution_manifest_sha256="b" * 64,
     )
+    monkeypatch.setattr(runner, "validate_execution_manifest", lambda *args, **kwargs: None)
     monkeypatch.setattr(runner, "_assert_clean_worker", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        runner,
+        "assert_imported_vllm_source_paths",
+        lambda *args, **kwargs: None,
+    )
     monkeypatch.setattr(runner, "_source_hashes", lambda contract: {})
     monkeypatch.setattr(
         runner,
@@ -144,6 +483,8 @@ def test_supervisor_rejects_invalid_source_commit(tmp_path: Path) -> None:
             workdir=tmp_path,
             artifact_root=tmp_path / "artifact",
             source_commit="2f6ad73d",
+            execution_manifest={},
+            execution_manifest_sha256="b" * 64,
         )
 
 
@@ -167,11 +508,18 @@ def test_stop_service_does_not_require_ray_command(
     runner = _load(MODULE_PATH, "run_phase466_low_overhead_probe_stop")
 
     class ExitedProcess:
+        pid = 123
+
         def poll(self):
             return 0
 
     monkeypatch.setattr(runner, "_gpu_residue", lambda *args, **kwargs: "")
     monkeypatch.setattr(runner, "_process_residue", lambda *args, **kwargs: "")
+    monkeypatch.setattr(
+        runner,
+        "_terminate_process_group",
+        lambda *args, **kwargs: (False, True),
+    )
 
     def forbidden_run(*args, **kwargs):
         raise AssertionError("cleanup must not invoke unavailable ray CLI")
