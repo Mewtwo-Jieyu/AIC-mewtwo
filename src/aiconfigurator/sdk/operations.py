@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import logging
-from typing import Optional
+from typing import Literal, Optional
 
 from aiconfigurator.sdk import common
 from aiconfigurator.sdk.perf_database import PerfDataNotAvailableError, PerfDatabase
@@ -46,6 +46,17 @@ def _is_vllm_module_scope(database: PerfDatabase, model_name: str, topology: str
     )
 
 
+def _require_vllm_module_topology(database: PerfDatabase, model_name: str, topology: str) -> None:
+    if (
+        getattr(database, "backend", None) == common.BackendName.vllm.value
+        and getattr(database, "system", None) == _VLLM_MODULE_HARDWARE
+        and getattr(database, "version", None) == _VLLM_MODULE_VERSION
+        and model_name == _VLLM_MODULE_RUNTIME_MODEL
+        and not topology
+    ):
+        raise ValueError("Kimi vLLM module binding requires vllm_module_topology metadata")
+
+
 def _query_vllm_module(
     database: PerfDatabase,
     *,
@@ -74,34 +85,59 @@ def _query_vllm_module(
         module_boundary=module_boundary,
         quant_runtime=_VLLM_MODULE_QUANT_RUNTIME,
     )
-    return PerformanceResult(float(result) * scale_factor, energy=result.energy * scale_factor)
+    scaled = PerformanceResult(float(result) * scale_factor, energy=result.energy * scale_factor)
+    scaled.provenance = "vllm_module_measured"
+    return scaled
 
 
-def _query_vllm_ep8_alltoall_fallback(
+def _query_vllm_ep8_alltoall(
     database: PerfDatabase,
     *,
     bucket_tokens: int,
     hidden_size: int,
     topk: int,
     scale_factor: float,
+    source: Literal["measured", "structural"],
 ) -> PerformanceResult:
-    try:
+    if source == "measured":
         result = database.query_vllm_ep8_a2a_decode(
             bucket_tokens=bucket_tokens,
             hidden_size=hidden_size,
             topk=topk,
             moe_ep_size=8,
         )
-        return PerformanceResult(float(result) * scale_factor, energy=result.energy * scale_factor)
-    except (AttributeError, PerfDataNotAvailableError, ValueError):
-        pass
+        scaled = PerformanceResult(float(result) * scale_factor, energy=result.energy * scale_factor)
+        scaled.provenance = "phase431_ep8_a2a_measured"
+        return scaled
+    if source != "structural":
+        raise ValueError(f"unknown vLLM EP8 source: {source!r}")
 
     node_spec = getattr(database, "system_spec", {}).get("node", {})
+    if "intra_node_bw" not in node_spec:
+        raise PerfDataNotAvailableError("structural vLLM EP8 source requires node.intra_node_bw metadata")
     # h200_sxm records single-direction intra-node bandwidth; dispatch+combine can use both directions.
     bidirectional_bw = float(node_spec["intra_node_bw"]) * 2.0
+    if bidirectional_bw <= 0.0:
+        raise ValueError("structural vLLM EP8 source requires positive node.intra_node_bw")
     bytes_per_token = hidden_size * topk * common.CommQuantMode.half.value.memory * 2.0
     latency_ms = bucket_tokens * bytes_per_token / bidirectional_bw * 1000.0
-    return PerformanceResult(latency_ms * scale_factor, energy=0.0)
+    result = PerformanceResult(latency_ms * scale_factor, energy=0.0)
+    result.provenance = "structural_bidirectional_bandwidth"
+    return result
+
+
+def _resolve_vllm_ep8_source(
+    database: PerfDatabase,
+    *,
+    bucket_tokens: int,
+    hidden_size: int,
+    topk: int,
+) -> Literal["measured", "structural"]:
+    coverage_query = getattr(database, "get_vllm_ep8_a2a_decode_coverage", None)
+    if not callable(coverage_query):
+        raise PerfDataNotAvailableError("vLLM EP8 source selection requires explicit measured coverage metadata")
+    bucket_min, bucket_max = coverage_query(hidden_size=hidden_size, topk=topk, moe_ep_size=8)
+    return "measured" if bucket_min <= bucket_tokens <= bucket_max else "structural"
 
 
 class Operation:
@@ -608,6 +644,7 @@ class MoE(Operation):
         quant_mode = self._quant_mode if overwrite_quant_mode is None else overwrite_quant_mode
         model_name = str(kwargs.get("model_name", ""))
         vllm_module_topology = str(kwargs.get("vllm_module_topology", ""))
+        _require_vllm_module_topology(database, model_name, vllm_module_topology)
 
         if _is_vllm_module_scope(database, model_name, vllm_module_topology) and _has_vllm_module_exact_bucket(
             "fusedmoe_runner_compute",
@@ -634,6 +671,7 @@ class MoE(Operation):
             moe_backend=self._moe_backend,
             is_gated=self._is_gated,
             enable_eplb=self._enable_eplb,
+            model=model_name,
         )
 
         return PerformanceResult(float(result) * self._scale_factor, energy=result.energy * self._scale_factor)
@@ -813,12 +851,15 @@ class MoEDispatch(Operation):
                 scaled_num_tokens = max(1, num_tokens // self._scale_num_tokens)
             model_name = str(kwargs.get("model_name", ""))
             vllm_module_topology = str(kwargs.get("vllm_module_topology", ""))
+            _require_vllm_module_topology(database, model_name, vllm_module_topology)
             if _is_vllm_module_scope(database, model_name, vllm_module_topology) and _has_vllm_module_exact_bucket(
                 "ep8_comm_dispatch_combine",
                 scaled_num_tokens,
             ):
                 if not self._pre_dispatch:
-                    return PerformanceResult(0.0, energy=0.0)
+                    result = PerformanceResult(0.0, energy=0.0)
+                    result.provenance = "vllm_module_measured_combined_in_pre_dispatch"
+                    return result
                 return _query_vllm_module(
                     database,
                     bucket_tokens=scaled_num_tokens,
@@ -826,14 +867,23 @@ class MoEDispatch(Operation):
                     scale_factor=self._scale_factor,
                 )
             if _is_vllm_module_scope(database, model_name, vllm_module_topology) and self._moe_ep_size > 1:
+                source = _resolve_vllm_ep8_source(
+                    database,
+                    bucket_tokens=scaled_num_tokens,
+                    hidden_size=self._hidden_size,
+                    topk=self._topk,
+                )
                 if not self._pre_dispatch:
-                    return PerformanceResult(0.0, energy=0.0)
-                return _query_vllm_ep8_alltoall_fallback(
+                    result = PerformanceResult(0.0, energy=0.0)
+                    result.provenance = f"{source}_combined_in_pre_dispatch"
+                    return result
+                return _query_vllm_ep8_alltoall(
                     database,
                     bucket_tokens=scaled_num_tokens,
                     hidden_size=self._hidden_size,
                     topk=self._topk,
                     scale_factor=self._scale_factor,
+                    source=source,
                 )
 
             volume = scaled_num_tokens * self._hidden_size

@@ -40,6 +40,14 @@ _PHASE397V_INT4_WO_MOE_ANCHOR_SOL_MS = 0.22047402666666666
 _PHASE397V_INT4_WO_MOE_SOL_SCALE = (
     _PHASE397V_INT4_WO_MOE_ANCHOR_MS_PER_LAYER / _PHASE397V_INT4_WO_MOE_ANCHOR_SOL_MS
 )
+_PHASE397V_RUNTIME_MODEL = "moonshotai/Kimi-K2.5"
+_PHASE397V_MODEL_SHAPE = {
+    "hidden_size": 7168,
+    "inter_size": 2048,
+    "topk": 8,
+    "num_experts": 384,
+}
+_PHASE397V_TOPOLOGIES = {(1, 8), (16, 1)}
 _PHASE431_KERNEL_SOURCE_PREFIX = "phase431_"
 _PHASE431_DECODE_DISTRIBUTION_PREFIX = "phase431_decode_"
 
@@ -4775,6 +4783,34 @@ class PerfDatabase:
         return PerformanceResult(result, energy=0.0)
 
     @functools.lru_cache(maxsize=32768)
+    def get_vllm_ep8_a2a_decode_coverage(
+        self,
+        *,
+        hidden_size: int,
+        topk: int,
+        moe_ep_size: int,
+    ) -> tuple[int, int]:
+        if self.backend != common.BackendName.vllm.value:
+            raise ValueError(f"vLLM EP8 A2A coverage requires backend='vllm', got {self.backend!r}")
+        if self._vllm_ep8_a2a_decode_data is None:
+            raise PerfDataNotAvailableError(
+                f"vLLM EP8 A2A decode perf table is missing for system='{self.system}', "
+                f"backend='{self.backend}', version='{self.version}'."
+            )
+        try:
+            table = self._vllm_ep8_a2a_decode_data[hidden_size][topk][moe_ep_size]
+        except KeyError as exc:
+            raise PerfDataNotAvailableError(
+                f"Missing vLLM EP8 A2A decode coverage: {hidden_size=}, {topk=}, {moe_ep_size=}"
+            ) from exc
+        if not table:
+            raise PerfDataNotAvailableError(
+                f"Empty vLLM EP8 A2A decode coverage: {hidden_size=}, {topk=}, {moe_ep_size=}"
+            )
+        buckets = list(table)
+        return min(buckets), max(buckets)
+
+    @functools.lru_cache(maxsize=32768)
     def query_vllm_serving_state(
         self,
         *,
@@ -4879,6 +4915,7 @@ class PerfDatabase:
         database_mode: common.DatabaseMode | None = None,
         is_gated: bool = True,
         enable_eplb: bool = False,
+        model: str | None = None,
     ) -> PerformanceResult | tuple[float, float, float]:
         """
         Query MoE (Mixture of Experts) layer latency and energy.
@@ -4900,6 +4937,7 @@ class PerfDatabase:
                       Low-latency kernel only available for gated MoE.
             enable_eplb: Expert Parallel Load Balancing. When enabled, applies
                         num_tokens correction (0.8x) during prefill phase only.
+            model: Runtime model identity used to scope model-specific calibration.
 
         Returns:
             PerformanceResult: Acts as float (latency in ms).
@@ -4971,12 +5009,26 @@ class PerfDatabase:
             scale_factor = 0.4
             return latency / scale_factor
 
-        def use_phase397v_int4_wo_calibrated_sol() -> bool:
+        def is_phase397v_int4_wo_environment() -> bool:
             return (
                 self.system == "h200_sxm"
                 and self.backend == common.BackendName.vllm.value
                 and self.version == "0.19.0"
                 and quant_mode == common.MoEQuantMode.int4_wo
+            )
+
+        def use_phase397v_int4_wo_calibrated_sol() -> bool:
+            shape = {
+                "hidden_size": hidden_size,
+                "inter_size": inter_size,
+                "topk": topk,
+                "num_experts": num_experts,
+            }
+            return (
+                is_phase397v_int4_wo_environment()
+                and model == _PHASE397V_RUNTIME_MODEL
+                and shape == _PHASE397V_MODEL_SHAPE
+                and (moe_tp_size, moe_ep_size) in _PHASE397V_TOPOLOGIES
             )
 
         def get_phase397v_int4_wo_calibrated_sol() -> float:
@@ -4993,6 +5045,9 @@ class PerfDatabase:
             )[0]
             return sol_latency * _PHASE397V_INT4_WO_MOE_SOL_SCALE
 
+        def phase431_decode_distribution() -> str:
+            return f"{_PHASE431_DECODE_DISTRIBUTION_PREFIX}{workload_distribution}"
+
         def measured_int4_wo_context_table_covers_request() -> bool:
             if not use_phase397v_int4_wo_calibrated_sol():
                 return False
@@ -5002,18 +5057,13 @@ class PerfDatabase:
                 used_workload_distribution = (
                     workload_distribution if workload_distribution in self._moe_data[quant_mode] else "uniform"
                 )
-                moe_dict = self._moe_data[quant_mode][used_workload_distribution][topk][num_experts][hidden_size][
+                table = self._moe_data[quant_mode][used_workload_distribution][topk][num_experts][hidden_size][
                     inter_size
                 ][moe_tp_size][moe_ep_size]
             except KeyError:
                 return False
-            tokens = list(moe_dict.keys())
-            if not tokens:
-                return False
-            return min(tokens) <= num_tokens <= max(tokens)
-
-        def phase431_decode_distribution() -> str:
-            return f"{_PHASE431_DECODE_DISTRIBUTION_PREFIX}{workload_distribution}"
+            tokens = list(table)
+            return bool(tokens) and min(tokens) <= num_tokens <= max(tokens)
 
         def measured_int4_wo_decode_table_covers_request() -> bool:
             if not use_phase397v_int4_wo_calibrated_sol():
@@ -5021,15 +5071,13 @@ class PerfDatabase:
             if is_context or self._moe_data is None:
                 return False
             try:
-                moe_dict = self._moe_data[quant_mode][phase431_decode_distribution()][topk][num_experts][hidden_size][
+                table = self._moe_data[quant_mode][phase431_decode_distribution()][topk][num_experts][hidden_size][
                     inter_size
                 ][moe_tp_size][moe_ep_size]
             except KeyError:
                 return False
-            tokens = list(moe_dict.keys())
-            if not tokens:
-                return False
-            return min(tokens) <= num_tokens <= max(tokens)
+            tokens = list(table)
+            return bool(tokens) and min(tokens) <= num_tokens <= max(tokens)
 
         if database_mode is None:
             database_mode = self._default_database_mode
@@ -5058,7 +5106,13 @@ class PerfDatabase:
                 quant_mode,
                 workload_distribution,
             )
-        elif database_mode == common.DatabaseMode.EMPIRICAL:
+        if is_phase397v_int4_wo_environment() and not use_phase397v_int4_wo_calibrated_sol():
+            raise PerfDataNotAvailableError(
+                "Phase397v int4_wo request is outside its measured scope: "
+                f"{model=}, {hidden_size=}, {inter_size=}, {topk=}, {num_experts=}, "
+                f"{moe_tp_size=}, {moe_ep_size=}"
+            )
+        if database_mode == common.DatabaseMode.EMPIRICAL:
             if use_phase397v_int4_wo_calibrated_sol():
                 return PerformanceResult(get_phase397v_int4_wo_calibrated_sol(), energy=0.0)
             emp_latency = get_empirical(
