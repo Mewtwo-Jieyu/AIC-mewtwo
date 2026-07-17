@@ -9,7 +9,7 @@
 | 项 | 值 |
 |---|---|
 | base commit | `9ba5ad93ca8805a1eb427593ced8cee01aea6804` |
-| tooling commit | `d978dd3b4d7846aed09a629d521cf53a09014a90` |
+| tooling result commit | `7480099f3033befd0f05ed1f17950cf4fe3df183` |
 | branch | `experiment/phase466-low-overhead-probe` |
 | hardware/runtime | H200 SXM / vLLM 0.19.0 / Kimi-K2.5 |
 | implementation | stock vLLM aggregate iteration details; no source patch |
@@ -24,6 +24,10 @@ Changed files at the tooling commit:
 The analyzer emits the exact serve and benchmark argv, parses one aggregate row per engine iteration,
 joins rank-local preemption deltas, validates source hashes and process cleanup, and refuses formal collection
 when the off/on throughput delta exceeds `2%`.
+
+The parser writes both `iteration_rows.csv` and `rank_summary.csv`. Iteration rows use the same field names as
+the residual-attribution contract: `rank_id`, `iteration_seq`, `iteration_start_offset_ms`,
+`iteration_end_offset_ms`, scheduled prefill/decode tokens, workload digest and cumulative-token progress window.
 
 ## Measurement contract
 
@@ -42,6 +46,12 @@ are not alignment keys.
 The off/on artifact validator requires exact request/token counts, vLLM 0.19.0 source hashes, empty GPU and
 process residue, two DP rank summaries, non-resetting preemption counters and matching workload digests.
 Any mismatch fails immediately.
+
+This stock probe does not expose prefill chunk histograms, fresh/recompute/resume state, queue occupancy,
+decode KV sums or simulator component costs. Therefore a passing overhead gate and formal collection can screen
+rank/timing hypotheses, but cannot by itself close all Track C disproof conditions or select a Phase467 model.
+If those missing fields remain necessary, the result stays `INCONCLUSIVE`; a separate low-overhead field design
+must pass its own off/on gate before use.
 
 ## Prior evidence boundary
 
