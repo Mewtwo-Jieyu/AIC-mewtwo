@@ -137,3 +137,33 @@ def test_validator_rejects_numeric_drift(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="numeric_mismatch"):
         phase466.validate_outputs(SOURCE_CSV, drifted, REPORT_MD)
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement", "error"),
+    [
+        ("evidence_sources", "unknown evidence", "evidence_sources"),
+        ("expected_signal", "unrelated text", "hypothesis_contract"),
+        ("existing_counterevidence", "unrelated text", "hypothesis_contract"),
+        ("disproof_condition", "unrelated text", "hypothesis_contract"),
+    ],
+)
+def test_validator_rejects_unstructured_hypothesis_mutations(
+    tmp_path: Path,
+    field: str,
+    replacement: str,
+    error: str,
+) -> None:
+    phase466 = _load_module()
+    with ATTRIBUTION_CSV.open(newline="", encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+        fieldnames = list(rows[0])
+    rows[0][field] = replacement
+    mutated = tmp_path / "mutated.csv"
+    with mutated.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames, lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(rows)
+
+    with pytest.raises(ValueError, match=error):
+        phase466.validate_outputs(SOURCE_CSV, mutated, REPORT_MD)

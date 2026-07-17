@@ -54,21 +54,18 @@ REQUIRED_TEXT_FIELDS = (
     "disproof_condition",
     "evidence_sources",
 )
-EXPECTED_STATUS = {
-    (scenario, candidate): (
-        "negative_control"
-        if scenario == "K2.5-tp8ep8-8k2k-bt65536"
-        and candidate == "dp_rank_synchronization_asymmetry"
-        else "open_with_decode_counterevidence"
-        if scenario == "K2.5-tp4ep8dp2-8k2k-bt65536"
-        and candidate == "iteration_cost_serving_state_coverage"
-        else "open_dp_only"
-        if candidate == "dp_rank_synchronization_asymmetry"
-        else "open_unseparated"
-    )
-    for scenario in FAILED_SCENARIOS
-    for candidate in CANDIDATES
+ALIGNMENT_FIELDS = {
+    "run_id",
+    "source",
+    "rank_id",
+    "workload_cohort_digest",
+    "cumulative_scheduled_tokens",
+    "progress_window_id",
 }
+VALID_EVIDENCE_SOURCE = (
+    "Phase462 admissible closeout/field-audit evidence;"
+    "Phase463 gated N512/C128 evidence"
+)
 
 
 def _repo_root() -> Path:
@@ -143,6 +140,64 @@ def build_scenario_evidence(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
     return evidence
 
 
+def expected_status(
+    scenario: str, candidate: str, evidence: dict[str, Any]
+) -> str:
+    """Derive the matrix status from topology and measured Phase463 facts."""
+    if candidate == "schedule_merged_batch_composition":
+        return "open_unseparated"
+    if candidate == "iteration_cost_serving_state_coverage":
+        if math.isclose(
+            float(evidence["tpot_sim_over_real"]), 1.0, rel_tol=0.0, abs_tol=0.02
+        ):
+            return "open_with_decode_counterevidence"
+        return "open_unseparated"
+    if candidate == "dp_rank_synchronization_asymmetry":
+        return (
+            "topology_negative_control"
+            if "tp8ep8" in scenario
+            else "open_topology_only"
+        )
+    raise ValueError(f"unknown_candidate:{candidate}")
+
+
+def _validate_hypothesis_contract(row: dict[str, str]) -> None:
+    key = (row["scenario"], row["candidate"])
+    fields = set(row["phase466b_required_fields"].split(";"))
+    if not ALIGNMENT_FIELDS <= fields:
+        raise ValueError(f"alignment_fields:{key}:{sorted(ALIGNMENT_FIELDS - fields)}")
+    if row["evidence_sources"] != VALID_EVIDENCE_SOURCE:
+        raise ValueError(f"evidence_sources:{key}")
+
+    support = row["existing_support"].lower()
+    counter = row["existing_counterevidence"].lower()
+    signal = row["expected_signal"].lower()
+    disproof = row["disproof_condition"].lower()
+    contracts = {
+        "schedule_merged_batch_composition": (
+            (support, ("phase463", "phase462")),
+            (counter, ("composition", "logging", "engine-loop")),
+            (signal, ("composition", "prefill", "request-state")),
+            (disproof, ("composition",)),
+        ),
+        "iteration_cost_serving_state_coverage": (
+            (support, ("phase463",)),
+            (counter, ("composition", "latency", "tpot")),
+            (signal, ("cost", "deficit")),
+            (disproof, ("cost", "mismatch", "iteration")),
+        ),
+        "dp_rank_synchronization_asymmetry": (
+            (support, ("rank", "topology", "dp2")),
+            (counter, ("rank", "dp", "tpot")),
+            (signal, ("rank", "dp-specific")),
+            (disproof, ("rank", "residual")),
+        ),
+    }[row["candidate"]]
+    for value, alternatives in contracts:
+        if not any(token in value for token in alternatives):
+            raise ValueError(f"hypothesis_contract:{key}:{alternatives}")
+
+
 def load_attribution_rows(path: Path) -> list[dict[str, str]]:
     if b"\r" in path.read_bytes():
         raise ValueError(f"crlf:{path}")
@@ -153,7 +208,11 @@ def load_attribution_rows(path: Path) -> list[dict[str, str]]:
 def validate_attribution_rows(
     rows: list[dict[str, str]], evidence: list[dict[str, Any]]
 ) -> None:
-    expected_keys = set(EXPECTED_STATUS)
+    expected_keys = {
+        (scenario, candidate)
+        for scenario in FAILED_SCENARIOS
+        for candidate in CANDIDATES
+    }
     row_by_key: dict[tuple[str, str], dict[str, str]] = {}
     for row in rows:
         key = (row.get("scenario", ""), row.get("candidate", ""))
@@ -165,18 +224,22 @@ def validate_attribution_rows(
 
     evidence_by_scenario = {row["scenario"]: row for row in evidence}
     for key, row in row_by_key.items():
-        if row.get("candidate_status") != EXPECTED_STATUS[key]:
+        scenario_evidence = evidence_by_scenario[key[0]]
+        if row.get("candidate_status") != expected_status(
+            key[0], key[1], scenario_evidence
+        ):
             raise ValueError(f"candidate_status:{key}")
         if row.get("outcome") != "INCONCLUSIVE":
             raise ValueError(f"outcome:{key}")
         for field in NUMERIC_FIELDS:
             actual = _float(row, field)
-            expected = float(evidence_by_scenario[key[0]][field])
+            expected = float(scenario_evidence[field])
             if not math.isclose(actual, expected, rel_tol=0.0, abs_tol=1e-12):
                 raise ValueError(f"numeric_mismatch:{key}:{field}")
         for field in REQUIRED_TEXT_FIELDS:
             if not row.get(field, "").strip():
                 raise ValueError(f"missing_attribution_field:{key}:{field}")
+        _validate_hypothesis_contract(row)
         for field, expected in {
             "diagnostic_only": "true",
             "valid_for_default": "false",
@@ -195,7 +258,11 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def validate_report(path: Path, evidence: list[dict[str, Any]]) -> None:
+def validate_report(
+    path: Path,
+    evidence: list[dict[str, Any]],
+    attribution_rows: list[dict[str, str]],
+) -> None:
     raw = path.read_bytes()
     if b"\r" in raw:
         raise ValueError(f"crlf:{path}")
@@ -210,6 +277,10 @@ def validate_report(path: Path, evidence: list[dict[str, Any]]) -> None:
         "DP2-bt65536 off/on",
         BASE_COMMIT,
         "Default AIC=No-Go",
+        "human-reviewed preregistration",
+        "workload_cohort_digest",
+        "cumulative_scheduled_tokens",
+        "progress_window_id",
         *FAILED_SCENARIOS,
         *CANDIDATES,
     }
@@ -230,6 +301,16 @@ def validate_report(path: Path, evidence: list[dict[str, Any]]) -> None:
         if expected_table_row not in text:
             raise ValueError(f"report_numeric_mismatch:{row['scenario']}")
 
+    for row in attribution_rows:
+        matrix_row = (
+            f"| {row['scenario']} | {row['candidate']} | "
+            f"{row['candidate_status']} |"
+        )
+        if matrix_row not in text:
+            raise ValueError(
+                f"report_attribution_mismatch:{row['scenario']}:{row['candidate']}"
+            )
+
     root = _repo_root()
     for source in SOURCE_PATHS:
         if f"| {source} | {_sha256(root / source)} |" not in text:
@@ -238,8 +319,9 @@ def validate_report(path: Path, evidence: list[dict[str, Any]]) -> None:
 
 def validate_outputs(source_csv: Path, attribution_csv: Path, report_md: Path) -> None:
     evidence = build_scenario_evidence(load_failed_scenarios(source_csv))
-    validate_attribution_rows(load_attribution_rows(attribution_csv), evidence)
-    validate_report(report_md, evidence)
+    attribution_rows = load_attribution_rows(attribution_csv)
+    validate_attribution_rows(attribution_rows, evidence)
+    validate_report(report_md, evidence, attribution_rows)
 
 
 def main() -> int:

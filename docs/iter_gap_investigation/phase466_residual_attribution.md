@@ -3,6 +3,8 @@
 结论：`INCONCLUSIVE`。现有合格证据只能把三个失败点保留为三类可证伪候选，不能选择建模路线。
 `aggregate prefill mismatch`、preemption count 和 table miss 都不是独立根因。
 Phase462 composition logging v2/v3/v4 的开销为 `13.8486% / 8.7915% / 8.2043%`，未过 `<=2%` 门，全部排除。
+候选解释属于 human-reviewed preregistration；analyzer 只机械核对输入数值、结构化状态、字段契约和 MD/CSV
+一致性，不把文字判断伪装成自动因果证明。
 
 | Item | Value |
 |---|---|
@@ -38,7 +40,7 @@ Phase462 composition logging v2/v3/v4 的开销为 `13.8486% / 8.7915% / 8.2043%
 
 | Required Phase466B fields | Expected discriminator | Disproof rule |
 |---|---|---|
-| rank_id;iteration_seq;iteration_elapsed_ms;prefill_request_count;decode_request_count;prefill_chunk_token_histogram;fresh_prefill_tokens;recompute_prefill_tokens;resume_prefill_tokens;decode_kv_token_sum;running_count;waiting_count;cudagraph_mode | See per-scenario expected_signal in the CSV; the signal must repeat under the formal protocol. | See per-scenario disproof_condition in the CSV; any disproof keeps this route closed. |
+| run_id;source;rank_id;iteration_start_offset_ns;iteration_end_offset_ns;workload_cohort_digest;cumulative_scheduled_tokens;progress_window_id;iteration_elapsed_ms;prefill_request_count;decode_request_count;prefill_chunk_token_histogram;fresh_prefill_tokens;recompute_prefill_tokens;resume_prefill_tokens;decode_kv_token_sum;running_count;waiting_count;cudagraph_mode | See per-scenario expected_signal in the CSV; the signal must repeat under the formal protocol. | See per-scenario disproof_condition in the CSV; any disproof keeps this route closed. |
 ### `iteration_cost_serving_state_coverage`
 
 | Scenario | Status | Existing support | Existing counterevidence |
@@ -49,18 +51,36 @@ Phase462 composition logging v2/v3/v4 的开销为 `13.8486% / 8.7915% / 8.2043%
 
 | Required Phase466B fields | Expected discriminator | Disproof rule |
 |---|---|---|
-| rank_id;iteration_seq;iteration_start_ns;iteration_elapsed_ms;scheduled_prefill_tokens;scheduled_decode_tokens;prefill_chunk_token_histogram;fresh_prefill_tokens;recompute_prefill_tokens;resume_prefill_tokens;decode_kv_token_sum;cudagraph_mode;sim_serving_state_key;sim_predicted_iteration_ms;sim_component_cost_ms | See per-scenario expected_signal in the CSV; the signal must repeat under the formal protocol. | See per-scenario disproof_condition in the CSV; any disproof keeps this route closed. |
+| run_id;source;rank_id;iteration_start_offset_ns;iteration_end_offset_ns;workload_cohort_digest;cumulative_scheduled_tokens;progress_window_id;iteration_elapsed_ms;scheduled_prefill_tokens;scheduled_decode_tokens;prefill_chunk_token_histogram;fresh_prefill_tokens;recompute_prefill_tokens;resume_prefill_tokens;decode_kv_token_sum;cudagraph_mode;sim_serving_state_key;sim_predicted_iteration_ms;sim_component_cost_ms | See per-scenario expected_signal in the CSV; the signal must repeat under the formal protocol. | See per-scenario disproof_condition in the CSV; any disproof keeps this route closed. |
 ### `dp_rank_synchronization_asymmetry`
 
 | Scenario | Status | Existing support | Existing counterevidence |
 |---|---|---|---|
-| K2.5-tp4ep8dp2-32k3k | open_dp_only | The DP2 32k3k cell fails while the TP8 32k3k control passes under the same formal protocol, leaving a topology-specific factor plausible. | Phase462 proved DP throughput multiplication/division is conserved; Phase463 has no rank-local timing and DP2 8k2k passes. |
-| K2.5-tp8ep8-8k2k-bt65536 | negative_control | This dp=1 cell is the same-workload topology control for the DP2-bt65536 measurement. | It fails without DP ranks, proving DP rank asymmetry cannot be a common cause of all three failed cells. |
-| K2.5-tp4ep8dp2-8k2k-bt65536 | open_dp_only | Phase462 observed rank0/rank1 counts of 38021/37256 and an 8.525597x elapsed spread inside one coarse mixed cell. | The cell lacks exact composition, DP arithmetic is conserved, and TPOT ratio 0.998 does not support a uniform generation-rank penalty. |
+| K2.5-tp4ep8dp2-32k3k | open_topology_only | The DP2 32k3k cell fails while the TP8 32k3k control passes under the same formal protocol, leaving a topology-specific factor plausible. | Phase462 proved DP throughput multiplication/division is conserved; Phase463 has no rank-local timing and DP2 8k2k passes. |
+| K2.5-tp8ep8-8k2k-bt65536 | topology_negative_control | This dp=1 cell is the same-workload topology control for the DP2-bt65536 measurement. | It fails without DP ranks, proving DP rank asymmetry cannot be a common cause of all three failed cells. |
+| K2.5-tp4ep8dp2-8k2k-bt65536 | open_topology_only | Phase462 observed rank0/rank1 counts of 38021/37256 and an 8.525597x elapsed spread inside one coarse mixed cell. | The cell lacks exact composition, DP arithmetic is conserved, and TPOT ratio 0.998 does not support a uniform generation-rank penalty. |
 
 | Required Phase466B fields | Expected discriminator | Disproof rule |
 |---|---|---|
-| rank_id;iteration_seq;iteration_start_ns;iteration_end_ns;iteration_elapsed_ms;scheduled_prefill_tokens;scheduled_decode_tokens;running_count;waiting_count;completed_request_count | See per-scenario expected_signal in the CSV; the signal must repeat under the formal protocol. | See per-scenario disproof_condition in the CSV; any disproof keeps this route closed. |
+| run_id;source;rank_id;iteration_start_offset_ns;iteration_end_offset_ns;workload_cohort_digest;cumulative_scheduled_tokens;progress_window_id;iteration_elapsed_ms;scheduled_prefill_tokens;scheduled_decode_tokens;running_count;waiting_count;completed_request_count | See per-scenario expected_signal in the CSV; the signal must repeat under the formal protocol. | See per-scenario disproof_condition in the CSV; any disproof keeps this route closed. |
+
+Real 与 sim 不共享绝对时钟。正式 join 使用相同的 `workload_cohort_digest`，再按
+`cumulative_scheduled_tokens` 切分 `progress_window_id`；start/end offset 只在各自 run 内计算窗口 wall，
+禁止用裸 iteration index 或跨进程绝对时间直接配对。
+
+## Machine-checked matrix
+
+| Scenario | Candidate | Status |
+|---|---|---|
+| K2.5-tp4ep8dp2-32k3k | schedule_merged_batch_composition | open_unseparated |
+| K2.5-tp4ep8dp2-32k3k | iteration_cost_serving_state_coverage | open_unseparated |
+| K2.5-tp4ep8dp2-32k3k | dp_rank_synchronization_asymmetry | open_topology_only |
+| K2.5-tp8ep8-8k2k-bt65536 | schedule_merged_batch_composition | open_unseparated |
+| K2.5-tp8ep8-8k2k-bt65536 | iteration_cost_serving_state_coverage | open_unseparated |
+| K2.5-tp8ep8-8k2k-bt65536 | dp_rank_synchronization_asymmetry | topology_negative_control |
+| K2.5-tp4ep8dp2-8k2k-bt65536 | schedule_merged_batch_composition | open_unseparated |
+| K2.5-tp4ep8dp2-8k2k-bt65536 | iteration_cost_serving_state_coverage | open_with_decode_counterevidence |
+| K2.5-tp4ep8dp2-8k2k-bt65536 | dp_rank_synchronization_asymmetry | open_topology_only |
 
 完整的每场景缺失观测、Phase466B 字段、预期信号和证伪条件见
 `phase466_residual_attribution.csv`。任何单项计数、单个 table miss 或单轮异常都不得覆盖证伪条件。
@@ -71,8 +91,8 @@ Phase462 composition logging v2/v3/v4 的开销为 `13.8486% / 8.7915% / 8.2043%
 |---:|---|---|---|
 | 1 | DP2-bt65536 off/on | 同时覆盖构成、cost、rank 三类候选，并承接 Phase462 coarse-cell spread | absolute throughput delta `>2%` immediately stops all formal collection |
 | 2 | DP2-bt65536 N512/C128 | 在同一 cell 先形成 composition-cost-rank 联合样本 | incomplete rank or iteration fields => reject artifact |
-| 3 | TP8-bt65536 N512/C128 | 同 workload 的 dp=1 negative control，区分共享残差与 DP-only 残差 | protocol/hash mismatch => reject comparison |
-| 4 | DP2-32k3k N512/C128 | 用 TP8-32k3k pass cell 作长度/拓扑控制，检查 DP-only 信号是否复现 | non-repeatable or non-discriminating signal => remain INCONCLUSIVE |
+| 3 | TP8-bt65536 N512/C128 | 同 workload 的 dp=1 topology control，只排除跨拓扑共同根因 | protocol/hash mismatch => reject comparison |
+| 4 | DP2-32k3k N512/C128 | 用 TP8-32k3k pass cell 作长度/拓扑控制，检查 topology-specific 信号是否复现 | non-repeatable or non-discriminating signal => remain INCONCLUSIVE |
 
 Phase466 exit review 最多只能选择一个通过证伪门的 Phase467 路线。若三类信号仍纠缠，继续测量设计，
 不能并行实现补偿模型。
