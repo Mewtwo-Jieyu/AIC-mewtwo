@@ -885,6 +885,128 @@ def test_last_iteration_by_rank_requires_every_expected_rank(tmp_path: Path) -> 
         runner.rank_log_cutoff(contract, rank_dir, expected_ranks={0, 1, 2})
 
 
+def test_execute_run_captures_measurement_cutoff_before_post_benchmark_work(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = _load(MODULE_PATH, "run_phase466_measurement_cutoff_order")
+    contract = _load(CONTRACT_PATH, "phase466_contract_measurement_cutoff_order")
+    spec = runner.build_rank_local_canary_spec(contract)
+    artifact_root = tmp_path / "artifact"
+    artifact_root.mkdir()
+    prompt_digest = "d" * 64
+    manifest = {
+        "coordinator_manifest": {"source_commit": "a" * 40},
+        "worker_attestation": {
+            "rank_local_canary_prompt_cohort_sha256": prompt_digest,
+        },
+    }
+    supervisor = runner.Supervisor(
+        contract=contract,
+        workdir=tmp_path,
+        artifact_root=artifact_root,
+        execution_manifest=manifest,
+        execution_manifest_sha256="b" * 64,
+    )
+    tool_hashes = {"tool": "c" * 64}
+    model_identity = {
+        "schema": runner.SNAPSHOT_MODEL_IDENTITY_SCHEMA,
+        "revision": "e" * 40,
+    }
+    source_hashes = {"source": "f" * 64}
+    monkeypatch.setattr(
+        runner.Supervisor,
+        "validate_tool_identity",
+        lambda unused_self: tool_hashes,
+    )
+    monkeypatch.setattr(
+        runner.Supervisor,
+        "validate_model_identity",
+        lambda unused_self: model_identity,
+    )
+    monkeypatch.setattr(
+        runner, "assert_source_identity", lambda unused_contract: source_hashes
+    )
+
+    class ServiceProcess:
+        pid = 123
+
+        @staticmethod
+        def poll():
+            return None
+
+    monkeypatch.setattr(runner.subprocess, "Popen", lambda *args, **kwargs: ServiceProcess())
+    monkeypatch.setattr(runner, "_wait_for_service", lambda *args, **kwargs: None)
+    monkeypatch.setattr(runner, "_stop_service", lambda *args, **kwargs: True)
+    monkeypatch.setattr(runner, "_gpu_residue", lambda *args, **kwargs: "")
+    monkeypatch.setattr(runner, "_process_residue", lambda *args, **kwargs: "")
+
+    events: list[str] = []
+
+    def run_benchmark(unused_argv: list[str], *, output: Path) -> None:
+        run_dir = output.parent
+        (run_dir / "bench_result.json").write_text(
+            json.dumps({"prompt_cohort_sha256": prompt_digest})
+        )
+        rank_dir = run_dir / "rank_logs"
+        for rank in (0, 1):
+            (rank_dir / f"rank-{rank}.jsonl").write_text(
+                json.dumps(
+                    {
+                        "rank": rank,
+                        "pid": 200 + rank,
+                        "process_name": f"EngineCore_DP{rank}",
+                        "message": (
+                            "Iteration(0): 1 context requests, 128 context tokens, "
+                            "1 generation requests, 1 generation tokens, "
+                            "iteration elapsed time: 1.0 ms"
+                        ),
+                    }
+                )
+                + "\n"
+            )
+        events.append("benchmark_return")
+
+    supervisor.run_command = run_benchmark
+    original_cutoff = runner.rank_log_cutoff
+    monkeypatch.setattr(
+        runner,
+        "rank_log_cutoff",
+        lambda *args, **kwargs: (
+            events.append("cutoff")
+            or original_cutoff(*args, **kwargs)
+        ),
+    )
+    original_prompt_check = runner.assert_benchmark_prompt_identity
+    monkeypatch.setattr(
+        runner,
+        "assert_benchmark_prompt_identity",
+        lambda *args, **kwargs: (
+            events.append("prompt_identity")
+            or original_prompt_check(*args, **kwargs)
+        ),
+    )
+    monkeypatch.setattr(
+        runner,
+        "_fetch_metrics",
+        lambda unused_port: events.append("metrics") or "metrics\n",
+    )
+    monkeypatch.setattr(
+        runner.time,
+        "sleep",
+        lambda unused_seconds: events.append("sleep"),
+    )
+
+    supervisor.execute_run(spec, source_hashes)
+
+    assert events == [
+        "metrics",
+        "benchmark_return",
+        "cutoff",
+        "prompt_identity",
+        "metrics",
+    ]
+
+
 def test_rank_local_canary_spec_is_exactly_one_small_dp2_probe() -> None:
     contract = _load(CONTRACT_PATH, "phase466_contract_for_canary")
     runner = _load(MODULE_PATH, "run_phase466_low_overhead_probe_canary")
@@ -970,6 +1092,19 @@ def test_canary_validation_requires_exact_two_rank_local_files(
                 }
             )
             + "\n"
+            + json.dumps(
+                {
+                    "rank": rank,
+                    "pid": 100 + rank,
+                    "process_name": f"EngineCore_DP{rank}",
+                    "message": (
+                        "Iteration(1): 0 context requests, 0 context tokens, "
+                        "0 generation requests, 0 generation tokens, "
+                        "iteration elapsed time: 0.00 ms"
+                    ),
+                }
+            )
+            + "\n"
         )
     identity = contract.rank_log_identity(rank_dir, expected_ranks={0, 1})
     meta = {
@@ -1025,6 +1160,51 @@ def test_canary_validation_requires_exact_two_rank_local_files(
         "rank-0.jsonl",
         "rank-1.jsonl",
     }
+    assert result["schema"] == "phase466_rank_local_canary_v2"
+
+    original_rank_logs = {
+        rank: (rank_dir / f"rank-{rank}.jsonl").read_text()
+        for rank in (0, 1)
+    }
+    for rank in (0, 1):
+        path = rank_dir / f"rank-{rank}.jsonl"
+        path.write_text(
+            original_rank_logs[rank].replace(
+                "Iteration(0): 1 context requests, 128 context tokens, "
+                "1 generation requests, 1 generation tokens, "
+                "iteration elapsed time: 1.0 ms",
+                "Iteration(0): 0 context requests, 0 context tokens, "
+                "0 generation requests, 0 generation tokens, "
+                "iteration elapsed time: 0.00 ms",
+            )
+        )
+    meta["rank_logs_identity"] = contract.rank_log_identity(
+        rank_dir, expected_ranks={0, 1}
+    )
+    (run_dir / "meta.json").write_text(json.dumps(meta))
+    with pytest.raises(RuntimeError, match="canary_measurement_missing_work_iteration:0"):
+        runner.validate_rank_local_canary(contract, run_dir=run_dir, spec=spec)
+    for rank in (0, 1):
+        (rank_dir / f"rank-{rank}.jsonl").write_text(original_rank_logs[rank])
+
+    rank_one = rank_dir / "rank-1.jsonl"
+    rank_one.write_text(
+        rank_one.read_text().replace(
+            "Iteration(1): 0 context requests, 0 context tokens, "
+            "0 generation requests, 0 generation tokens, "
+            "iteration elapsed time: 0.00 ms",
+            "Iteration(1): 0 context requests, 0 context tokens, "
+            "1 generation requests, 1 generation tokens, "
+            "iteration elapsed time: 1.00 ms",
+        )
+    )
+    meta["rank_logs_identity"] = contract.rank_log_identity(
+        rank_dir, expected_ranks={0, 1}
+    )
+    (run_dir / "meta.json").write_text(json.dumps(meta))
+    with pytest.raises(RuntimeError, match="canary_post_cutoff_work_iteration:1:1"):
+        runner.validate_rank_local_canary(contract, run_dir=run_dir, spec=spec)
+
     (rank_dir / "rank-1.jsonl").unlink()
     with pytest.raises(ValueError, match="rank_log_file_set_mismatch"):
         runner.validate_rank_local_canary(

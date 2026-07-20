@@ -1,6 +1,6 @@
 # Phase466 low-overhead probe design
 
-结论：Phase466 v3.2 的本地执行契约已闭合。probe 默认关闭，只使用 vLLM 0.19.0 自带的
+结论：Phase466 v3.3 的 idle-safe 本地执行契约已闭合。probe 默认关闭，只使用 vLLM 0.19.0 自带的
 `--enable-logging-iteration-details` 和 Prometheus preemption counter，不修改 vLLM 源码，不采
 per-request 高频 composition 事件。本轮只形成 rank-timing 诊断，Default AIC 继续 `No-Go`。
 
@@ -12,8 +12,8 @@ per-request 高频 composition 事件。本轮只形成 rank-timing 诊断，Def
 | execution branch | `feature/kimi-vllm019-cb-sim-post-baseline` |
 | hardware/runtime | H200 SXM / vLLM 0.19.0 / Kimi-K2.5 |
 | implementation | stock vLLM iteration details + rank-local logging handler; no source patch |
-| local result | v3.2 verification pending |
-| remote result | rank-local canary pending |
+| local result | v3.3 verification PASS；第二次 canary 待单独批准 |
+| remote result | v3.2 canary `FAILED`；rank-local transport 已验证，idle/measurement 契约失败 |
 | flags | `diagnostic_only=true`; `valid_for_default=false`; `perf_database=false` |
 
 ## Measurement contract
@@ -34,6 +34,12 @@ offsets, scheduled-token progress bounds and a 65,536-token progress-window id. 
 per rank and excluded from measured rows. Real/simulator comparison requires the same workload digest and joined
 progress windows; absolute clocks and naked iteration ids are not join keys.
 
+The benchmark return records each rank's measurement cutoff before prompt verification, metrics scraping or cleanup.
+Zero-token, zero-request idle rows may have `0.00 ms`; they remain in raw CSV and total elapsed audit fields but do not
+enter work latency percentiles, progress coverage or rank-timing windows. Positive-token rows still require finite,
+strictly positive elapsed time. A canary cutoff may precede the final rank-log row, but every trailing row must be idle
+and every rank must contain measured work.
+
 ## Execution contract
 
 | Item | Behavior |
@@ -42,7 +48,7 @@ progress windows; absolute clocks and naked iteration ids are not join keys.
 | identity preflight | no artifact and no vLLM service; validate uploaded bytes, vLLM/GPU/prompt identity, and snapshot or flat-mirror fingerprint |
 | execution preflight | only accepts `phase466_execution_manifest_v4`; then creates the fresh artifact root and rechecks clean GPU/process state |
 | log transport | custom logging config filters iteration records from stdout and writes strict per-rank JSONL; no stdout rank fallback |
-| canary | one DP2 N16/C16 run must produce exactly rank0/rank1 files before the full gate is allowed |
+| canary | a separately approved second DP2 N16/C16 run must pass the v2 idle-safe contract before the full gate is allowed |
 | cleanup | terminate the service process group, then require empty GPU/process residue |
 | failure handling | normal benchmark failure may continue to the next preregistered run; cleanup or integrity failure stops all runs |
 | gate validation | validates all 6 complete pairs; the old single-pair gate entry no longer exists |
@@ -77,8 +83,8 @@ They do not produce a model attribution `PASS`, do not execute route selection a
 | preregistered plan generation | PASS |
 | exact vLLM 0.19.0 simulator export | expected fail-closed at `tp4dp2-8k2k-bt65536`; no output directory written |
 | `git diff --check` | PASS |
-| SSH/GPU | prior merged-stdout attempt invalid; v3.2 canary pending |
+| SSH/GPU | v3.2 artifact remains `FAILED`: `/mnt/shared-storage-user/zhaojieyu/backup/aic/phase466_v32_rank_local_canary_2221f30e_20260720T110252Z` |
 
-The next action is one rank-local canary on the approved worker. Only a canary `PASS` permits a fresh serialized
+The next action, only after separate approval, is the second rank-local canary on the approved worker. Only a canary `PASS` permits a fresh serialized
 six-pair gate. A non-`PASS` gate stops before N512; `PASS` runs exactly the three real scenarios. This design is not GPU evidence, not a PerfDatabase row,
 not a latency model and not evidence for enabling Default AIC.

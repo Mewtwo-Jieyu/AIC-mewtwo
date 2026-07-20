@@ -27,6 +27,7 @@ PROCESS_PATTERN = (
     "VLLM::APIServer|VLLM::EngineCore"
 )
 NODE_LOCK_PATH = Path("/tmp/phase466_low_overhead_probe.lock")
+RANK_LOCAL_CANARY_SCHEMA = "phase466_rank_local_canary_v2"
 COORDINATOR_MANIFEST_SCHEMA = "phase466_coordinator_manifest_v2"
 WORKER_ATTESTATION_SCHEMA = "phase466_worker_attestation_v2"
 EXECUTION_MANIFEST_SCHEMA = "phase466_execution_manifest_v4"
@@ -1509,13 +1510,6 @@ class Supervisor:
             )
             self.status(spec["stage"], "measuring", run_id=spec["id"])
             self.run_command(bench_argv, output=run_dir / "bench.log")
-            assert_benchmark_prompt_identity(
-                run_dir / "bench_result.json",
-                expected=str(prompt_identity.get("measurement", "")),
-                label=f"{spec['id']}:measurement",
-            )
-            (run_dir / "metrics_after.prom").write_text(_fetch_metrics(port), encoding="utf-8")
-            time.sleep(2)
             if spec["probe_mode"] == "on":
                 measurement_ends = rank_log_cutoff(
                     self.contract,
@@ -1524,6 +1518,12 @@ class Supervisor:
                 )
             else:
                 measurement_ends = {}
+            assert_benchmark_prompt_identity(
+                run_dir / "bench_result.json",
+                expected=str(prompt_identity.get("measurement", "")),
+                label=f"{spec['id']}:measurement",
+            )
+            (run_dir / "metrics_after.prom").write_text(_fetch_metrics(port), encoding="utf-8")
             if process.poll() is not None:
                 raise RuntimeError("service_exited_during_benchmark")
         finally:
@@ -1711,14 +1711,23 @@ def validate_rank_local_canary(
         str(item["rank"]): int(item["first_iteration_seq"]) - 1
         for item in identity["files"].values()
     }
-    expected_ends = {
-        str(item["rank"]): int(item["last_iteration_seq"])
-        for item in identity["files"].values()
-    }
     if meta.get("measurement_start_after_iteration") != expected_starts:
         raise RuntimeError("canary_measurement_start_mismatch")
-    if meta.get("measurement_end_at_iteration") != expected_ends:
+    raw_ends = meta.get("measurement_end_at_iteration")
+    if not isinstance(raw_ends, dict) or set(raw_ends) != set(expected_starts):
         raise RuntimeError("canary_measurement_end_mismatch")
+    try:
+        ends = {int(rank): int(value) for rank, value in raw_ends.items()}
+        contract.validate_rank_local_canary_window(
+            run_dir / "rank_logs",
+            expected_ranks={0, 1},
+            after_iteration_by_rank={
+                int(rank): value for rank, value in expected_starts.items()
+            },
+            through_iteration_by_rank=ends,
+        )
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(f"canary_{exc}") from exc
     benchmark = json.loads(
         (run_dir / "bench_result.json").read_text(encoding="utf-8")
     )
@@ -1746,7 +1755,7 @@ def validate_rank_local_canary(
     ):
         raise RuntimeError("canary_postflight_residue")
     return {
-        "schema": "phase466_rank_local_canary_v1",
+        "schema": RANK_LOCAL_CANARY_SCHEMA,
         "status": "PASS",
         "scenario": spec["scenario"],
         "rank_logs_identity": identity,
@@ -1799,7 +1808,7 @@ def run_rank_local_canary(
         return 0 if committed == "PASS" else 130
     except AbortRequested as exc:
         result = {
-            "schema": "phase466_rank_local_canary_v1",
+            "schema": RANK_LOCAL_CANARY_SCHEMA,
             "status": "ABORTED",
             "reason": str(exc),
             "diagnostic_only": True,
@@ -1818,7 +1827,7 @@ def run_rank_local_canary(
         return 130
     except Exception as exc:
         result = {
-            "schema": "phase466_rank_local_canary_v1",
+            "schema": RANK_LOCAL_CANARY_SCHEMA,
             "status": "FAILED",
             "reason": str(exc),
             "diagnostic_only": True,

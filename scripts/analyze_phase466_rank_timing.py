@@ -78,8 +78,17 @@ def summarize_scenario(root: Path, scenario: str, *, expected_dp: int) -> dict[s
     ranks: list[dict[str, Any]] = []
     for rank in expected_ranks:
         ordered = sorted(grouped[rank], key=lambda row: int(row["iteration_seq"]))
+        work_rows = [
+            row
+            for row in ordered
+            if int(row["scheduled_prefill_tokens"])
+            + int(row["scheduled_decode_tokens"])
+            > 0
+        ]
+        if not work_rows:
+            raise ValueError(f"rank_timing_has_no_work_iterations:{scenario}:{rank}")
         by_window: dict[int, list[dict[str, str]]] = defaultdict(list)
-        for row in ordered:
+        for row in work_rows:
             by_window[int(row["progress_window_id"])].append(row)
         windows = [_window_summary(by_window[key]) for key in sorted(by_window)]
         elapsed_ms = sum(window["elapsed_ms"] for window in windows)

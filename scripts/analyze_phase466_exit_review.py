@@ -101,6 +101,7 @@ SIM_CANDIDATE_FIELDS = {
 }
 VALID_JUDGEMENTS = {"PASS", "DISPROVED", "INCONCLUSIVE"}
 EXIT_REVIEW_SCHEMA = "phase466_exit_review_v2"
+RANK_TIMING_SCHEMA = "phase466_rank_timing_v5"
 
 
 def execution_manifest_digest(manifest: dict[str, Any]) -> str:
@@ -214,7 +215,8 @@ def _validate_alignment_rows(rows: list[dict[str, Any]], *, source: str) -> None
             rank < 0
             or iteration < 0
             or not all(math.isfinite(value) for value in (start_ms, end_ms, elapsed_ms))
-            or elapsed_ms <= 0
+            or elapsed_ms < 0
+            or (scheduled > 0 and elapsed_ms <= 0)
             or scheduled < 0
             or prefill_requests < 0
             or decode_requests < 0
@@ -272,13 +274,27 @@ def evaluate_evidence_coverage(
         raise ValueError("real_sim_rank_set_mismatch")
     if expected_dp is not None and real_rank_ids != list(range(expected_dp)):
         raise ValueError("scenario_rank_set_mismatch")
+    real_work_rows = [
+        row
+        for row in real_rows
+        if int(row["scheduled_prefill_tokens"])
+        + int(row["scheduled_decode_tokens"])
+        > 0
+    ]
+    sim_work_rows = [
+        row
+        for row in sim_rows
+        if int(row["scheduled_prefill_tokens"])
+        + int(row["scheduled_decode_tokens"])
+        > 0
+    ]
     real_windows = {
         (int(row["rank_id"]), int(row["progress_window_id"]))
-        for row in real_rows
+        for row in real_work_rows
     }
     sim_windows = {
         (int(row["rank_id"]), int(row["progress_window_id"]))
-        for row in sim_rows
+        for row in sim_work_rows
     }
     joined_windows = real_windows & sim_windows
     if not joined_windows:
@@ -286,8 +302,8 @@ def evaluate_evidence_coverage(
     joined_rank_ids = {rank for rank, unused_window in joined_windows}
     missing_joined_rank_ids = sorted(set(real_rank_ids) - joined_rank_ids)
 
-    real_fields = _present_fields(real_rows)
-    sim_fields = _present_fields(sim_rows)
+    real_fields = _present_fields(real_work_rows)
+    sim_fields = _present_fields(sim_work_rows)
     candidate_coverage: dict[str, dict[str, Any]] = {}
     for candidate in CANDIDATES:
         missing_real = sorted(REAL_CANDIDATE_FIELDS[candidate] - real_fields)
@@ -468,6 +484,12 @@ def validate_real_artifact_root(root: Path) -> dict[str, Path]:
     attestation = manifest.get("worker_attestation")
     if not isinstance(coordinator, dict) or not isinstance(attestation, dict):
         raise ValueError("execution_manifest_identity_layers_missing")
+    if (
+        manifest.get("contract_schema") != RANK_TIMING_SCHEMA
+        or coordinator.get("contract_schema") != RANK_TIMING_SCHEMA
+        or attestation.get("contract_schema") != RANK_TIMING_SCHEMA
+    ):
+        raise ValueError("rank_timing_contract_schema_mismatch")
     coordinator_digest = execution_manifest_digest(coordinator)
     attestation_digest = execution_manifest_digest(attestation)
     if (

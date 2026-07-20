@@ -1,4 +1,4 @@
-# Phase466 v3.2 rank-local timing contract
+# Phase466 v3.3 idle-safe rank-local timing contract
 
 结论：本阶段只采三个真实场景的 rank-local iteration timing。成功状态是
 `DIAGNOSTIC_COMPLETE`，不是模型归因 `PASS`。
@@ -6,7 +6,8 @@
 | 项 | 冻结口径 |
 |---|---|
 | branch | `feature/kimi-vllm019-cb-sim-post-baseline` |
-| analyzer schema | `phase466_rank_timing_v4` |
+| analyzer schema | `phase466_rank_timing_v5` |
+| canary schema | `phase466_rank_local_canary_v2` |
 | exit review schema | `phase466_exit_review_v2`; old input fails closed |
 | overhead gate | 6 组 counterbalanced OFF/ON；90% paired log-ratio CI 完全位于 `[0.98, 1.02]` |
 | gate failure | 立即写 `STOPPED_BEFORE_FORMAL`；不运行 N512 |
@@ -45,8 +46,25 @@ iteration。OFF 与 ON 使用同一 logging config；OFF 不产生 rank 文件�
 handler、config、`PYTHONPATH` 和 `VLLM_LOGGING_CONFIG_PATH` 一并进入
 `phase466_execution_manifest_v4`。
 
-完整 gate 前只允许一次 `N16/C16, ISL128/OSL16, TP4/DP2/EP8` canary。canary 必须得到两份合法 rank 文件并清空
-GPU/process residue；失败立即停止，不运行六组 overhead。
+v3.2 canary 已运行并保持 `FAILED`，artifact 为
+`/mnt/shared-storage-user/zhaojieyu/backup/aic/phase466_v32_rank_local_canary_2221f30e_20260720T110252Z`。
+两份 rank-local 文件、PID 和连续 iteration 均已验证，失败来自旧契约把合法的零 token、零请求、`0.00 ms`
+idle iteration 判成非法，并在 benchmark 返回后延迟 2 秒才记录测量终点。该 artifact 缺少完整成功产物，禁止事后改写为
+`PASS`。
+
+## v3.3 idle-safe measurement
+
+| 项 | 冻结口径 |
+|---|---|
+| work iteration | scheduled tokens 大于 0，`elapsed_ms` 必须有限且大于 0 |
+| idle iteration | scheduled tokens 和请求数均为 0，`elapsed_ms` 必须有限且大于等于 0 |
+| measurement cutoff | benchmark 命令返回后立即按 rank 记录；metrics 和 cleanup 在 cutoff 后执行 |
+| raw evidence | iteration CSV 保留 idle 行、连续序列、offset、文件哈希和总 elapsed 审计字段 |
+| work statistics | `work_iteration_count`、`work_elapsed_ms_sum`、工作时延分位数和 coverage 只使用正 token 行 |
+| canary tail | cutoff 可以早于文件末行；cutoff 后只允许 idle，每个 rank 的测量窗至少一条 work iteration |
+
+rank-log wire format、`phase466_rank_log_identity_v1` 和 `phase466_execution_manifest_v4` 保持不变。
+v3.3 已完成本地实现与测试，第二次 canary 待单独批准；本轮不自动重跑，也不进入完整 overhead gate。
 
 ## Stop rules
 
@@ -57,5 +75,5 @@ GPU/process residue；失败立即停止，不运行六组 overhead。
 | model/tokenizer/vLLM/tool/prompt 身份前后漂移 | 停止全部运行 |
 | overhead 非 `PASS` | 停止于 N128 gate |
 
-远端必须使用全新 `phase466_v3_rank_timing_<postbaseline_sha>_<timestamp>` artifact root，后台 supervisor
+后续获批的远端运行必须使用全新 `phase466_v3_rank_timing_<postbaseline_sha>_<timestamp>` artifact root，后台 supervisor
 保留 heartbeat，结束后 GPU/process residue 必须为空。

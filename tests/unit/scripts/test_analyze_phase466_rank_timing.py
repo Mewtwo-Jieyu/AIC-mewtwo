@@ -53,6 +53,20 @@ def _write_scenario(root: Path, scenario: str, rank_count: int) -> None:
                 "decode_request_count": 8,
             }
         )
+        iteration_rows.append(
+            {
+                "rank_id": rank,
+                "iteration_seq": 20 + rank,
+                "progress_window_id": 0,
+                "progress_start_tokens": 100 + rank,
+                "progress_end_tokens": 100 + rank,
+                "iteration_elapsed_ms": 100.0,
+                "scheduled_prefill_tokens": 0,
+                "scheduled_decode_tokens": 0,
+                "prefill_request_count": 0,
+                "decode_request_count": 0,
+            }
+        )
         rank_rows.append({"rank_id": rank, "preemptions": rank})
     _write_csv(run_dir / "iteration_rows.csv", iteration_rows)
     _write_csv(run_dir / "rank_summary.csv", rank_rows)
@@ -79,6 +93,12 @@ def test_rank_timing_report_is_diagnostic_only_and_never_fakes_sim_rows(
         "single_rank_control"
     )
     assert by_scenario["K2.5-tp4ep8dp2-8k2k-bt65536"]["rank_count"] == 2
+    assert by_scenario["K2.5-tp8ep8-8k2k-bt65536"]["ranks"][0][
+        "elapsed_ms"
+    ] == 10.0
+    assert by_scenario["K2.5-tp8ep8-8k2k-bt65536"]["ranks"][0][
+        "progress_windows"
+    ][0]["iteration_count"] == 1
     assert by_scenario["K2.5-tp4ep8dp2-8k2k-bt65536"][
         "rank_comparison"
     ] is not None

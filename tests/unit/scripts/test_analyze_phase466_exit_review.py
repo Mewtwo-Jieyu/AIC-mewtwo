@@ -93,6 +93,53 @@ def test_evidence_coverage_keeps_stock_probe_missing_fields_explicit() -> None:
     assert "sim_serving_state_key" in cost["missing_fields"]
 
 
+def test_evidence_coverage_validates_idle_but_uses_only_work_rows() -> None:
+    analysis = _load_module()
+    real_work = _real_row(0)
+    sim_work = _sim_row(0)
+    real_idle = {
+        key: value
+        for key, value in real_work.items()
+        if key in analysis.BASE_FIELDS
+    }
+    sim_idle = {
+        key: value
+        for key, value in sim_work.items()
+        if key in analysis.BASE_FIELDS
+    }
+    for idle, source_end in (
+        (real_idle, real_work["iteration_end_offset_ms"]),
+        (sim_idle, sim_work["iteration_end_offset_ms"]),
+    ):
+        idle.update(
+            {
+                "iteration_seq": 2,
+                "iteration_start_offset_ms": source_end,
+                "iteration_end_offset_ms": source_end,
+                "iteration_elapsed_ms": 0.0,
+                "progress_start_tokens": 64004,
+                "progress_end_tokens": 64004,
+                "cumulative_scheduled_tokens": 64004,
+                "scheduled_prefill_tokens": 0,
+                "scheduled_decode_tokens": 0,
+                "prefill_request_count": 0,
+                "decode_request_count": 0,
+            }
+        )
+
+    coverage = analysis.evaluate_evidence_coverage(
+        [real_work, real_idle], [sim_work, sim_idle]
+    )
+
+    assert coverage["joined_progress_windows"] == 1
+    assert (
+        coverage["candidate_coverage"]["dp_rank_synchronization_asymmetry"][
+            "status"
+        ]
+        == "EVALUABLE"
+    )
+
+
 def test_route_selection_requires_exactly_one_human_reviewed_pass() -> None:
     analysis = _load_module()
     candidates = list(analysis.CANDIDATES)
@@ -379,7 +426,7 @@ def _execution_manifest_v4(analysis) -> dict[str, object]:
     }
     coordinator = {
         "schema": "phase466_coordinator_manifest_v2",
-        "contract_schema": "phase466_rank_timing_v4",
+        "contract_schema": "phase466_rank_timing_v5",
         "source_commit": "a" * 40,
         "tools": {
             name: {"path": f"scripts/{name}.py", "sha256": digest}
@@ -413,7 +460,7 @@ def _execution_manifest_v4(analysis) -> dict[str, object]:
     )
     attestation = {
         "schema": "phase466_worker_attestation_v2",
-        "contract_schema": "phase466_rank_timing_v4",
+        "contract_schema": "phase466_rank_timing_v5",
         "coordinator_manifest_sha256": coordinator_digest,
         "tool_sha256": tool_hashes,
         "vllm_version": "0.19.0",
@@ -443,7 +490,7 @@ def _execution_manifest_v4(analysis) -> dict[str, object]:
     attestation_digest = analysis.execution_manifest_digest(attestation)
     return {
         "schema": "phase466_execution_manifest_v4",
-        "contract_schema": "phase466_rank_timing_v4",
+        "contract_schema": "phase466_rank_timing_v5",
         "coordinator_manifest_sha256": coordinator_digest,
         "worker_attestation_sha256": attestation_digest,
         "coordinator_manifest": coordinator,

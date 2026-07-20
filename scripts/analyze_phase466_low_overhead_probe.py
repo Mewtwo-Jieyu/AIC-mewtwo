@@ -18,7 +18,7 @@ from typing import Any
 
 
 BASE_COMMIT = "822ae421a0b79eb0a69e8f59a2c4d09cba327eaa"
-SCHEMA = "phase466_rank_timing_v4"
+SCHEMA = "phase466_rank_timing_v5"
 RANK_LOG_IDENTITY_SCHEMA = "phase466_rank_log_identity_v1"
 PROBE_FLAG = "--enable-logging-iteration-details"
 MAX_OVERHEAD_PCT = 2.0
@@ -571,8 +571,22 @@ def _load_rank_logs(
             if match is None:
                 raise ValueError(f"invalid_rank_iteration_message:{filename}:{line_number}")
             elapsed_ms = float(match.group("elapsed_ms"))
-            if not math.isfinite(elapsed_ms) or elapsed_ms <= 0:
+            scheduled_tokens = int(match.group("context_tokens")) + int(
+                match.group("generation_tokens")
+            )
+            request_count = int(match.group("context_requests")) + int(
+                match.group("generation_requests")
+            )
+            if (
+                not math.isfinite(elapsed_ms)
+                or elapsed_ms < 0
+                or (scheduled_tokens > 0 and elapsed_ms <= 0)
+            ):
                 raise ValueError(f"invalid_iteration_elapsed:{filename}:{line_number}")
+            if scheduled_tokens == 0 and request_count != 0:
+                raise ValueError(
+                    f"zero_token_request_mismatch:{filename}:{line_number}"
+                )
             pids.add(pid)
             iterations.append(int(match.group("iteration")))
             records.append(RankLogRecord(rank, pid, process_name, match))
@@ -611,6 +625,42 @@ def last_iteration_by_rank(
         int(row["rank"]): int(row["last_iteration_seq"])
         for row in identity["files"].values()
     }
+
+
+def validate_rank_local_canary_window(
+    rank_log_dir: Path,
+    *,
+    expected_ranks: set[int],
+    after_iteration_by_rank: dict[int, int],
+    through_iteration_by_rank: dict[int, int],
+) -> dict[str, Any]:
+    by_rank, identity = _load_rank_logs(
+        rank_log_dir, expected_ranks=expected_ranks
+    )
+    if set(after_iteration_by_rank) != expected_ranks:
+        raise ValueError("measurement_start_rank_set_mismatch")
+    if set(through_iteration_by_rank) != expected_ranks:
+        raise ValueError("measurement_end_rank_set_mismatch")
+    for rank, records in sorted(by_rank.items()):
+        first = int(records[0].match.group("iteration"))
+        last = int(records[-1].match.group("iteration"))
+        start = after_iteration_by_rank[rank]
+        end = through_iteration_by_rank[rank]
+        if start < first - 1 or start > last or end < start or end > last:
+            raise ValueError(f"measurement_cutoff_out_of_bounds:{rank}")
+        work_iterations = 0
+        for record in records:
+            iteration = int(record.match.group("iteration"))
+            scheduled_tokens = int(record.match.group("context_tokens")) + int(
+                record.match.group("generation_tokens")
+            )
+            if start < iteration <= end and scheduled_tokens > 0:
+                work_iterations += 1
+            if iteration > end and scheduled_tokens > 0:
+                raise ValueError(f"post_cutoff_work_iteration:{rank}:{iteration}")
+        if work_iterations == 0:
+            raise ValueError(f"measurement_missing_work_iteration:{rank}")
+    return identity
 
 
 def parse_iteration_rows(
@@ -806,8 +856,21 @@ def summarize_ranks(
         scheduled_tokens = context_tokens + generation_tokens
         if scheduled_tokens <= 0:
             raise ValueError(f"rank_has_no_scheduled_tokens:{rank}")
+        work_rows = [
+            row
+            for row in rank_rows
+            if row.scheduled_prefill_tokens + row.scheduled_decode_tokens > 0
+        ]
+        idle_rows = [
+            row
+            for row in rank_rows
+            if row.scheduled_prefill_tokens + row.scheduled_decode_tokens == 0
+        ]
         elapsed = [row.iteration_elapsed_ms for row in rank_rows]
+        work_elapsed = [row.iteration_elapsed_ms for row in work_rows]
         elapsed_sum = sum(elapsed)
+        work_elapsed_sum = sum(work_elapsed)
+        idle_elapsed_sum = sum(row.iteration_elapsed_ms for row in idle_rows)
         summaries.append(
             {
                 "run_id": run_id,
@@ -816,6 +879,8 @@ def summarize_ranks(
                 "rank_id": rank,
                 "rank_scope": "dp_rank",
                 "iteration_count": len(rank_rows),
+                "work_iteration_count": len(work_rows),
+                "idle_iteration_count": len(idle_rows),
                 "context_only_iteration_count": sum(
                     row.scheduled_prefill_tokens > 0
                     and row.scheduled_decode_tokens == 0
@@ -841,6 +906,8 @@ def summarize_ranks(
                 "generation_tokens_total": generation_tokens,
                 "scheduled_tokens_total": scheduled_tokens,
                 "elapsed_ms_sum": elapsed_sum,
+                "work_elapsed_ms_sum": work_elapsed_sum,
+                "idle_elapsed_ms_sum": idle_elapsed_sum,
                 "iteration_start_offset_ms": rank_rows[
                     0
                 ].iteration_start_offset_ms,
@@ -851,13 +918,19 @@ def summarize_ranks(
                     -1
                 ].cumulative_scheduled_tokens,
                 "progress_window_count": len(
-                    {row.progress_window_id for row in rank_rows}
+                    {row.progress_window_id for row in work_rows}
                 ),
                 "elapsed_ms_mean": statistics.mean(elapsed),
                 "elapsed_ms_p50": _percentile(elapsed, 50.0),
                 "elapsed_ms_p90": _percentile(elapsed, 90.0),
                 "elapsed_ms_p99": _percentile(elapsed, 99.0),
                 "elapsed_ms_per_scheduled_token": elapsed_sum / scheduled_tokens,
+                "work_elapsed_ms_mean": statistics.mean(work_elapsed),
+                "work_elapsed_ms_p50": _percentile(work_elapsed, 50.0),
+                "work_elapsed_ms_p90": _percentile(work_elapsed, 90.0),
+                "work_elapsed_ms_p99": _percentile(work_elapsed, 99.0),
+                "work_elapsed_ms_per_scheduled_token": work_elapsed_sum
+                / scheduled_tokens,
                 "preemptions": preemptions,
             }
         )

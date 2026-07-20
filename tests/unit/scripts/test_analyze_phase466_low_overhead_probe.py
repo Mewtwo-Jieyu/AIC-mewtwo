@@ -419,7 +419,7 @@ def test_v3_plan_uses_six_counterbalanced_pairs_and_exact_warmup() -> None:
     plan = phase466.build_run_plan()
     overhead = [run for run in plan["runs"] if run["stage"] == "overhead"]
 
-    assert plan["schema"] == "phase466_rank_timing_v4"
+    assert plan["schema"] == "phase466_rank_timing_v5"
     assert len(overhead) == 12
     assert [run["probe_mode"] for run in overhead] == [
         "off",
@@ -598,6 +598,160 @@ def test_parser_retains_zero_token_iteration_wall_time(tmp_path: Path) -> None:
     assert rows[0].scheduled_decode_tokens == 0
     assert rows[0].iteration_end_offset_ms == 7.0
     assert rows[1].iteration_start_offset_ms == 7.0
+
+
+def test_parser_accepts_zero_duration_idle_iterations_18_and_19(
+    tmp_path: Path,
+) -> None:
+    phase466 = _load_module()
+    records = {
+        0: [
+            {
+                "rank": 0,
+                "pid": 10,
+                "process_name": "EngineCore",
+                "message": _iteration_message(
+                    iteration,
+                    context_requests=0,
+                    context_tokens=0,
+                    generation_requests=0,
+                    generation_tokens=0,
+                    elapsed_ms=0.0,
+                ),
+            }
+            for iteration in (18, 19)
+        ]
+    }
+
+    rows = phase466.parse_iteration_rows(
+        _write_rank_logs(tmp_path, records),
+        expected_ranks={0},
+        run_id="unit-real",
+        source="real",
+        workload_cohort_digest=_cohort_digest(),
+    )
+
+    assert [(row.iteration_seq, row.iteration_elapsed_ms) for row in rows] == [
+        (18, 0.0),
+        (19, 0.0),
+    ]
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        _iteration_message(
+            18,
+            context_requests=0,
+            context_tokens=0,
+            generation_requests=1,
+            generation_tokens=1,
+            elapsed_ms=0.0,
+        ),
+        _iteration_message(
+            18,
+            context_requests=0,
+            context_tokens=0,
+            generation_requests=0,
+            generation_tokens=0,
+            elapsed_ms=-1.0,
+        ),
+        _iteration_message(
+            18,
+            context_requests=0,
+            context_tokens=0,
+            generation_requests=1,
+            generation_tokens=0,
+            elapsed_ms=0.0,
+        ),
+    ],
+)
+def test_parser_rejects_invalid_work_or_idle_iteration(
+    tmp_path: Path, message: str
+) -> None:
+    phase466 = _load_module()
+    records = {
+        0: [
+            {
+                "rank": 0,
+                "pid": 10,
+                "process_name": "EngineCore",
+                "message": message,
+            }
+        ]
+    }
+
+    with pytest.raises(ValueError):
+        phase466.parse_iteration_rows(
+            _write_rank_logs(tmp_path, records),
+            expected_ranks={0},
+            run_id="unit-real",
+            source="real",
+            workload_cohort_digest=_cohort_digest(),
+        )
+
+
+def test_rank_summary_keeps_idle_audit_time_out_of_work_statistics(
+    tmp_path: Path,
+) -> None:
+    phase466 = _load_module()
+    records = {
+        0: [
+            {
+                "rank": 0,
+                "pid": 10,
+                "process_name": "EngineCore",
+                "message": _iteration_message(
+                    18,
+                    context_requests=0,
+                    context_tokens=0,
+                    generation_requests=8,
+                    generation_tokens=8,
+                    elapsed_ms=4.0,
+                ),
+            },
+            {
+                "rank": 0,
+                "pid": 10,
+                "process_name": "EngineCore",
+                "message": _iteration_message(
+                    19,
+                    context_requests=0,
+                    context_tokens=0,
+                    generation_requests=0,
+                    generation_tokens=0,
+                    elapsed_ms=2.0,
+                ),
+            },
+        ]
+    }
+    rows = phase466.parse_iteration_rows(
+        _write_rank_logs(tmp_path, records),
+        expected_ranks={0},
+        run_id="unit-real",
+        source="real",
+        workload_cohort_digest=_cohort_digest(),
+    )
+
+    summary = phase466.summarize_ranks(
+        rows,
+        metrics_before='vllm:num_preemptions_total{engine="0"} 0\n',
+        metrics_after='vllm:num_preemptions_total{engine="0"} 0\n',
+    )[0]
+
+    assert summary["iteration_count"] == 2
+    assert summary["work_iteration_count"] == 1
+    assert summary["idle_iteration_count"] == 1
+    assert summary["elapsed_ms_sum"] == pytest.approx(6.0)
+    assert summary["work_elapsed_ms_sum"] == pytest.approx(4.0)
+    assert summary["idle_elapsed_ms_sum"] == pytest.approx(2.0)
+    assert summary["elapsed_ms_p50"] == pytest.approx(3.0)
+    assert summary["work_elapsed_ms_mean"] == pytest.approx(4.0)
+    assert summary["work_elapsed_ms_p50"] == pytest.approx(4.0)
+    assert summary["work_elapsed_ms_p90"] == pytest.approx(4.0)
+    assert summary["work_elapsed_ms_p99"] == pytest.approx(4.0)
+    assert summary["work_elapsed_ms_per_scheduled_token"] == pytest.approx(0.5)
+    assert summary["progress_window_count"] == 1
 
 
 def test_iteration_csv_identity_binds_content_and_rank_bounds(tmp_path: Path) -> None:
