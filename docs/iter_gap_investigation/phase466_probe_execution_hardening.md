@@ -10,7 +10,7 @@ Phase466 v3 只采真实 rank-local timing，不再要求本轮生成 simulator 
 | runtime/model/PerfDB change | none |
 | analyzer schema | `phase466_rank_timing_v3` |
 | overhead design | 6 counterbalanced OFF/ON pairs; paired log-ratio TOST |
-| supervisor | node lock, heartbeat, immutable execution manifest, signal cleanup, no automatic rerun |
+| supervisor | node lock, heartbeat, two-stage content-addressed execution manifest, signal cleanup, no automatic rerun |
 | simulator export | exact H200 / vLLM 0.19.0; DP rank scope only; unsupported legacy DP path fails closed |
 | exit review | `phase466_exit_review_v2`; per-scenario judgement; not executed by this diagnostic run |
 | invalid remote attempt | `ABORTED_BY_REVIEW`; `gate_status=NOT_EVALUATED`; no formal runs |
@@ -41,8 +41,8 @@ Phase466 v3 只采真实 rank-local timing，不再要求本轮生成 simulator 
 | simulator exporter inherited stale vLLM 0.12.0 | exporter explicitly locks exact vLLM 0.19.0 |
 | exit review used a union of real/sim fields | required fields are validated per source; blank values are missing |
 | plan claimed a 2-second GPU sampler that did not exist | contract now states only the implemented before/after residue snapshots |
-| environment contract omitted source/GPU identity | preflight requires a 40-character source commit and records GPU identity |
-| remote directory is not a Git checkout | analyzer/supervisor/benchmark hashes are mandatory execution identity; no optional Git fallback |
+| environment contract omitted source/GPU identity | local coordinator binds the 40-character clean HEAD; worker attestation records GPU identity |
+| remote directory is not a Git checkout | worker compares uploaded tool bytes with coordinator hashes and never invokes Git |
 | worker image has no Ray package or CLI | cleanup uses the service process group and fails on any remaining GPU/process residue |
 | non-PASS gate returned without a common final result | writes `STOPPED_BEFORE_FORMAL`, compresses logs and keeps Default AIC `No-Go` |
 | all capture commands accepted exit code 1 | only `pgrep` accepts 0/1; `nvidia-smi` and identity commands require 0 and preserve stderr |
@@ -54,7 +54,7 @@ Phase466 v3 只采真实 rank-local timing，不再要求本轮生成 simulator 
 | signal could race the final PASS/FAILED write | terminal result uses a single commit point; pre-commit signals rewrite the final artifact to `ABORTED` |
 | startup or validation failure could be treated like a skippable benchmark error | only an explicit benchmark command failure may continue; every other exception stops all runs |
 | uploaded tooling was checked only at preflight | contract, supervisor and benchmark hashes are revalidated before and after every run |
-| model/tokenizer identity was not immutable | manifest binds the snapshot revision and SHA256 of `config.json`, `tokenizer_config.json`, `tiktoken.model`, and `tokenization_kimi.py`; every run rechecks them before and after |
+| model/tokenizer identity assumed an HF snapshot | standard snapshots keep revision binding; flat mirrors use `.msc/.mv`, all root runtime files, exact indexed shard set and safetensors header identity; every run rechecks the lightweight fingerprint before and after |
 | workload identity stopped at prompt length | benchmark records a digest of the exact token-id cohort; missing or changed digests stop execution |
 | coordinator commit could be paired with an arbitrary contract path | production contract override is removed; all four tool paths must be the exact clean checkout paths for `source_commit` |
 | formal execution and artifact validation shared one catch | artifact validation failure always stops remaining formal runs |

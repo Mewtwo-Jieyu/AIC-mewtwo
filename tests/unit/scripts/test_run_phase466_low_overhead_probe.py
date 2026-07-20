@@ -25,6 +25,32 @@ def _load(path: Path, name: str):
     return module
 
 
+def test_manifest_write_modes_are_mutually_exclusive(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    runner = _load(MODULE_PATH, "phase466_manifest_mode_exclusive")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            str(MODULE_PATH),
+            "--workdir",
+            str(tmp_path),
+            "--write-coordinator-manifest",
+            str(tmp_path / "coordinator.json"),
+            "--write-worker-attestation",
+            str(tmp_path / "worker.json"),
+        ],
+    )
+
+    with pytest.raises(SystemExit, match="2"):
+        runner.main()
+
+
+def _supervisor_manifest(source_commit: str = "a" * 40) -> dict:
+    return {"coordinator_manifest": {"source_commit": source_commit}}
+
+
 def test_validate_execution_plan_locks_gate_and_formal_order() -> None:
     contract = _load(CONTRACT_PATH, "phase466_contract_for_runner")
     runner = _load(MODULE_PATH, "run_phase466_low_overhead_probe")
@@ -143,68 +169,234 @@ def test_node_lock_is_exclusive_and_released(tmp_path: Path) -> None:
     runner.release_node_lock(second)
 
 
-def test_execution_manifest_binds_commit_tools_and_source_hashes(tmp_path: Path) -> None:
+def test_two_stage_manifest_binds_local_and_worker_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     runner = _load(MODULE_PATH, "run_phase466_low_overhead_probe_manifest")
-    contract_path = tmp_path / "contract.py"
-    supervisor_path = tmp_path / "supervisor.py"
-    benchmark_path = tmp_path / "benchmark.py"
-    rank_analyzer_path = tmp_path / "rank_analyzer.py"
-    for path, value in (
-        (contract_path, "contract"),
-        (supervisor_path, "supervisor"),
-        (benchmark_path, "benchmark"),
-        (rank_analyzer_path, "rank analyzer"),
-    ):
-        path.write_text(value, encoding="utf-8")
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    tools = {}
+    for name, relative in runner.COORDINATOR_TOOL_RELATIVE_PATHS.items():
+        path = tmp_path / relative
+        path.write_text(name, encoding="utf-8")
+        tools[name] = {
+            "path": relative,
+            "sha256": runner.hashlib.sha256(path.read_bytes()).hexdigest(),
+        }
+    source_path = tmp_path / "vllm_core.py"
+    source_path.write_text("source", encoding="utf-8")
+    source_hash = runner.hashlib.sha256(source_path.read_bytes()).hexdigest()
     contract = SimpleNamespace(
         SCHEMA="unit-schema",
-        SOURCE_FILES={"/vllm/core.py": "a" * 64},
+        SOURCE_FILES={str(source_path): source_hash},
+        MODEL_PATH=str(tmp_path / "model"),
         build_run_plan=lambda: {"runs": [{"id": "unit-run"}]},
-        __file__=str(contract_path),
+        __file__=str(tmp_path / runner.COORDINATOR_TOOL_RELATIVE_PATHS["contract"]),
     )
-    model_identity = {
-        "revision": "c" * 40,
-        "files_sha256": {
-            "config.json": "1" * 64,
-            "tokenizer_config.json": "2" * 64,
-            "tiktoken.model": "3" * 64,
-            "tokenization_kimi.py": "4" * 64,
-        },
+    coordinator = {
+        "schema": runner.COORDINATOR_MANIFEST_SCHEMA,
+        "contract_schema": contract.SCHEMA,
+        "source_commit": "b" * 40,
+        "tools": tools,
     }
+    coordinator_digest = runner.execution_manifest_digest(coordinator)
+    model_identity_payload = {
+        "schema": runner.FLAT_MODEL_FINGERPRINT_SCHEMA,
+        "identity_scope": "same_flat_mirror_instance",
+        "official_immutable_revision": False,
+        "metadata_files": [
+            {"path": ".msc", "sha256": "6" * 64},
+            {"path": ".mv", "sha256": "7" * 64},
+        ],
+        "runtime_files": [
+            {"path": "model.safetensors.index.json", "sha256": "8" * 64}
+        ],
+        "shards": [
+            {
+                "path": "model-00001-of-00001.safetensors",
+                "size": 10,
+                "mtime_ns": 1,
+                "header_sha256": "9" * 64,
+            }
+        ],
+    }
+    model_identity = dict(model_identity_payload)
+    model_identity["fingerprint_sha256"] = runner.execution_manifest_digest(
+        model_identity_payload
+    )
     prompt_identities = {
         "unit-run": {"warmup": "4" * 64, "measurement": "5" * 64}
     }
+    monkeypatch.setattr(runner, "resolve_model_identity", lambda path: model_identity)
+    monkeypatch.setattr(
+        runner,
+        "expected_prompt_cohort_sha256",
+        lambda contract, benchmark_path: prompt_identities,
+    )
+    monkeypatch.setattr(
+        runner,
+        "assert_imported_vllm_source_paths",
+        lambda contract, cwd, env: list(contract.SOURCE_FILES),
+    )
+    monkeypatch.setattr(
+        runner,
+        "_capture",
+        lambda argv, **kwargs: (
+            "0.19.0" if argv[:2] == ["python3", "-c"] else "H200, 141312, 570.133.20"
+        ),
+    )
 
-    manifest = runner.build_execution_manifest(
+    attestation = runner.build_worker_attestation(
         contract,
-        source_commit="b" * 40,
-        supervisor_path=supervisor_path,
-        benchmark_path=benchmark_path,
-        rank_analyzer_path=rank_analyzer_path,
-        model_identity=model_identity,
-        prompt_identities=prompt_identities,
+        coordinator_manifest=coordinator,
+        coordinator_manifest_sha256=coordinator_digest,
+        workdir=tmp_path,
+        benchmark_path=tmp_path / runner.COORDINATOR_TOOL_RELATIVE_PATHS["benchmark"],
     )
-    digest = runner.execution_manifest_digest(manifest)
+    attestation_digest = runner.execution_manifest_digest(attestation)
+    manifest = runner.compose_execution_manifest(
+        contract,
+        coordinator_manifest=coordinator,
+        coordinator_manifest_sha256=coordinator_digest,
+        worker_attestation=attestation,
+        worker_attestation_sha256=attestation_digest,
+    )
+    manifest_digest = runner.execution_manifest_digest(manifest)
 
-    runner.validate_execution_manifest(
+    validated = runner.validate_execution_manifest(
         manifest,
-        expected_digest=digest,
+        expected_digest=manifest_digest,
         contract=contract,
-        source_commit="b" * 40,
-        supervisor_path=supervisor_path,
-        benchmark_path=benchmark_path,
-        rank_analyzer_path=rank_analyzer_path,
+        workdir=tmp_path,
     )
-    supervisor_path.write_text("changed", encoding="utf-8")
+    assert validated["model_identity"] == model_identity
+    assert validated["gpu_identity"]["rows"] == ["H200, 141312, 570.133.20"]
+    assert manifest["coordinator_manifest_sha256"] == coordinator_digest
+    assert manifest["worker_attestation_sha256"] == attestation_digest
+
+    (tmp_path / runner.COORDINATOR_TOOL_RELATIVE_PATHS["supervisor"]).write_text(
+        "changed", encoding="utf-8"
+    )
     with pytest.raises(RuntimeError, match="execution_tool_hash_mismatch:supervisor"):
         runner.validate_execution_manifest(
             manifest,
-            expected_digest=digest,
+            expected_digest=manifest_digest,
             contract=contract,
-            source_commit="b" * 40,
-            supervisor_path=supervisor_path,
-            benchmark_path=benchmark_path,
-            rank_analyzer_path=rank_analyzer_path,
+            workdir=tmp_path,
+        )
+
+
+def test_coordinator_manifest_requires_clean_checkout_and_relative_tool_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = _load(MODULE_PATH, "run_phase466_coordinator_manifest")
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    tool_names = {
+        "contract": "analyze_phase466_low_overhead_probe.py",
+        "supervisor": "run_phase466_low_overhead_probe.py",
+        "benchmark": "run_openai_fixed_shape_benchmark.py",
+        "rank_analyzer": "analyze_phase466_rank_timing.py",
+    }
+    for name, filename in tool_names.items():
+        (scripts / filename).write_text(name, encoding="utf-8")
+    contract = SimpleNamespace(
+        SCHEMA="unit-schema",
+        __file__=str(scripts / tool_names["contract"]),
+    )
+
+    def clean_capture(argv, **kwargs):
+        if argv[1:] == ["rev-parse", "HEAD"]:
+            return "a" * 40
+        if argv[1:] == ["status", "--porcelain", "--untracked-files=all"]:
+            return ""
+        raise AssertionError(argv)
+
+    monkeypatch.setattr(runner, "_capture", clean_capture)
+    manifest = runner.build_coordinator_manifest(contract, workdir=tmp_path)
+
+    assert manifest["schema"] == "phase466_coordinator_manifest_v1"
+    assert manifest["source_commit"] == "a" * 40
+    assert {
+        name: item["path"] for name, item in manifest["tools"].items()
+    } == {name: f"scripts/{filename}" for name, filename in tool_names.items()}
+
+    monkeypatch.setattr(
+        runner,
+        "_capture",
+        lambda argv, **kwargs: (
+            "a" * 40
+            if argv[1:] == ["rev-parse", "HEAD"]
+            else " M scripts/run_phase466_low_overhead_probe.py"
+        ),
+    )
+    with pytest.raises(RuntimeError, match="coordinator_checkout_dirty"):
+        runner.build_coordinator_manifest(contract, workdir=tmp_path)
+
+
+def test_flat_worker_identity_requires_complete_fingerprint_sections() -> None:
+    runner = _load(MODULE_PATH, "run_phase466_flat_identity_shape")
+    payload = {
+        "schema": runner.FLAT_MODEL_FINGERPRINT_SCHEMA,
+        "identity_scope": "same_flat_mirror_instance",
+        "official_immutable_revision": False,
+        "metadata_files": [],
+        "runtime_files": [],
+        "shards": [],
+    }
+    identity = dict(payload)
+    identity["fingerprint_sha256"] = runner.execution_manifest_digest(payload)
+
+    with pytest.raises(RuntimeError, match="execution_manifest_model_identity_missing"):
+        runner._validate_model_identity_shape(identity)
+
+
+def test_worker_validates_uploaded_tool_bytes_without_git(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = _load(MODULE_PATH, "run_phase466_worker_tool_validation")
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    tool_names = {
+        "contract": "analyze_phase466_low_overhead_probe.py",
+        "supervisor": "run_phase466_low_overhead_probe.py",
+        "benchmark": "run_openai_fixed_shape_benchmark.py",
+        "rank_analyzer": "analyze_phase466_rank_timing.py",
+    }
+    tools = {}
+    for name, filename in tool_names.items():
+        path = scripts / filename
+        path.write_text(name, encoding="utf-8")
+        tools[name] = {
+            "path": f"scripts/{filename}",
+            "sha256": runner.hashlib.sha256(path.read_bytes()).hexdigest(),
+        }
+    manifest = {
+        "schema": "phase466_coordinator_manifest_v1",
+        "contract_schema": "unit-schema",
+        "source_commit": "a" * 40,
+        "tools": tools,
+    }
+    digest = runner.execution_manifest_digest(manifest)
+    monkeypatch.setattr(
+        runner,
+        "_capture",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("git called")),
+    )
+
+    assert runner.validate_coordinator_manifest_bytes(
+        manifest,
+        expected_digest=digest,
+        workdir=tmp_path,
+        contract_schema="unit-schema",
+    ) == {name: item["sha256"] for name, item in tools.items()}
+    (scripts / tool_names["benchmark"]).write_text("changed", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="execution_tool_hash_mismatch:benchmark"):
+        runner.validate_coordinator_manifest_bytes(
+            manifest,
+            expected_digest=digest,
+            workdir=tmp_path,
+            contract_schema="unit-schema",
         )
 
 
@@ -224,36 +416,42 @@ def test_model_revision_and_tokenizer_hash_are_fail_closed(tmp_path: Path) -> No
     assert identity["revision"] == revision
     assert set(identity["files_sha256"]) == set(runner.MODEL_IDENTITY_FILES)
     contract = SimpleNamespace(MODEL_PATH=str(model))
-    assert runner.assert_model_identity(contract, {"model_identity": identity}) == identity
+    manifest = {"worker_attestation": {"model_identity": identity}}
+    assert runner.assert_model_identity(contract, manifest) == identity
     (snapshot / "tiktoken.model").write_text("changed")
     with pytest.raises(RuntimeError, match="model_identity_mismatch"):
-        runner.assert_model_identity(contract, {"model_identity": identity})
+        runner.assert_model_identity(contract, manifest)
 
 
-def test_model_revision_must_resolve_to_snapshot(tmp_path: Path) -> None:
-    runner = _load(MODULE_PATH, "run_phase466_low_overhead_probe_model_revision")
+def test_model_path_without_snapshot_or_flat_metadata_fails(tmp_path: Path) -> None:
+    runner = _load(MODULE_PATH, "run_phase466_low_overhead_probe_model_identity_missing")
     model = tmp_path / "model"
     model.mkdir()
 
-    with pytest.raises(RuntimeError, match="model_revision_unresolved"):
+    with pytest.raises(RuntimeError, match="flat_model_metadata_missing"):
         runner.resolve_model_identity(model)
 
 
-def test_flat_composite_model_mirror_is_not_an_immutable_snapshot(
+def test_flat_composite_model_mirror_uses_instance_fingerprint(
     tmp_path: Path,
 ) -> None:
     runner = _load(MODULE_PATH, "run_phase466_low_overhead_probe_flat_mirror")
     model = tmp_path / "models--moonshotai--Kimi-K2.5"
-    metadata = model / ".cache" / "huggingface" / "download"
-    metadata.mkdir(parents=True)
-    for filename in runner.MODEL_IDENTITY_FILES:
-        (model / filename).write_text(filename, encoding="utf-8")
-    (metadata / "config.json.metadata").write_text(
-        f"{'a' * 40}\netag\n123.0\n", encoding="utf-8"
+    model.mkdir()
+    (model / ".msc").write_bytes(b"multiple revisions")
+    (model / ".mv").write_text("Revision:master", encoding="utf-8")
+    (model / "config.json").write_text("{}", encoding="utf-8")
+    shard = "model-00001-of-00001.safetensors"
+    (model / "model.safetensors.index.json").write_text(
+        json.dumps({"weight_map": {"layer": shard}}), encoding="utf-8"
     )
+    header = json.dumps({"layer": {"dtype": "F16", "shape": [1], "data_offsets": [0, 2]}}).encode()
+    (model / shard).write_bytes(len(header).to_bytes(8, "little") + header + b"xx")
 
-    with pytest.raises(RuntimeError, match="model_revision_unresolved"):
-        runner.resolve_model_identity(model)
+    identity = runner.resolve_model_identity(model)
+
+    assert identity["schema"] == runner.FLAT_MODEL_FINGERPRINT_SCHEMA
+    assert identity["official_immutable_revision"] is False
 
 
 def test_prompt_digest_missing_or_drift_fails_fast(tmp_path: Path) -> None:
@@ -267,48 +465,6 @@ def test_prompt_digest_missing_or_drift_fails_fast(tmp_path: Path) -> None:
     with pytest.raises(RuntimeError, match="prompt_cohort_sha256_mismatch"):
         runner.assert_benchmark_prompt_identity(
             result, expected="a" * 64, label="unit"
-        )
-
-
-def test_coordinator_manifest_requires_exact_clean_head(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    runner = _load(MODULE_PATH, "run_phase466_low_overhead_probe_coordinator")
-    monkeypatch.setattr(
-        runner,
-        "_capture",
-        lambda *args, **kwargs: "c" * 40,
-    )
-
-    with pytest.raises(RuntimeError, match="coordinator_head_mismatch"):
-        runner.verify_coordinator_checkout(
-            tmp_path,
-            "d" * 40,
-            contract_path=tmp_path / "scripts" / "analyze_phase466_low_overhead_probe.py",
-            supervisor_path=tmp_path / "scripts" / "run_phase466_low_overhead_probe.py",
-            benchmark_path=tmp_path / "scripts" / "run_openai_fixed_shape_benchmark.py",
-            rank_analyzer_path=tmp_path / "scripts" / "analyze_phase466_rank_timing.py",
-        )
-
-
-def test_coordinator_rejects_tool_outside_exact_checkout(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    runner = _load(MODULE_PATH, "run_phase466_low_overhead_probe_tool_path")
-    monkeypatch.setattr(
-        runner,
-        "_capture",
-        lambda *args, **kwargs: "a" * 40 if args[0][1:3] == ["rev-parse", "HEAD"] else "",
-    )
-
-    with pytest.raises(RuntimeError, match="coordinator_tool_path_mismatch:contract"):
-        runner.verify_coordinator_checkout(
-            tmp_path,
-            "a" * 40,
-            contract_path=tmp_path / "outside-contract.py",
-            supervisor_path=tmp_path / "scripts" / "run_phase466_low_overhead_probe.py",
-            benchmark_path=tmp_path / "scripts" / "run_openai_fixed_shape_benchmark.py",
-            rank_analyzer_path=tmp_path / "scripts" / "analyze_phase466_rank_timing.py",
         )
 
 
@@ -338,8 +494,7 @@ def test_signal_abort_terminates_active_children(
         contract=SimpleNamespace(SCHEMA="unit-schema", SOURCE_FILES={}),
         workdir=tmp_path,
         artifact_root=tmp_path / "artifact",
-        source_commit="a" * 40,
-        execution_manifest={},
+        execution_manifest=_supervisor_manifest(),
         execution_manifest_sha256="b" * 64,
     )
     service = SimpleNamespace(pid=123, poll=lambda: None)
@@ -409,20 +564,16 @@ def test_tool_identity_is_rechecked_against_manifest(
         contract=SimpleNamespace(SCHEMA="unit-schema"),
         workdir=tmp_path,
         artifact_root=tmp_path / "artifact",
-        source_commit="a" * 40,
-        execution_manifest={},
+        execution_manifest=_supervisor_manifest(),
         execution_manifest_sha256="b" * 64,
     )
     calls: list[bool] = []
     monkeypatch.setattr(
         runner,
         "validate_execution_manifest",
-        lambda *args, **kwargs: calls.append(True),
-    )
-    monkeypatch.setattr(
-        runner,
-        "_execution_tool_hashes",
-        lambda *args, **kwargs: {"contract": "c" * 64},
+        lambda *args, **kwargs: (
+            calls.append(True) or {"tool_sha256": {"contract": "c" * 64}}
+        ),
     )
 
     assert supervisor.validate_tool_identity() == {"contract": "c" * 64}
@@ -437,8 +588,7 @@ def test_finalize_writes_pass_result_only_after_log_compression(
         contract=SimpleNamespace(SCHEMA="unit-schema", SOURCE_FILES={}),
         workdir=tmp_path,
         artifact_root=tmp_path,
-        source_commit="a" * 40,
-        execution_manifest={},
+        execution_manifest=_supervisor_manifest(),
         execution_manifest_sha256="b" * 64,
     )
     result = {"status": "PASS"}
@@ -468,8 +618,7 @@ def test_terminal_commit_rewrites_pass_as_aborted_when_signal_arrives_during_wri
         contract=SimpleNamespace(SCHEMA="unit-schema", SOURCE_FILES={}),
         workdir=tmp_path,
         artifact_root=artifact_root,
-        source_commit="a" * 40,
-        execution_manifest={},
+        execution_manifest=_supervisor_manifest(),
         execution_manifest_sha256="b" * 64,
     )
     original_write = runner._write_json
@@ -505,8 +654,7 @@ def test_supervisor_heartbeat_updates_status_and_stops(tmp_path: Path) -> None:
         contract=SimpleNamespace(SCHEMA="unit-schema", SOURCE_FILES={}),
         workdir=tmp_path,
         artifact_root=artifact_root,
-        source_commit="a" * 40,
-        execution_manifest={},
+        execution_manifest=_supervisor_manifest(),
         execution_manifest_sha256="b" * 64,
     )
     supervisor.status("formal", "measuring", run_id="run-1")
@@ -532,23 +680,32 @@ def test_preflight_captures_source_commit_gpu_and_runtime_environment(
 ) -> None:
     runner = _load(MODULE_PATH, "run_phase466_low_overhead_probe_preflight")
     artifact_root = tmp_path / "artifact"
+    execution_manifest = _supervisor_manifest()
+    execution_manifest["worker_attestation"] = {
+        "gpu_identity": {"rows": ["NVIDIA H200, 143771, 575.57.08"]},
+        "vllm_import_paths": [],
+    }
     supervisor = runner.Supervisor(
         contract=SimpleNamespace(SCHEMA="unit-schema", SOURCE_FILES={}),
         workdir=tmp_path,
         artifact_root=artifact_root,
-        source_commit="a" * 40,
-        execution_manifest={},
+        execution_manifest=execution_manifest,
         execution_manifest_sha256="b" * 64,
     )
-    monkeypatch.setattr(runner, "validate_execution_manifest", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        runner,
+        "validate_execution_manifest",
+        lambda *args, **kwargs: {"tool_sha256": {"tool.py": "b" * 64}},
+    )
     monkeypatch.setattr(runner, "_assert_clean_worker", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         runner,
         "assert_imported_vllm_source_paths",
-        lambda *args, **kwargs: None,
+        lambda *args, **kwargs: [],
     )
     monkeypatch.setattr(runner, "_source_hashes", lambda contract: {})
     model_identity = {
+        "schema": runner.SNAPSHOT_MODEL_IDENTITY_SCHEMA,
         "revision": "a" * 40,
         "files_sha256": {
             "config.json": "1" * 64,
@@ -560,12 +717,6 @@ def test_preflight_captures_source_commit_gpu_and_runtime_environment(
     monkeypatch.setattr(
         runner, "assert_model_identity", lambda contract, manifest: model_identity
     )
-    monkeypatch.setattr(
-        runner,
-        "_execution_tool_hashes",
-        lambda contract, workdir: {"tool.py": "b" * 64},
-    )
-
     def capture(argv, **kwargs):
         if argv[0] == "nvidia-smi":
             return "NVIDIA H200, 143771, 575.57.08"
@@ -585,16 +736,41 @@ def test_preflight_captures_source_commit_gpu_and_runtime_environment(
     assert (artifact_root / "tooling.sha256").read_text() == f"{'b' * 64}  tool.py\n"
 
 
-def test_supervisor_rejects_invalid_source_commit(tmp_path: Path) -> None:
+def test_execution_preflight_identity_failure_creates_no_artifact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = _load(MODULE_PATH, "run_phase466_preflight_no_artifact")
+    artifact_root = tmp_path / "artifact"
+    supervisor = runner.Supervisor(
+        contract=SimpleNamespace(SCHEMA="unit-schema", SOURCE_FILES={}),
+        workdir=tmp_path,
+        artifact_root=artifact_root,
+        execution_manifest=_supervisor_manifest(),
+        execution_manifest_sha256="b" * 64,
+    )
+    monkeypatch.setattr(
+        supervisor,
+        "validate_tool_identity",
+        lambda: (_ for _ in ()).throw(RuntimeError("execution_manifest_digest_mismatch")),
+    )
+    monkeypatch.setattr(runner, "_assert_clean_worker", lambda *args, **kwargs: None)
+
+    with pytest.raises(RuntimeError, match="execution_manifest_digest_mismatch"):
+        supervisor.preflight()
+
+    assert not artifact_root.exists()
+    assert supervisor.owns_artifact_root is False
+
+
+def test_supervisor_rejects_invalid_coordinator_source_commit(tmp_path: Path) -> None:
     runner = _load(MODULE_PATH, "run_phase466_low_overhead_probe_commit")
 
-    with pytest.raises(ValueError, match="invalid_source_commit"):
+    with pytest.raises(ValueError, match="execution_manifest_source_commit_invalid"):
         runner.Supervisor(
             contract=SimpleNamespace(SCHEMA="unit-schema"),
             workdir=tmp_path,
             artifact_root=tmp_path / "artifact",
-            source_commit="2f6ad73d",
-            execution_manifest={},
+            execution_manifest=_supervisor_manifest("2f6ad73d"),
             execution_manifest_sha256="b" * 64,
         )
 

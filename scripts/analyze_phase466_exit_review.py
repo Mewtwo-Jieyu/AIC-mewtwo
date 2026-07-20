@@ -333,10 +333,14 @@ def select_route(
         ):
             raise ValueError("coverage_candidate_set_mismatch")
         for candidate, judgement in judgements.items():
-            if judgement != "PASS":
+            if candidate_coverage[candidate].get("status") == "EVALUABLE":
                 continue
-            if candidate_coverage[candidate].get("status") != "EVALUABLE":
+            if judgement == "PASS":
                 raise ValueError(f"pass_without_evaluable_coverage:{candidate}")
+            if judgement == "DISPROVED":
+                raise ValueError(
+                    f"disproved_without_evaluable_coverage:{candidate}"
+                )
     passed = [candidate for candidate in CANDIDATES if judgements[candidate] == "PASS"]
     disproved = [
         candidate for candidate in CANDIDATES if judgements[candidate] == "DISPROVED"
@@ -458,7 +462,26 @@ def validate_real_artifact_root(root: Path) -> dict[str, Path]:
     gate_digest = execution_manifest_digest(gate)
     if result.get("overhead_gate_sha256") != gate_digest:
         raise ValueError("overhead_gate_digest_mismatch")
-    expected_tools = manifest.get("tool_sha256")
+    if manifest.get("schema") != "phase466_execution_manifest_v3":
+        raise ValueError("execution_manifest_schema_mismatch")
+    coordinator = manifest.get("coordinator_manifest")
+    attestation = manifest.get("worker_attestation")
+    if not isinstance(coordinator, dict) or not isinstance(attestation, dict):
+        raise ValueError("execution_manifest_identity_layers_missing")
+    coordinator_digest = execution_manifest_digest(coordinator)
+    attestation_digest = execution_manifest_digest(attestation)
+    if (
+        coordinator.get("schema") != "phase466_coordinator_manifest_v1"
+        or manifest.get("coordinator_manifest_sha256") != coordinator_digest
+    ):
+        raise ValueError("coordinator_manifest_digest_mismatch")
+    if (
+        attestation.get("schema") != "phase466_worker_attestation_v1"
+        or manifest.get("worker_attestation_sha256") != attestation_digest
+        or attestation.get("coordinator_manifest_sha256") != coordinator_digest
+    ):
+        raise ValueError("worker_attestation_digest_mismatch")
+    expected_tools = attestation.get("tool_sha256")
     if not isinstance(expected_tools, dict) or set(expected_tools) != {
         "contract",
         "supervisor",
@@ -466,23 +489,59 @@ def validate_real_artifact_root(root: Path) -> dict[str, Path]:
         "rank_analyzer",
     }:
         raise ValueError("execution_manifest_tool_hashes_missing")
-    model_identity = manifest.get("model_identity")
-    if not isinstance(model_identity, dict) or not re.fullmatch(
-        r"[0-9a-f]{40,64}", str(model_identity.get("revision", ""))
-    ):
+    coordinator_tools = coordinator.get("tools")
+    if not isinstance(coordinator_tools, dict) or {
+        name: item.get("sha256") if isinstance(item, dict) else None
+        for name, item in coordinator_tools.items()
+    } != expected_tools:
+        raise ValueError("coordinator_worker_tool_hash_mismatch")
+    model_identity = attestation.get("model_identity")
+    if not isinstance(model_identity, dict):
         raise ValueError("execution_manifest_model_identity_missing")
-    model_files = model_identity.get("files_sha256")
-    if not isinstance(model_files, dict) or set(model_files) != {
-        "config.json",
-        "tokenizer_config.json",
-        "tiktoken.model",
-        "tokenization_kimi.py",
-    } or any(
-        not re.fullmatch(r"[0-9a-f]{64}", str(value))
-        for value in model_files.values()
-    ):
-        raise ValueError("execution_manifest_model_file_hashes_missing")
-    manifest_prompts = manifest.get("prompt_cohort_sha256")
+    model_schema = model_identity.get("schema")
+    if model_schema == "phase466_flat_model_fingerprint_v1":
+        model_digest = str(model_identity.get("fingerprint_sha256", ""))
+        model_payload = dict(model_identity)
+        model_payload.pop("fingerprint_sha256", None)
+        metadata = model_identity.get("metadata_files")
+        runtime_files = model_identity.get("runtime_files")
+        shards = model_identity.get("shards")
+        if (
+            not re.fullmatch(r"[0-9a-f]{64}", model_digest)
+            or execution_manifest_digest(model_payload) != model_digest
+            or model_identity.get("identity_scope") != "same_flat_mirror_instance"
+            or model_identity.get("official_immutable_revision") is not False
+            or not isinstance(metadata, list)
+            or [item.get("path") for item in metadata if isinstance(item, dict)]
+            != [".msc", ".mv"]
+            or not isinstance(runtime_files, list)
+            or not runtime_files
+            or "model.safetensors.index.json"
+            not in {
+                item.get("path")
+                for item in runtime_files
+                if isinstance(item, dict)
+            }
+            or not isinstance(shards, list)
+            or not shards
+        ):
+            raise ValueError("execution_manifest_model_identity_missing")
+    elif model_schema == "phase466_snapshot_model_identity_v1":
+        revision = str(model_identity.get("revision", ""))
+        model_files = model_identity.get("files_sha256")
+        if (
+            not re.fullmatch(r"[0-9a-f]{40,64}", revision)
+            or not isinstance(model_files, dict)
+            or any(
+                not re.fullmatch(r"[0-9a-f]{64}", str(value))
+                for value in model_files.values()
+            )
+        ):
+            raise ValueError("execution_manifest_model_identity_missing")
+        model_digest = execution_manifest_digest(model_identity)
+    else:
+        raise ValueError("execution_manifest_model_identity_missing")
+    manifest_prompts = attestation.get("prompt_cohort_sha256")
     if not isinstance(manifest_prompts, dict):
         raise ValueError("execution_manifest_prompt_identity_missing")
     formal_artifacts = result.get("formal_artifacts")
@@ -504,8 +563,8 @@ def validate_real_artifact_root(root: Path) -> dict[str, Path]:
         if meta.get("execution_tool_sha256") != expected_tools:
             raise ValueError(f"formal_execution_tool_mismatch:{scenario}")
         if (
-            meta.get("model_revision") != model_identity["revision"]
-            or meta.get("model_files_sha256") != model_files
+            meta.get("model_identity_schema") != model_schema
+            or meta.get("model_identity_sha256") != model_digest
         ):
             raise ValueError(f"formal_model_identity_mismatch:{scenario}")
         prompt_identity = _load_json(run_dir / "prompt_identity.json")

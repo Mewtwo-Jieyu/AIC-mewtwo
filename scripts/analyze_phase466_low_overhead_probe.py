@@ -887,19 +887,15 @@ def _validate_exact_run_meta(
             raise ValueError(f"run_meta_mismatch:{key}")
     if meta.get("vllm_version") != "0.19.0":
         raise ValueError("run_meta_mismatch:vllm_version")
-    if not re.fullmatch(r"[0-9a-f]{40,64}", str(meta.get("model_revision", ""))):
-        raise ValueError("run_meta_mismatch:model_revision")
-    model_files = meta.get("model_files_sha256")
-    if not isinstance(model_files, dict) or set(model_files) != {
-        "config.json",
-        "tokenizer_config.json",
-        "tiktoken.model",
-        "tokenization_kimi.py",
-    } or any(
-        not re.fullmatch(r"[0-9a-f]{64}", str(value))
-        for value in model_files.values()
+    if meta.get("model_identity_schema") not in {
+        "phase466_snapshot_model_identity_v1",
+        "phase466_flat_model_fingerprint_v1",
+    }:
+        raise ValueError("run_meta_mismatch:model_identity_schema")
+    if not re.fullmatch(
+        r"[0-9a-f]{64}", str(meta.get("model_identity_sha256", ""))
     ):
-        raise ValueError("run_meta_mismatch:model_files_sha256")
+        raise ValueError("run_meta_mismatch:model_identity_sha256")
     cutoffs = meta.get("measurement_start_after_iteration")
     if not isinstance(cutoffs, dict) or not cutoffs:
         raise ValueError("run_meta_mismatch:measurement_start_after_iteration")

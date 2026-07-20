@@ -27,7 +27,18 @@ PROCESS_PATTERN = (
     "VLLM::APIServer|VLLM::EngineCore"
 )
 NODE_LOCK_PATH = Path("/tmp/phase466_low_overhead_probe.lock")
-EXECUTION_MANIFEST_SCHEMA = "phase466_execution_manifest_v2"
+COORDINATOR_MANIFEST_SCHEMA = "phase466_coordinator_manifest_v1"
+WORKER_ATTESTATION_SCHEMA = "phase466_worker_attestation_v1"
+EXECUTION_MANIFEST_SCHEMA = "phase466_execution_manifest_v3"
+FLAT_MODEL_FINGERPRINT_SCHEMA = "phase466_flat_model_fingerprint_v1"
+SNAPSHOT_MODEL_IDENTITY_SCHEMA = "phase466_snapshot_model_identity_v1"
+MAX_SAFETENSORS_HEADER_BYTES = 128 * 1024 * 1024
+COORDINATOR_TOOL_RELATIVE_PATHS = {
+    "contract": "scripts/analyze_phase466_low_overhead_probe.py",
+    "supervisor": "scripts/run_phase466_low_overhead_probe.py",
+    "benchmark": "scripts/run_openai_fixed_shape_benchmark.py",
+    "rank_analyzer": "scripts/analyze_phase466_rank_timing.py",
+}
 MODEL_IDENTITY_FILES = (
     "config.json",
     "tokenizer_config.json",
@@ -65,9 +76,13 @@ INTEGRITY_ERRORS = {
     "missing_probe_metrics",
     "missing_iteration_rank_rows",
     "execution_manifest",
+    "coordinator_manifest",
+    "worker_attestation",
     "execution_tool_hash_mismatch",
     "model_identity",
-    "model_revision",
+    "flat_model",
+    "safetensors",
+    "gpu_identity",
     "prompt_cohort_sha256",
 }
 
@@ -273,7 +288,7 @@ def assert_imported_vllm_source_paths(
     *,
     cwd: Path,
     env: dict[str, str],
-) -> None:
+) -> list[str]:
     command = (
         "import json; "
         "from vllm.v1.engine import core; "
@@ -290,6 +305,7 @@ def assert_imported_vllm_source_paths(
     expected = list(contract.SOURCE_FILES)
     if paths != expected:
         raise RuntimeError(f"vllm_import_path_mismatch:{paths}!={expected}")
+    return paths
 
 
 def resolve_model_identity(model_path: str | Path) -> dict[str, Any]:
@@ -306,7 +322,7 @@ def resolve_model_identity(model_path: str | Path) -> dict[str, Any]:
     else:
         ref = root / "refs" / "main"
         if not ref.is_file():
-            raise RuntimeError("model_revision_unresolved")
+            return fingerprint_flat_model(root)
         revision = ref.read_text(encoding="utf-8").strip()
         if not MODEL_REVISION_RE.fullmatch(revision):
             raise RuntimeError("model_revision_invalid")
@@ -320,11 +336,145 @@ def resolve_model_identity(model_path: str | Path) -> dict[str, Any]:
             raise RuntimeError(f"model_identity_file_missing:{filename}")
         file_hashes[filename] = hashlib.sha256(path.read_bytes()).hexdigest()
     return {
+        "schema": SNAPSHOT_MODEL_IDENTITY_SCHEMA,
         "model_path": str(root),
         "snapshot_path": str(snapshot),
         "revision": revision,
         "files_sha256": file_hashes,
     }
+
+
+def _strict_json_object(raw: bytes, *, label: str) -> dict[str, Any]:
+    def reject_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        value: dict[str, Any] = {}
+        for key, item in pairs:
+            if key in value:
+                raise RuntimeError(f"json_duplicate_key:{label}:{key}")
+            value[key] = item
+        return value
+
+    try:
+        parsed = json.loads(raw, object_pairs_hook=reject_duplicates)
+    except RuntimeError:
+        raise
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"json_invalid:{label}") from exc
+    if not isinstance(parsed, dict):
+        raise RuntimeError(f"json_object_required:{label}")
+    return parsed
+
+
+def _safetensors_header_identity(path: Path) -> tuple[int, int, str, set[str]]:
+    before = path.stat()
+    if before.st_size < 10:
+        raise RuntimeError(f"safetensors_header_invalid:{path.name}")
+    with path.open("rb") as stream:
+        prefix = stream.read(8)
+        header_size = int.from_bytes(prefix, "little", signed=False)
+        if (
+            header_size < 2
+            or header_size > MAX_SAFETENSORS_HEADER_BYTES
+            or 8 + header_size > before.st_size
+        ):
+            raise RuntimeError(f"safetensors_header_invalid:{path.name}")
+        header = stream.read(header_size)
+    try:
+        parsed = _strict_json_object(header, label=f"safetensors_header:{path.name}")
+    except RuntimeError as exc:
+        raise RuntimeError(f"safetensors_header_invalid:{path.name}:{exc}") from exc
+    after = path.stat()
+    if (after.st_size, after.st_mtime_ns) != (before.st_size, before.st_mtime_ns):
+        raise RuntimeError(f"safetensors_changed_during_fingerprint:{path.name}")
+    tensor_names = set(parsed) - {"__metadata__"}
+    return before.st_size, before.st_mtime_ns, hashlib.sha256(header).hexdigest(), tensor_names
+
+
+def fingerprint_flat_model(model_path: str | Path) -> dict[str, Any]:
+    root = Path(model_path).resolve()
+    if not root.is_dir():
+        raise RuntimeError(f"model_identity_path_missing:{root}")
+    metadata_files: list[dict[str, str]] = []
+    for name in (".msc", ".mv"):
+        path = root / name
+        if not path.is_file() or path.is_symlink():
+            raise RuntimeError(f"flat_model_metadata_missing:{name}")
+        metadata_files.append(
+            {"path": name, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+        )
+    runtime_paths = sorted(
+        path
+        for path in root.iterdir()
+        if path.is_file()
+        and not path.is_symlink()
+        and path.name not in {".msc", ".mv"}
+        and path.suffix in {".json", ".py", ".jinja", ".model"}
+    )
+    index_path = root / "model.safetensors.index.json"
+    if index_path not in runtime_paths:
+        raise RuntimeError("safetensors_index_missing")
+    runtime_files = [
+        {
+            "path": path.name,
+            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        }
+        for path in runtime_paths
+    ]
+    index = _strict_json_object(
+        index_path.read_bytes(), label="model.safetensors.index.json"
+    )
+    weight_map = index.get("weight_map")
+    if not isinstance(weight_map, dict) or not weight_map:
+        raise RuntimeError("safetensors_index_weight_map_invalid")
+    referenced: set[str] = set()
+    tensors_by_shard: dict[str, set[str]] = {}
+    for tensor_name, shard in weight_map.items():
+        if (
+            not tensor_name
+            or tensor_name == "__metadata__"
+            or not isinstance(shard, str)
+            or Path(shard).name != shard
+            or not shard.endswith(".safetensors")
+        ):
+            raise RuntimeError("safetensors_index_shard_path_invalid")
+        referenced.add(shard)
+        tensors_by_shard.setdefault(shard, set()).add(tensor_name)
+    shard_paths = list(root.glob("*.safetensors"))
+    invalid_shards = sorted(
+        path.name for path in shard_paths if path.is_symlink() or not path.is_file()
+    )
+    if invalid_shards:
+        raise RuntimeError(f"flat_model_shard_not_regular:{invalid_shards}")
+    actual = {path.name for path in shard_paths}
+    missing = sorted(referenced - actual)
+    unexpected = sorted(actual - referenced)
+    if missing:
+        raise RuntimeError(f"flat_model_shards_missing:{missing}")
+    if unexpected:
+        raise RuntimeError(f"flat_model_shards_unexpected:{unexpected}")
+    shards: list[dict[str, Any]] = []
+    for name in sorted(referenced):
+        path = root / name
+        size, mtime_ns, header_sha256, tensor_names = _safetensors_header_identity(path)
+        if tensor_names != tensors_by_shard[name]:
+            raise RuntimeError(f"safetensors_index_header_mismatch:{name}")
+        shards.append(
+            {
+                "path": name,
+                "size": size,
+                "mtime_ns": mtime_ns,
+                "header_sha256": header_sha256,
+            }
+        )
+    identity: dict[str, Any] = {
+        "schema": FLAT_MODEL_FINGERPRINT_SCHEMA,
+        "identity_scope": "same_flat_mirror_instance",
+        "official_immutable_revision": False,
+        "metadata_files": metadata_files,
+        "runtime_files": runtime_files,
+        "shards": shards,
+    }
+    identity["fingerprint_sha256"] = execution_manifest_digest(identity)
+    return identity
 
 
 def expected_prompt_cohort_sha256(
@@ -397,44 +547,79 @@ def _execution_tool_hashes(
     return hashes
 
 
-def build_execution_manifest(
-    contract: Any,
-    *,
-    source_commit: str,
-    supervisor_path: Path,
-    benchmark_path: Path,
-    rank_analyzer_path: Path,
-    model_identity: dict[str, Any] | None = None,
-    prompt_identities: dict[str, dict[str, str]] | None = None,
-) -> dict[str, Any]:
-    if not re.fullmatch(r"[0-9a-f]{40}", source_commit):
-        raise ValueError("invalid_source_commit")
-    paths = _tool_paths(
-        contract,
-        supervisor_path=supervisor_path,
-        benchmark_path=benchmark_path,
-        rank_analyzer_path=rank_analyzer_path,
+def build_coordinator_manifest(contract: Any, *, workdir: Path) -> dict[str, Any]:
+    workdir = workdir.resolve()
+    head = _capture(
+        ["git", "rev-parse", "HEAD"],
+        cwd=workdir,
+        env=dict(os.environ),
+        allow_empty=False,
     )
-    tool_hashes: dict[str, str] = {}
-    for name, path in paths.items():
+    if not re.fullmatch(r"[0-9a-f]{40}", head):
+        raise RuntimeError("coordinator_head_invalid")
+    dirty = _capture(
+        ["git", "status", "--porcelain", "--untracked-files=all"],
+        cwd=workdir,
+        env=dict(os.environ),
+    )
+    if dirty:
+        raise RuntimeError("coordinator_checkout_dirty")
+    expected_contract = (workdir / COORDINATOR_TOOL_RELATIVE_PATHS["contract"]).resolve()
+    if Path(contract.__file__).resolve() != expected_contract:
+        raise RuntimeError("coordinator_tool_path_mismatch:contract")
+    tools: dict[str, dict[str, str]] = {}
+    for name, relative in COORDINATOR_TOOL_RELATIVE_PATHS.items():
+        path = workdir / relative
         if not path.is_file():
             raise RuntimeError(f"execution_tool_missing:{path}")
-        tool_hashes[name] = hashlib.sha256(path.read_bytes()).hexdigest()
-    if model_identity is None:
-        model_identity = resolve_model_identity(contract.MODEL_PATH)
-    if prompt_identities is None:
-        prompt_identities = expected_prompt_cohort_sha256(
-            contract, benchmark_path=benchmark_path
-        )
+        tools[name] = {
+            "path": relative,
+            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        }
     return {
-        "schema": EXECUTION_MANIFEST_SCHEMA,
+        "schema": COORDINATOR_MANIFEST_SCHEMA,
         "contract_schema": contract.SCHEMA,
-        "source_commit": source_commit,
-        "tool_sha256": tool_hashes,
-        "vllm_source_sha256": dict(contract.SOURCE_FILES),
-        "model_identity": model_identity,
-        "prompt_cohort_sha256": prompt_identities,
+        "source_commit": head,
+        "tools": tools,
     }
+
+
+def validate_coordinator_manifest_bytes(
+    manifest: dict[str, Any],
+    *,
+    expected_digest: str,
+    workdir: Path,
+    contract_schema: str,
+) -> dict[str, str]:
+    if execution_manifest_digest(manifest) != expected_digest:
+        raise RuntimeError("coordinator_manifest_digest_mismatch")
+    if manifest.get("schema") != COORDINATOR_MANIFEST_SCHEMA:
+        raise RuntimeError("coordinator_manifest_schema_mismatch")
+    if manifest.get("contract_schema") != contract_schema:
+        raise RuntimeError("coordinator_manifest_contract_schema_mismatch")
+    if not re.fullmatch(r"[0-9a-f]{40}", str(manifest.get("source_commit", ""))):
+        raise RuntimeError("coordinator_manifest_source_commit_invalid")
+    tools = manifest.get("tools")
+    if not isinstance(tools, dict) or set(tools) != set(
+        COORDINATOR_TOOL_RELATIVE_PATHS
+    ):
+        raise RuntimeError("coordinator_manifest_tools_invalid")
+    actual: dict[str, str] = {}
+    workdir = workdir.resolve()
+    for name, expected_relative in COORDINATOR_TOOL_RELATIVE_PATHS.items():
+        item = tools[name]
+        if not isinstance(item, dict) or item.get("path") != expected_relative:
+            raise RuntimeError(f"coordinator_manifest_tool_path_invalid:{name}")
+        expected_hash = str(item.get("sha256", ""))
+        if not re.fullmatch(r"[0-9a-f]{64}", expected_hash):
+            raise RuntimeError(f"coordinator_manifest_tool_hash_invalid:{name}")
+        path = (workdir / expected_relative).resolve()
+        if path.parent != (workdir / "scripts").resolve() or not path.is_file():
+            raise RuntimeError(f"execution_tool_missing:{path}")
+        actual[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+        if actual[name] != expected_hash:
+            raise RuntimeError(f"execution_tool_hash_mismatch:{name}")
+    return actual
 
 
 def execution_manifest_digest(manifest: dict[str, Any]) -> str:
@@ -442,40 +627,9 @@ def execution_manifest_digest(manifest: dict[str, Any]) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def validate_execution_manifest(
-    manifest: dict[str, Any],
-    *,
-    expected_digest: str,
-    contract: Any,
-    source_commit: str,
-    supervisor_path: Path,
-    benchmark_path: Path,
-    rank_analyzer_path: Path,
-) -> None:
-    if not re.fullmatch(r"[0-9a-f]{64}", expected_digest):
-        raise RuntimeError("execution_manifest_digest_invalid")
-    if execution_manifest_digest(manifest) != expected_digest:
-        raise RuntimeError("execution_manifest_digest_mismatch")
-    if manifest.get("schema") != EXECUTION_MANIFEST_SCHEMA:
-        raise RuntimeError("execution_manifest_schema_mismatch")
-    if manifest.get("contract_schema") != contract.SCHEMA:
-        raise RuntimeError("execution_manifest_contract_schema_mismatch")
-    if manifest.get("source_commit") != source_commit:
-        raise RuntimeError("execution_manifest_source_commit_mismatch")
-    if manifest.get("vllm_source_sha256") != contract.SOURCE_FILES:
-        raise RuntimeError("execution_manifest_vllm_source_mismatch")
-    model_identity = manifest.get("model_identity")
-    if (
-        not isinstance(model_identity, dict)
-        or not MODEL_REVISION_RE.fullmatch(str(model_identity.get("revision", "")))
-        or set(model_identity.get("files_sha256", {})) != set(MODEL_IDENTITY_FILES)
-        or any(
-            not re.fullmatch(r"[0-9a-f]{64}", str(value))
-            for value in model_identity.get("files_sha256", {}).values()
-        )
-    ):
-        raise RuntimeError("execution_manifest_model_identity_missing")
-    prompt_identities = manifest.get("prompt_cohort_sha256")
+def _validate_prompt_identities(
+    prompt_identities: Any, *, contract: Any
+) -> dict[str, dict[str, str]]:
     expected_run_ids = {
         str(run["id"]) for run in contract.build_run_plan().get("runs", [])
     }
@@ -489,28 +643,287 @@ def validate_execution_manifest(
             for value in identity.values()
         ):
             raise RuntimeError(f"execution_manifest_prompt_cohort_sha256_invalid:{run_id}")
-    actual = {
-        name: hashlib.sha256(path.read_bytes()).hexdigest()
-        for name, path in _tool_paths(
-            contract,
-            supervisor_path=supervisor_path,
-            benchmark_path=benchmark_path,
-            rank_analyzer_path=rank_analyzer_path,
-        ).items()
+    return prompt_identities
+
+
+def _validate_model_identity_shape(model_identity: Any) -> dict[str, Any]:
+    if not isinstance(model_identity, dict):
+        raise RuntimeError("execution_manifest_model_identity_missing")
+    if model_identity.get("schema") == SNAPSHOT_MODEL_IDENTITY_SCHEMA:
+        if (
+            not MODEL_REVISION_RE.fullmatch(str(model_identity.get("revision", "")))
+            or set(model_identity.get("files_sha256", {})) != set(MODEL_IDENTITY_FILES)
+            or any(
+                not re.fullmatch(r"[0-9a-f]{64}", str(value))
+                for value in model_identity.get("files_sha256", {}).values()
+            )
+        ):
+            raise RuntimeError("execution_manifest_model_identity_missing")
+        return model_identity
+    if model_identity.get("schema") == FLAT_MODEL_FINGERPRINT_SCHEMA:
+        expected = str(model_identity.get("fingerprint_sha256", ""))
+        payload = dict(model_identity)
+        payload.pop("fingerprint_sha256", None)
+        metadata_files = model_identity.get("metadata_files")
+        runtime_files = model_identity.get("runtime_files")
+        shards = model_identity.get("shards")
+        metadata_valid = (
+            isinstance(metadata_files, list)
+            and [item.get("path") for item in metadata_files if isinstance(item, dict)]
+            == [".msc", ".mv"]
+            and all(
+                isinstance(item, dict)
+                and set(item) == {"path", "sha256"}
+                and re.fullmatch(r"[0-9a-f]{64}", str(item.get("sha256", "")))
+                for item in metadata_files
+            )
+        )
+        runtime_valid = (
+            isinstance(runtime_files, list)
+            and bool(runtime_files)
+            and all(
+                isinstance(item, dict)
+                and set(item) == {"path", "sha256"}
+                and isinstance(item.get("path"), str)
+                and Path(str(item.get("path", ""))).name == item.get("path")
+                and re.fullmatch(r"[0-9a-f]{64}", str(item.get("sha256", "")))
+                for item in runtime_files
+            )
+            and [item["path"] for item in runtime_files]
+            == sorted(item["path"] for item in runtime_files)
+            and len({item["path"] for item in runtime_files}) == len(runtime_files)
+            and "model.safetensors.index.json"
+            in {item["path"] for item in runtime_files}
+        )
+        shard_valid = (
+            isinstance(shards, list)
+            and bool(shards)
+            and all(
+                isinstance(item, dict)
+                and set(item) == {
+                    "path",
+                    "size",
+                    "mtime_ns",
+                    "header_sha256",
+                }
+                and Path(str(item.get("path", ""))).name == item.get("path")
+                and str(item.get("path", "")).endswith(".safetensors")
+                and isinstance(item.get("size"), int)
+                and item["size"] >= 10
+                and isinstance(item.get("mtime_ns"), int)
+                and item["mtime_ns"] >= 0
+                and re.fullmatch(
+                    r"[0-9a-f]{64}", str(item.get("header_sha256", ""))
+                )
+                for item in shards
+            )
+            and [item["path"] for item in shards]
+            == sorted(item["path"] for item in shards)
+            and len({item["path"] for item in shards}) == len(shards)
+        )
+        if (
+            not re.fullmatch(r"[0-9a-f]{64}", expected)
+            or execution_manifest_digest(payload) != expected
+            or model_identity.get("identity_scope") != "same_flat_mirror_instance"
+            or model_identity.get("official_immutable_revision") is not False
+            or not metadata_valid
+            or not runtime_valid
+            or not shard_valid
+        ):
+            raise RuntimeError("execution_manifest_model_identity_missing")
+        return model_identity
+    raise RuntimeError("execution_manifest_model_identity_missing")
+
+
+def build_worker_attestation(
+    contract: Any,
+    *,
+    coordinator_manifest: dict[str, Any],
+    coordinator_manifest_sha256: str,
+    workdir: Path,
+    benchmark_path: Path,
+) -> dict[str, Any]:
+    tool_hashes = validate_coordinator_manifest_bytes(
+        coordinator_manifest,
+        expected_digest=coordinator_manifest_sha256,
+        workdir=workdir,
+        contract_schema=contract.SCHEMA,
+    )
+    env = _runtime_env()
+    version = _capture(
+        ["python3", "-c", "import vllm; print(vllm.__version__)"],
+        cwd=workdir,
+        env=env,
+        allow_empty=False,
+    )
+    if version != "0.19.0":
+        raise RuntimeError(f"vllm_version_mismatch:{version}")
+    gpu = _capture(
+        [
+            "nvidia-smi",
+            "--query-gpu=index,uuid,name,memory.total,driver_version",
+            "--format=csv,noheader,nounits",
+        ],
+        cwd=workdir,
+        env=env,
+        allow_empty=False,
+    )
+    source_hashes = assert_source_identity(contract)
+    imported_paths = assert_imported_vllm_source_paths(
+        contract, cwd=workdir, env=env
+    )
+    return {
+        "schema": WORKER_ATTESTATION_SCHEMA,
+        "contract_schema": contract.SCHEMA,
+        "coordinator_manifest_sha256": coordinator_manifest_sha256,
+        "tool_sha256": tool_hashes,
+        "vllm_version": version,
+        "vllm_source_sha256": source_hashes,
+        "vllm_import_paths": imported_paths,
+        "gpu_identity": {"rows": gpu.splitlines()},
+        "model_identity": resolve_model_identity(contract.MODEL_PATH),
+        "prompt_cohort_sha256": expected_prompt_cohort_sha256(
+            contract, benchmark_path=benchmark_path
+        ),
+        "diagnostic_only": True,
+        "valid_for_default": False,
+        "perf_database": False,
     }
-    expected = manifest.get("tool_sha256")
-    if not isinstance(expected, dict):
-        raise RuntimeError("execution_manifest_tool_hashes_missing")
-    for name in ("contract", "supervisor", "benchmark", "rank_analyzer"):
-        if actual.get(name) != expected.get(name):
-            raise RuntimeError(f"execution_tool_hash_mismatch:{name}")
+
+
+def _validate_worker_attestation(
+    attestation: Any,
+    *,
+    expected_digest: str,
+    coordinator_manifest: dict[str, Any],
+    coordinator_manifest_sha256: str,
+    contract: Any,
+) -> dict[str, Any]:
+    if not isinstance(attestation, dict):
+        raise RuntimeError("worker_attestation_missing")
+    if execution_manifest_digest(attestation) != expected_digest:
+        raise RuntimeError("worker_attestation_digest_mismatch")
+    if attestation.get("schema") != WORKER_ATTESTATION_SCHEMA:
+        raise RuntimeError("worker_attestation_schema_mismatch")
+    if attestation.get("contract_schema") != contract.SCHEMA:
+        raise RuntimeError("worker_attestation_contract_schema_mismatch")
+    if attestation.get("coordinator_manifest_sha256") != coordinator_manifest_sha256:
+        raise RuntimeError("worker_attestation_coordinator_mismatch")
+    expected_tools = {
+        name: item["sha256"]
+        for name, item in coordinator_manifest["tools"].items()
+    }
+    if attestation.get("tool_sha256") != expected_tools:
+        raise RuntimeError("worker_attestation_tool_hash_mismatch")
+    if attestation.get("vllm_version") != "0.19.0":
+        raise RuntimeError("worker_attestation_vllm_version_mismatch")
+    if attestation.get("vllm_source_sha256") != contract.SOURCE_FILES:
+        raise RuntimeError("worker_attestation_vllm_source_mismatch")
+    if attestation.get("vllm_import_paths") != list(contract.SOURCE_FILES):
+        raise RuntimeError("worker_attestation_vllm_import_path_mismatch")
+    gpu_identity = attestation.get("gpu_identity")
+    if (
+        not isinstance(gpu_identity, dict)
+        or not isinstance(gpu_identity.get("rows"), list)
+        or not gpu_identity["rows"]
+        or any(not isinstance(row, str) or not row for row in gpu_identity["rows"])
+    ):
+        raise RuntimeError("worker_attestation_gpu_identity_missing")
+    _validate_model_identity_shape(attestation.get("model_identity"))
+    _validate_prompt_identities(attestation.get("prompt_cohort_sha256"), contract=contract)
+    for field in ("diagnostic_only", "valid_for_default", "perf_database"):
+        expected = field == "diagnostic_only"
+        if attestation.get(field) is not expected:
+            raise RuntimeError(f"worker_attestation_boundary_invalid:{field}")
+    return attestation
+
+
+def compose_execution_manifest(
+    contract: Any,
+    *,
+    coordinator_manifest: dict[str, Any],
+    coordinator_manifest_sha256: str,
+    worker_attestation: dict[str, Any],
+    worker_attestation_sha256: str,
+) -> dict[str, Any]:
+    if execution_manifest_digest(coordinator_manifest) != coordinator_manifest_sha256:
+        raise RuntimeError("coordinator_manifest_digest_mismatch")
+    if coordinator_manifest.get("schema") != COORDINATOR_MANIFEST_SCHEMA:
+        raise RuntimeError("coordinator_manifest_schema_mismatch")
+    if coordinator_manifest.get("contract_schema") != contract.SCHEMA:
+        raise RuntimeError("coordinator_manifest_contract_schema_mismatch")
+    _validate_worker_attestation(
+        worker_attestation,
+        expected_digest=worker_attestation_sha256,
+        coordinator_manifest=coordinator_manifest,
+        coordinator_manifest_sha256=coordinator_manifest_sha256,
+        contract=contract,
+    )
+    return {
+        "schema": EXECUTION_MANIFEST_SCHEMA,
+        "contract_schema": contract.SCHEMA,
+        "coordinator_manifest_sha256": coordinator_manifest_sha256,
+        "worker_attestation_sha256": worker_attestation_sha256,
+        "coordinator_manifest": coordinator_manifest,
+        "worker_attestation": worker_attestation,
+    }
+
+
+def validate_execution_manifest(
+    manifest: dict[str, Any],
+    *,
+    expected_digest: str,
+    contract: Any,
+    workdir: Path,
+) -> dict[str, Any]:
+    if not re.fullmatch(r"[0-9a-f]{64}", expected_digest):
+        raise RuntimeError("execution_manifest_digest_invalid")
+    if execution_manifest_digest(manifest) != expected_digest:
+        raise RuntimeError("execution_manifest_digest_mismatch")
+    if manifest.get("schema") != EXECUTION_MANIFEST_SCHEMA:
+        raise RuntimeError("execution_manifest_schema_mismatch")
+    if manifest.get("contract_schema") != contract.SCHEMA:
+        raise RuntimeError("execution_manifest_contract_schema_mismatch")
+    coordinator = manifest.get("coordinator_manifest")
+    coordinator_digest = str(manifest.get("coordinator_manifest_sha256", ""))
+    if not isinstance(coordinator, dict):
+        raise RuntimeError("coordinator_manifest_missing")
+    actual_tools = validate_coordinator_manifest_bytes(
+        coordinator,
+        expected_digest=coordinator_digest,
+        workdir=workdir,
+        contract_schema=contract.SCHEMA,
+    )
+    attestation = _validate_worker_attestation(
+        manifest.get("worker_attestation"),
+        expected_digest=str(manifest.get("worker_attestation_sha256", "")),
+        coordinator_manifest=coordinator,
+        coordinator_manifest_sha256=coordinator_digest,
+        contract=contract,
+    )
+    if attestation["tool_sha256"] != actual_tools:
+        raise RuntimeError("execution_manifest_tool_hash_mismatch")
+    if assert_source_identity(contract) != attestation["vllm_source_sha256"]:
+        raise RuntimeError("vllm_source_hash_mismatch")
+    actual_model = resolve_model_identity(contract.MODEL_PATH)
+    if actual_model != attestation["model_identity"]:
+        raise RuntimeError("model_identity_mismatch")
+    return attestation
 
 
 def assert_model_identity(contract: Any, manifest: dict[str, Any]) -> dict[str, Any]:
     actual = resolve_model_identity(contract.MODEL_PATH)
-    if actual != manifest.get("model_identity"):
+    attestation = manifest.get("worker_attestation")
+    expected = attestation.get("model_identity") if isinstance(attestation, dict) else None
+    if actual != expected:
         raise RuntimeError("model_identity_mismatch")
     return actual
+
+
+def model_identity_digest(identity: dict[str, Any]) -> str:
+    if identity.get("schema") == FLAT_MODEL_FINGERPRINT_SCHEMA:
+        return str(identity["fingerprint_sha256"])
+    return execution_manifest_digest(identity)
 
 
 def assert_benchmark_prompt_identity(
@@ -526,51 +939,6 @@ def assert_benchmark_prompt_identity(
     if actual != expected:
         raise RuntimeError(f"prompt_cohort_sha256_mismatch:{label}")
     return expected
-
-
-def verify_coordinator_checkout(
-    workdir: Path,
-    source_commit: str,
-    *,
-    contract_path: Path,
-    supervisor_path: Path,
-    benchmark_path: Path,
-    rank_analyzer_path: Path,
-) -> None:
-    head = _capture(
-        ["git", "rev-parse", "HEAD"],
-        cwd=workdir,
-        env=dict(os.environ),
-        allow_empty=False,
-    )
-    if head != source_commit:
-        raise RuntimeError(f"coordinator_head_mismatch:{head}!={source_commit}")
-    expected_paths = {
-        "contract": workdir / "scripts" / "analyze_phase466_low_overhead_probe.py",
-        "supervisor": workdir / "scripts" / "run_phase466_low_overhead_probe.py",
-        "benchmark": workdir / "scripts" / "run_openai_fixed_shape_benchmark.py",
-        "rank_analyzer": workdir / "scripts" / "analyze_phase466_rank_timing.py",
-    }
-    actual_paths = {
-        "contract": contract_path,
-        "supervisor": supervisor_path,
-        "benchmark": benchmark_path,
-        "rank_analyzer": rank_analyzer_path,
-    }
-    for name, expected in expected_paths.items():
-        if actual_paths[name].resolve() != expected.resolve():
-            raise RuntimeError(f"coordinator_tool_path_mismatch:{name}")
-    paths = [str(path.relative_to(workdir)) for path in expected_paths.values()]
-    _capture(
-        ["git", "diff", "--quiet", "HEAD", "--", *paths],
-        cwd=workdir,
-        env=dict(os.environ),
-    )
-    _capture(
-        ["git", "diff", "--cached", "--quiet", "HEAD", "--", *paths],
-        cwd=workdir,
-        env=dict(os.environ),
-    )
 
 
 def acquire_node_lock(path: Path = NODE_LOCK_PATH):
@@ -687,12 +1055,15 @@ class Supervisor:
         contract: Any,
         workdir: Path,
         artifact_root: Path,
-        source_commit: str,
         execution_manifest: dict[str, Any],
         execution_manifest_sha256: str,
     ) -> None:
-        if not re.fullmatch(r"[0-9a-f]{40}", source_commit):
-            raise ValueError("invalid_source_commit")
+        coordinator = execution_manifest.get("coordinator_manifest")
+        source_commit = (
+            coordinator.get("source_commit") if isinstance(coordinator, dict) else None
+        )
+        if not re.fullmatch(r"[0-9a-f]{40}", str(source_commit or "")):
+            raise ValueError("execution_manifest_source_commit_invalid")
         self.contract = contract
         self.workdir = workdir
         self.artifact_root = artifact_root
@@ -740,16 +1111,13 @@ class Supervisor:
             raise AbortRequested(self._abort_reason)
 
     def validate_tool_identity(self) -> dict[str, str]:
-        validate_execution_manifest(
+        attestation = validate_execution_manifest(
             self.execution_manifest,
             expected_digest=self.execution_manifest_sha256,
             contract=self.contract,
-            source_commit=self.source_commit,
-            supervisor_path=Path(__file__),
-            benchmark_path=self.workdir / "scripts" / "run_openai_fixed_shape_benchmark.py",
-            rank_analyzer_path=self.workdir / "scripts" / "analyze_phase466_rank_timing.py",
+            workdir=self.workdir,
         )
-        return _execution_tool_hashes(self.contract, self.workdir)
+        return dict(attestation["tool_sha256"])
 
     def validate_model_identity(self) -> dict[str, Any]:
         return assert_model_identity(self.contract, self.execution_manifest)
@@ -831,12 +1199,11 @@ class Supervisor:
         self._heartbeat_thread = None
 
     def preflight(self) -> dict[str, str]:
-        self.artifact_root.mkdir(parents=True, exist_ok=False)
-        self.owns_artifact_root = True
-        self.status("preflight", "running")
+        if self.artifact_root.exists():
+            raise RuntimeError(f"artifact_already_exists:{self.artifact_root}")
+        _assert_clean_worker(self.workdir, self.env, label="preflight")
         tooling_hashes = self.validate_tool_identity()
         model_identity = self.validate_model_identity()
-        _assert_clean_worker(self.workdir, self.env, label="preflight")
         version = _capture(
             ["python3", "-c", "import vllm; print(vllm.__version__)"],
             cwd=self.workdir,
@@ -848,19 +1215,27 @@ class Supervisor:
         gpu = _capture(
             [
                 "nvidia-smi",
-                "--query-gpu=name,memory.total,driver_version",
+                "--query-gpu=index,uuid,name,memory.total,driver_version",
                 "--format=csv,noheader,nounits",
             ],
             cwd=self.workdir,
             env=self.env,
             allow_empty=False,
         )
+        attestation = self.execution_manifest["worker_attestation"]
+        if gpu.splitlines() != attestation["gpu_identity"]["rows"]:
+            raise RuntimeError("gpu_identity_mismatch")
         hashes = assert_source_identity(self.contract)
-        assert_imported_vllm_source_paths(
+        imported_paths = assert_imported_vllm_source_paths(
             self.contract,
             cwd=self.workdir,
             env=self.env,
         )
+        if imported_paths != attestation["vllm_import_paths"]:
+            raise RuntimeError("vllm_import_path_mismatch")
+        self.artifact_root.mkdir(parents=True, exist_ok=False)
+        self.owns_artifact_root = True
+        self.status("preflight", "running")
         _write_json(
             self.artifact_root / "expected_execution_manifest.json",
             self.execution_manifest,
@@ -936,7 +1311,9 @@ class Supervisor:
         self.raise_if_aborted()
         run_start_tool_hashes = self.validate_tool_identity()
         run_start_model_identity = self.validate_model_identity()
-        prompt_identity = self.execution_manifest["prompt_cohort_sha256"].get(
+        prompt_identity = self.execution_manifest["worker_attestation"][
+            "prompt_cohort_sha256"
+        ].get(
             str(spec["id"])
         )
         if not isinstance(prompt_identity, dict):
@@ -1046,8 +1423,8 @@ class Supervisor:
                 "vllm_version": "0.19.0",
                 "execution_manifest_sha256": self.execution_manifest_sha256,
                 "execution_tool_sha256": run_end_tool_hashes,
-                "model_revision": run_end_model_identity["revision"],
-                "model_files_sha256": run_end_model_identity["files_sha256"],
+                "model_identity_schema": run_end_model_identity["schema"],
+                "model_identity_sha256": model_identity_digest(run_end_model_identity),
                 "warmup_prompt_cohort_sha256": prompt_identity["warmup"],
                 "prompt_cohort_sha256": prompt_identity["measurement"],
                 "measurement_start_after_iteration": {str(rank): value for rank, value in cutoffs.items()},
@@ -1139,7 +1516,6 @@ def run_all(
     *,
     workdir: Path,
     artifact_root: Path,
-    source_commit: str,
     execution_manifest: dict[str, Any],
     execution_manifest_sha256: str,
     node_lock_path: Path = NODE_LOCK_PATH,
@@ -1150,7 +1526,6 @@ def run_all(
         contract=contract,
         workdir=workdir,
         artifact_root=artifact_root,
-        source_commit=source_commit,
         execution_manifest=execution_manifest,
         execution_manifest_sha256=execution_manifest_sha256,
     )
@@ -1450,32 +1825,71 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workdir", type=Path, required=True)
     parser.add_argument("--artifact-root", type=Path)
-    parser.add_argument("--source-commit", required=True)
+    write_modes = parser.add_mutually_exclusive_group()
+    write_modes.add_argument("--write-coordinator-manifest", type=Path)
+    parser.add_argument("--coordinator-manifest", type=Path)
+    parser.add_argument("--coordinator-manifest-sha256")
+    write_modes.add_argument("--write-worker-attestation", type=Path)
+    parser.add_argument("--worker-attestation", type=Path)
+    parser.add_argument("--worker-attestation-sha256")
     parser.add_argument("--expected-execution-manifest", type=Path)
     parser.add_argument("--expected-execution-manifest-sha256")
-    parser.add_argument("--write-execution-manifest", type=Path)
+    write_modes.add_argument("--write-execution-manifest", type=Path)
     args = parser.parse_args()
     workdir = args.workdir.resolve()
     supervisor_path = Path(__file__).resolve()
     contract_path = supervisor_path.with_name("analyze_phase466_low_overhead_probe.py")
     benchmark_path = workdir / "scripts" / "run_openai_fixed_shape_benchmark.py"
-    rank_analyzer_path = workdir / "scripts" / "analyze_phase466_rank_timing.py"
     contract = _load_contract(contract_path)
-    if args.write_execution_manifest is not None:
-        verify_coordinator_checkout(
-            workdir,
-            args.source_commit,
-            contract_path=contract_path,
-            supervisor_path=supervisor_path,
-            benchmark_path=benchmark_path,
-            rank_analyzer_path=rank_analyzer_path,
+    if args.write_coordinator_manifest is not None:
+        manifest = build_coordinator_manifest(contract, workdir=workdir)
+        _write_json(args.write_coordinator_manifest, manifest)
+        print(execution_manifest_digest(manifest))
+        return 0
+    if args.write_worker_attestation is not None:
+        if args.coordinator_manifest is None or args.coordinator_manifest_sha256 is None:
+            parser.error(
+                "--coordinator-manifest and --coordinator-manifest-sha256 are required"
+            )
+        coordinator = json.loads(
+            args.coordinator_manifest.read_text(encoding="utf-8")
         )
-        manifest = build_execution_manifest(
+        if not isinstance(coordinator, dict):
+            raise ValueError("coordinator_manifest_must_be_object")
+        _assert_clean_worker(workdir, _runtime_env(), label="identity_preflight_before")
+        attestation = build_worker_attestation(
             contract,
-            source_commit=args.source_commit,
-            supervisor_path=supervisor_path,
+            coordinator_manifest=coordinator,
+            coordinator_manifest_sha256=args.coordinator_manifest_sha256,
+            workdir=workdir,
             benchmark_path=benchmark_path,
-            rank_analyzer_path=rank_analyzer_path,
+        )
+        _assert_clean_worker(workdir, _runtime_env(), label="identity_preflight_after")
+        _write_json(args.write_worker_attestation, attestation)
+        print(execution_manifest_digest(attestation))
+        return 0
+    if args.write_execution_manifest is not None:
+        if (
+            args.coordinator_manifest is None
+            or args.coordinator_manifest_sha256 is None
+            or args.worker_attestation is None
+            or args.worker_attestation_sha256 is None
+        ):
+            parser.error("coordinator and worker attestation inputs are required")
+        coordinator = json.loads(
+            args.coordinator_manifest.read_text(encoding="utf-8")
+        )
+        attestation = json.loads(
+            args.worker_attestation.read_text(encoding="utf-8")
+        )
+        if not isinstance(coordinator, dict) or not isinstance(attestation, dict):
+            raise ValueError("manifest_inputs_must_be_objects")
+        manifest = compose_execution_manifest(
+            contract,
+            coordinator_manifest=coordinator,
+            coordinator_manifest_sha256=args.coordinator_manifest_sha256,
+            worker_attestation=attestation,
+            worker_attestation_sha256=args.worker_attestation_sha256,
         )
         _write_json(args.write_execution_manifest, manifest)
         print(execution_manifest_digest(manifest))
@@ -1493,7 +1907,6 @@ def main() -> int:
         contract,
         workdir=workdir,
         artifact_root=args.artifact_root.resolve(),
-        source_commit=args.source_commit,
         execution_manifest=manifest,
         execution_manifest_sha256=args.expected_execution_manifest_sha256,
     )

@@ -273,6 +273,30 @@ def test_route_selection_rejects_pass_without_evaluable_coverage() -> None:
         analysis.select_route(judgements, coverage=coverage)
 
 
+def test_route_selection_rejects_disproved_without_evaluable_coverage() -> None:
+    analysis = _load_module()
+    selected = "dp_rank_synchronization_asymmetry"
+    judgements = {
+        candidate: "PASS" if candidate == selected else "DISPROVED"
+        for candidate in analysis.CANDIDATES
+    }
+    coverage = {
+        "candidate_coverage": {
+            candidate: {
+                "status": (
+                    "EVALUABLE"
+                    if candidate == selected
+                    else "INCONCLUSIVE_MISSING_FIELDS"
+                )
+            }
+            for candidate in analysis.CANDIDATES
+        }
+    }
+
+    with pytest.raises(ValueError, match="disproved_without_evaluable_coverage"):
+        analysis.select_route(judgements, coverage=coverage)
+
+
 def test_real_artifact_root_requires_passed_gate_and_exact_three_scenarios(
     tmp_path: Path,
 ) -> None:
@@ -344,25 +368,57 @@ def _write_iteration_csv(path: Path, row: dict[str, object]) -> None:
         writer.writerow(row)
 
 
-def test_real_artifact_root_rejects_iteration_csv_tampering(tmp_path: Path) -> None:
-    analysis = _load_module()
-    manifest = {
-        "schema": "phase466_execution_manifest_v2",
-        "tool_sha256": {
-            "contract": "1" * 64,
-            "supervisor": "2" * 64,
-            "benchmark": "3" * 64,
-            "rank_analyzer": "4" * 64,
+def _execution_manifest_v3(analysis) -> dict[str, object]:
+    tool_hashes = {
+        "contract": "1" * 64,
+        "supervisor": "2" * 64,
+        "benchmark": "3" * 64,
+        "rank_analyzer": "4" * 64,
+    }
+    coordinator = {
+        "schema": "phase466_coordinator_manifest_v1",
+        "contract_schema": "phase466_rank_timing_v3",
+        "source_commit": "a" * 40,
+        "tools": {
+            name: {"path": f"scripts/{name}.py", "sha256": digest}
+            for name, digest in tool_hashes.items()
         },
-        "model_identity": {
-            "revision": "a" * 40,
-            "files_sha256": {
-                "config.json": "5" * 64,
-                "tokenizer_config.json": "6" * 64,
-                "tiktoken.model": "7" * 64,
-                "tokenization_kimi.py": "8" * 64,
-            },
-        },
+    }
+    coordinator_digest = analysis.execution_manifest_digest(coordinator)
+    model_payload = {
+        "schema": "phase466_flat_model_fingerprint_v1",
+        "identity_scope": "same_flat_mirror_instance",
+        "official_immutable_revision": False,
+        "metadata_files": [
+            {"path": ".msc", "sha256": "5" * 64},
+            {"path": ".mv", "sha256": "6" * 64},
+        ],
+        "runtime_files": [
+            {"path": "model.safetensors.index.json", "sha256": "7" * 64}
+        ],
+        "shards": [
+            {
+                "path": "model-00001-of-00001.safetensors",
+                "size": 10,
+                "mtime_ns": 1,
+                "header_sha256": "8" * 64,
+            }
+        ],
+    }
+    model_identity = dict(model_payload)
+    model_identity["fingerprint_sha256"] = analysis.execution_manifest_digest(
+        model_payload
+    )
+    attestation = {
+        "schema": "phase466_worker_attestation_v1",
+        "contract_schema": "phase466_rank_timing_v3",
+        "coordinator_manifest_sha256": coordinator_digest,
+        "tool_sha256": tool_hashes,
+        "vllm_version": "0.19.0",
+        "vllm_source_sha256": {},
+        "vllm_import_paths": [],
+        "gpu_identity": {"rows": ["NVIDIA H200, 143771, 575.57.08"]},
+        "model_identity": model_identity,
         "prompt_cohort_sha256": {
             f"formal-{scenario}": {
                 "warmup": "8" * 64,
@@ -370,7 +426,27 @@ def test_real_artifact_root_rejects_iteration_csv_tampering(tmp_path: Path) -> N
             }
             for scenario in analysis.FORMAL_SCENARIOS
         },
+        "diagnostic_only": True,
+        "valid_for_default": False,
+        "perf_database": False,
     }
+    attestation_digest = analysis.execution_manifest_digest(attestation)
+    return {
+        "schema": "phase466_execution_manifest_v3",
+        "contract_schema": "phase466_rank_timing_v3",
+        "coordinator_manifest_sha256": coordinator_digest,
+        "worker_attestation_sha256": attestation_digest,
+        "coordinator_manifest": coordinator,
+        "worker_attestation": attestation,
+    }
+
+
+def test_real_artifact_root_rejects_iteration_csv_tampering(tmp_path: Path) -> None:
+    analysis = _load_module()
+    manifest = _execution_manifest_v3(analysis)
+    attestation = manifest["worker_attestation"]
+    model_identity = attestation["model_identity"]
+    tool_hashes = attestation["tool_sha256"]
     digest = analysis.execution_manifest_digest(manifest)
     gate = {
         "status": "PASS",
@@ -397,9 +473,9 @@ def test_real_artifact_root_rejects_iteration_csv_tampering(tmp_path: Path) -> N
                     "id": f"formal-{scenario}",
                     "execution_manifest_sha256": digest,
                     "overhead_gate_sha256": gate_digest,
-                    "execution_tool_sha256": manifest["tool_sha256"],
-                    "model_revision": manifest["model_identity"]["revision"],
-                    "model_files_sha256": manifest["model_identity"]["files_sha256"],
+                    "execution_tool_sha256": tool_hashes,
+                    "model_identity_schema": model_identity["schema"],
+                    "model_identity_sha256": model_identity["fingerprint_sha256"],
                     "warmup_prompt_cohort_sha256": "8" * 64,
                     "prompt_cohort_sha256": "9" * 64,
                 }
@@ -408,7 +484,7 @@ def test_real_artifact_root_rejects_iteration_csv_tampering(tmp_path: Path) -> N
         (run_dir / "tooling.sha256").write_text(
             "".join(
                 f"{value}  {key}\n"
-                for key, value in manifest["tool_sha256"].items()
+                for key, value in tool_hashes.items()
             )
         )
         (run_dir / "prompt_identity.json").write_text(

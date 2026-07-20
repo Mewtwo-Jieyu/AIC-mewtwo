@@ -12,7 +12,7 @@ per-request 高频 composition 事件。本轮只形成 rank-timing 诊断，Def
 | execution branch | `feature/kimi-vllm019-cb-sim-post-baseline` |
 | hardware/runtime | H200 SXM / vLLM 0.19.0 / Kimi-K2.5 |
 | implementation | stock vLLM aggregate iteration details; no source patch |
-| local result | 80 Phase466 tests passed; default simulator validation passed |
+| local result | 99 Phase466/benchmark tests passed; default simulator validation passed |
 | remote result | fresh v3 run pending |
 | flags | `diagnostic_only=true`; `valid_for_default=false`; `perf_database=false` |
 
@@ -39,7 +39,8 @@ progress windows; absolute clocks and naked iteration ids are not join keys.
 | Item | Behavior |
 |---|---|
 | supervisor | fixed node lock, serialized runs, atomic status updates and a 30-second heartbeat |
-| preflight | clean GPU/process state, exact vLLM version/GPU/import paths, immutable model revision and content-addressed manifest |
+| identity preflight | no artifact and no vLLM service; validate uploaded bytes, vLLM/GPU/prompt identity, and snapshot or flat-mirror fingerprint |
+| execution preflight | only accepts `phase466_execution_manifest_v3`; then creates the fresh artifact root and rechecks clean GPU/process state |
 | cleanup | terminate the service process group, then require empty GPU/process residue |
 | failure handling | normal benchmark failure may continue to the next preregistered run; cleanup or integrity failure stops all runs |
 | gate validation | validates all 6 complete pairs; the old single-pair gate entry no longer exists |
