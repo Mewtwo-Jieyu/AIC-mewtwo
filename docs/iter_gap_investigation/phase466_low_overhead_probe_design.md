@@ -12,7 +12,7 @@ per-request 高频 composition 事件。本轮只形成 rank-timing 诊断，Def
 | execution branch | `feature/kimi-vllm019-cb-sim-post-baseline` |
 | hardware/runtime | H200 SXM / vLLM 0.19.0 / Kimi-K2.5 |
 | implementation | stock vLLM aggregate iteration details; no source patch |
-| local result | 100 Phase466/benchmark tests passed; default simulator validation passed |
+| local result | 101 Phase466/benchmark tests passed; default simulator validation passed |
 | remote result | fresh v3 run pending |
 | flags | `diagnostic_only=true`; `valid_for_default=false`; `perf_database=false` |
 

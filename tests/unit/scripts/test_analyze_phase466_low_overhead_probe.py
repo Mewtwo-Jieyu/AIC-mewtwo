@@ -187,7 +187,7 @@ def test_parser_rejects_duplicate_rank_iteration() -> None:
         )
 
 
-def test_parser_uses_closest_engine_core_prefix_on_interleaved_line() -> None:
+def test_parser_resolves_interleaved_prefixes_by_unique_rank_iteration() -> None:
     phase466 = _load_module()
     text = "\n".join(
         [
@@ -198,6 +198,13 @@ def test_parser_uses_closest_engine_core_prefix_on_interleaved_line() -> None:
             "(EngineCore_DP1 pid=11) INFO Iteration(10573): "
             "0 context requests, 0 context tokens, 15 generation requests, "
             "15 generation tokens, iteration elapsed time: 19.83 ms",
+            "(EngineCore_DP0 pid=10) (EngineCore_DP1 pid=11) INFO "
+            "Iteration(10574): 2 context requests, 16000 context tokens, "
+            "3 generation requests, 3 generation tokens, "
+            "iteration elapsed time: 2209.09 ms",
+            "(EngineCore_DP1 pid=11) INFO Iteration(10574): "
+            "9 context requests, 65533 context tokens, 3 generation requests, "
+            "3 generation tokens, iteration elapsed time: 9231.22 ms",
         ]
     )
 
@@ -211,7 +218,27 @@ def test_parser_uses_closest_engine_core_prefix_on_interleaved_line() -> None:
     assert [(row.rank_id, row.iteration_seq) for row in rows] == [
         (0, 10573),
         (1, 10573),
+        (0, 10574),
+        (1, 10574),
     ]
+
+
+def test_parser_rejects_interleaved_prefix_without_unique_assignment() -> None:
+    phase466 = _load_module()
+    text = (
+        "(EngineCore_DP0 pid=10) (EngineCore_DP1 pid=11) INFO "
+        "Iteration(10573): 0 context requests, 0 context tokens, "
+        "15 generation requests, 15 generation tokens, "
+        "iteration elapsed time: 20.01 ms"
+    )
+
+    with pytest.raises(ValueError, match="ambiguous_rank_iteration"):
+        phase466.parse_iteration_rows(
+            text,
+            run_id="unit-real",
+            source="real",
+            workload_cohort_digest=_cohort_digest(),
+        )
 
 
 def test_plan_records_source_environment_and_artifact_contract() -> None:

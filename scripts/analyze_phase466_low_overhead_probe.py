@@ -503,19 +503,60 @@ def parse_iteration_rows(
     after_iteration_by_rank: dict[int, int] | None = None,
     through_iteration_by_rank: dict[int, int] | None = None,
 ) -> list[IterationRow]:
+    parsed: list[tuple[re.Match[str], set[int]]] = []
+    by_iteration: dict[int, list[int]] = defaultdict(list)
+    for line in text.splitlines():
+        match = ITERATION_RE.search(line)
+        if not match:
+            continue
+        candidate_ranks = {
+            int(prefix.group("rank") or 0)
+            for prefix in ENGINE_CORE_PREFIX_RE.finditer(line, 0, match.start())
+        }
+        if not candidate_ranks:
+            continue
+        parsed_index = len(parsed)
+        parsed.append((match, candidate_ranks))
+        by_iteration[int(match.group("iteration"))].append(parsed_index)
+
+    resolved_ranks: dict[int, int] = {}
+    for iteration_seq, indexes in by_iteration.items():
+        occupied: set[int] = set()
+        pending: list[int] = []
+        for index in indexes:
+            candidates = parsed[index][1]
+            if len(candidates) == 1:
+                rank = next(iter(candidates))
+                resolved_ranks[index] = rank
+                occupied.add(rank)
+            else:
+                pending.append(index)
+        while pending:
+            unresolved: list[int] = []
+            progress = False
+            for index in pending:
+                available = parsed[index][1] - occupied
+                if len(available) == 1:
+                    rank = next(iter(available))
+                    resolved_ranks[index] = rank
+                    occupied.add(rank)
+                    progress = True
+                else:
+                    unresolved.append(index)
+            if not progress:
+                candidates = [sorted(parsed[index][1]) for index in unresolved]
+                raise ValueError(
+                    f"ambiguous_rank_iteration:{iteration_seq}:{candidates}"
+                )
+            pending = unresolved
+
     rows: list[IterationRow] = []
     seen: set[tuple[int, int]] = set()
     elapsed_by_rank: dict[int, float] = defaultdict(float)
     tokens_by_rank: dict[int, int] = defaultdict(int)
     observed_by_rank: dict[int, list[int]] = defaultdict(list)
-    for line in text.splitlines():
-        match = ITERATION_RE.search(line)
-        if not match:
-            continue
-        prefixes = list(ENGINE_CORE_PREFIX_RE.finditer(line, 0, match.start()))
-        if not prefixes:
-            continue
-        rank = int(prefixes[-1].group("rank") or 0)
+    for index, (match, _) in enumerate(parsed):
+        rank = resolved_ranks[index]
         iteration_seq = int(match.group("iteration"))
         if after_iteration_by_rank is not None:
             if rank not in after_iteration_by_rank:
