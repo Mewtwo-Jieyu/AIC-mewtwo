@@ -515,9 +515,30 @@ def parse_iteration_rows(
         }
         if not candidate_ranks:
             continue
+        iteration_seq = int(match.group("iteration"))
+        if after_iteration_by_rank is not None:
+            missing = candidate_ranks - set(after_iteration_by_rank)
+            if missing:
+                raise ValueError(f"missing_warmup_cutoff_rank:{min(missing)}")
+            candidate_ranks = {
+                rank
+                for rank in candidate_ranks
+                if iteration_seq > after_iteration_by_rank[rank]
+            }
+        if through_iteration_by_rank is not None:
+            missing = candidate_ranks - set(through_iteration_by_rank)
+            if missing:
+                raise ValueError(f"missing_measurement_end_rank:{min(missing)}")
+            candidate_ranks = {
+                rank
+                for rank in candidate_ranks
+                if iteration_seq <= through_iteration_by_rank[rank]
+            }
+        if not candidate_ranks:
+            continue
         parsed_index = len(parsed)
         parsed.append((match, candidate_ranks))
-        by_iteration[int(match.group("iteration"))].append(parsed_index)
+        by_iteration[iteration_seq].append(parsed_index)
 
     resolved_ranks: dict[int, int] = {}
     for iteration_seq, indexes in by_iteration.items():

@@ -238,7 +238,38 @@ def test_parser_rejects_interleaved_prefix_without_unique_assignment() -> None:
             run_id="unit-real",
             source="real",
             workload_cohort_digest=_cohort_digest(),
+            after_iteration_by_rank={0: 10572, 1: 10572},
+            through_iteration_by_rank={0: 10573, 1: 10573},
         )
+
+
+def test_parser_excludes_ambiguous_prefixes_outside_rank_measurement_window() -> None:
+    phase466 = _load_module()
+    text = "\n".join(
+        [
+            "(EngineCore_DP0 pid=10) (EngineCore_DP1 pid=11) INFO "
+            "Iteration(2): 0 context requests, 0 context tokens, "
+            "1 generation requests, 1 generation tokens, "
+            "iteration elapsed time: 2.0 ms",
+            "(EngineCore_DP0 pid=10) INFO Iteration(11): "
+            "0 context requests, 0 context tokens, 1 generation requests, "
+            "1 generation tokens, iteration elapsed time: 3.0 ms",
+            "(EngineCore_DP1 pid=11) INFO Iteration(11): "
+            "0 context requests, 0 context tokens, 1 generation requests, "
+            "1 generation tokens, iteration elapsed time: 4.0 ms",
+        ]
+    )
+
+    rows = phase466.parse_iteration_rows(
+        text,
+        run_id="unit-real",
+        source="real",
+        workload_cohort_digest=_cohort_digest(),
+        after_iteration_by_rank={0: 10, 1: 10},
+        through_iteration_by_rank={0: 11, 1: 11},
+    )
+
+    assert [(row.rank_id, row.iteration_seq) for row in rows] == [(0, 11), (1, 11)]
 
 
 def test_plan_records_source_environment_and_artifact_contract() -> None:
