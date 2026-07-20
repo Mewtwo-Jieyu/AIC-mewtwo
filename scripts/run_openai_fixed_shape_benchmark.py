@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
+import struct
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -270,6 +272,21 @@ def build_prompt_variants(
     raise ValueError(f"unknown prompt variant mode: {mode}")
 
 
+def prompt_cohort_sha256(
+    prompt_variants: list[tuple[str, list[int]]], *, num_prompts: int
+) -> str:
+    """Hash the exact prompt token-id sequence selected for every request."""
+    if num_prompts <= 0 or not prompt_variants:
+        raise ValueError("prompt cohort requires prompts and variants")
+    digest = hashlib.sha256(b"aic-prompt-cohort-v1\0")
+    for request_index in range(num_prompts):
+        token_ids = prompt_variants[request_index % len(prompt_variants)][1]
+        digest.update(struct.pack(">QQ", request_index, len(token_ids)))
+        for token_id in token_ids:
+            digest.update(struct.pack(">q", int(token_id)))
+    return digest.hexdigest()
+
+
 async def _post_completion(
     session: aiohttp.ClientSession,
     endpoint: str,
@@ -475,6 +492,9 @@ async def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
         max(1, args.num_prompts),
         args.prompt_variant_mode,
     )
+    prompt_digest = prompt_cohort_sha256(
+        prompt_variants, num_prompts=args.num_prompts
+    )
     endpoint = f"{_get_base_url(args.host, args.port)}/v1/completions"
     timeout = aiohttp.ClientTimeout(total=args.timeout_s)
 
@@ -576,6 +596,7 @@ async def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
         "use_prompt_token_ids": use_prompt_token_ids,
         "prompt_variant_mode": args.prompt_variant_mode,
         "prompt_variant_count": len(prompt_variants),
+        "prompt_cohort_sha256": prompt_digest,
         "unique_prompt_prefixes": len({tuple(ids[: min(64, len(ids))]) for _, ids in prompt_variants}),
         "wall_s": wall_s,
         "ok_requests": len(ok_records),

@@ -1,19 +1,19 @@
 # Phase466 low-overhead probe design
 
-结论：本地执行链已经补齐，但第一次 GPU 试跑因执行 contract 漏洞被 review 主动终止，没有有效 gate。probe 默认关闭，只使用 vLLM 0.19.0 自带的
+结论：Phase466 v3 的本地执行契约已闭合。probe 默认关闭，只使用 vLLM 0.19.0 自带的
 `--enable-logging-iteration-details` 和 Prometheus preemption counter，不修改 vLLM 源码，不采
-per-request 高频 composition 事件。当前状态是 `BLOCKED_BEFORE_RERUN`，Default AIC 继续 `No-Go`。
+per-request 高频 composition 事件。本轮只形成 rank-timing 诊断，Default AIC 继续 `No-Go`。
 
 ## Scope
 
 | 项 | 值 |
 |---|---|
 | integration base | `822ae421a0b79eb0a69e8f59a2c4d09cba327eaa` |
-| execution branch | `experiment/phase466-probe-execution-hardening` |
+| execution branch | `feature/kimi-vllm019-cb-sim-post-baseline` |
 | hardware/runtime | H200 SXM / vLLM 0.19.0 / Kimi-K2.5 |
 | implementation | stock vLLM aggregate iteration details; no source patch |
-| local result | analyzer, supervisor, simulator exporter and exit gate PASS |
-| remote result | `ABORTED_BY_REVIEW`; no valid gate or formal result |
+| local result | 80 Phase466 tests passed; default simulator validation passed |
+| remote result | fresh v3 run pending |
 | flags | `diagnostic_only=true`; `valid_for_default=false`; `perf_database=false` |
 
 ## Measurement contract
@@ -39,13 +39,14 @@ progress windows; absolute clocks and naked iteration ids are not join keys.
 | Item | Behavior |
 |---|---|
 | supervisor | fixed node lock, serialized runs, atomic status updates and a 30-second heartbeat |
-| preflight | clean GPU/process state, exact vLLM version/GPU/import paths and content-addressed coordinator manifest |
+| preflight | clean GPU/process state, exact vLLM version/GPU/import paths, immutable model revision and content-addressed manifest |
 | cleanup | terminate the service process group, then require empty GPU/process residue |
 | failure handling | normal benchmark failure may continue to the next preregistered run; cleanup or integrity failure stops all runs |
 | gate validation | validates all 6 complete pairs; the old single-pair gate entry no longer exists |
-| formal validation | exact scenario, request/token counts, rank set, source/tool hashes, measurement endpoint, gate digest and CSV identity |
+| formal validation | exact scenario, request/token counts, prompt-token digest, rank set, source/tool/model hashes, gate digest and CSV identity |
 | simulator export | exact H200/vLLM 0.19.0 database; only valid per-rank paths use `rank_scope=dp_rank` |
-| exit review | exact three scenarios; every rank must join on `(rank_id, progress_window_id)`; blank or incomplete fields block `PASS` |
+| rank timing | TP8 is a single-rank control; DP2 emits rank0/rank1 progress windows, elapsed/token, token/request mix and preemptions |
+| exit review | separate `phase466_exit_review_v2`; one scenario selects only with one `PASS` and two `DISPROVED` |
 
 The supervisor never reruns a failed measurement automatically. An interrupted or invalid artifact remains evidence
 of that attempt and requires review before another artifact root is started.
@@ -56,11 +57,8 @@ The stock probe exposes identity, rank, iteration elapsed time, aggregate prefil
 preemption deltas and progress windows. It does not expose prefill chunk histograms, fresh/recompute/resume state,
 decode KV sums, cudagraph mode or a simulator serving-state key.
 
-Therefore a passing overhead gate and three valid formal runs still cannot satisfy the current preregistered exit contract.
-The real stock rows do not contain `running_count`, `waiting_count` or `completed_request_count`; the bt65536 DP simulator
-also has no validated per-rank trace because the formal backend deliberately retains its legacy representative-replica path.
-Missing fields remain
-`INCONCLUSIVE_MISSING_FIELDS`; fields from one source cannot satisfy requirements on the other source.
+Therefore a passing overhead gate and three valid formal runs only produce `DIAGNOSTIC_COMPLETE`.
+They do not produce a model attribution `PASS`, do not execute route selection and do not synthesize DP2-bt65536 simulator rows.
 
 | Prior evidence | Reuse decision |
 |---|---|
@@ -78,6 +76,6 @@ Missing fields remain
 | `git diff --check` | PASS |
 | SSH/GPU | invalid partial attempt stopped; no residue; not gate evidence |
 
-The next action is a design amendment for the two evidence gaps, not another GPU run. After the amendment passes review,
-the first remote action is a fresh serialized six-pair gate. This design is not GPU evidence, not a PerfDatabase row,
+The next action is a fresh serialized six-pair gate on the approved worker. A non-`PASS` gate stops before N512;
+`PASS` runs exactly the three real scenarios. This design is not GPU evidence, not a PerfDatabase row,
 not a latency model and not evidence for enabling Default AIC.

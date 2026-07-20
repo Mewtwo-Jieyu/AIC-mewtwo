@@ -55,6 +55,19 @@ def _cohort_digest() -> str:
     return "a" * 64
 
 
+def _identity_meta(prompt_digest: str = "d" * 64) -> dict[str, object]:
+    return {
+        "model_revision": "a" * 40,
+        "model_files_sha256": {
+            "config.json": "1" * 64,
+            "tokenizer_config.json": "2" * 64,
+            "tokenizer.json": "3" * 64,
+        },
+        "warmup_prompt_cohort_sha256": "c" * 64,
+        "prompt_cohort_sha256": prompt_digest,
+    }
+
+
 def _pass_gate(phase466):
     return phase466.evaluate_paired_overhead_gate(
         [
@@ -216,13 +229,13 @@ def test_summary_rejects_missing_alignment_identity() -> None:
         )
 
 
-def test_v2_plan_uses_six_counterbalanced_pairs_and_exact_warmup() -> None:
+def test_v3_plan_uses_six_counterbalanced_pairs_and_exact_warmup() -> None:
     phase466 = _load_module()
 
     plan = phase466.build_run_plan()
     overhead = [run for run in plan["runs"] if run["stage"] == "overhead"]
 
-    assert plan["schema"] == "phase466_stock_probe_v2"
+    assert plan["schema"] == "phase466_rank_timing_v3"
     assert len(overhead) == 12
     assert [run["probe_mode"] for run in overhead] == [
         "off",
@@ -427,6 +440,7 @@ def test_overhead_meta_requires_exact_run_identity_and_recomputed_digest(tmp_pat
                 "execution_manifest_sha256": "c" * 64,
                 "measurement_start_after_iteration": {"0": 0, "1": 0},
                 "measurement_end_at_iteration": {"0": 1, "1": 1},
+                **_identity_meta(),
             }
         )
         (root / "meta.json").write_text(json.dumps(meta) + "\n")
@@ -438,6 +452,7 @@ def test_overhead_meta_requires_exact_run_identity_and_recomputed_digest(tmp_pat
                     "failed_requests": 0,
                     "total_prompt_tokens": 1024000,
                     "total_completion_tokens": 256000,
+                    "prompt_cohort_sha256": "d" * 64,
                 }
             )
             + "\n"
@@ -464,7 +479,7 @@ def test_overhead_meta_requires_exact_run_identity_and_recomputed_digest(tmp_pat
         phase466.validate_overhead_pair_artifacts(off, on, off_spec=off_spec, on_spec=on_spec)
 
 
-def test_formal_collection_requires_complete_passed_v2_gate() -> None:
+def test_formal_collection_requires_complete_passed_v3_gate() -> None:
     phase466 = _load_module()
 
     phase466.require_formal_collection(_pass_gate(phase466))
@@ -504,6 +519,7 @@ def test_formal_artifact_validation_enforces_gate_meta_tokens_and_rank_set(tmp_p
             "measurement_start_after_iteration": {"0": 0, "1": 0},
             "measurement_end_at_iteration": {"0": 1, "1": 1},
             "overhead_gate_sha256": phase466.overhead_gate_digest(gate),
+            **_identity_meta(),
         }
     )
     (root / "meta.json").write_text(json.dumps(meta) + "\n")
@@ -515,6 +531,7 @@ def test_formal_artifact_validation_enforces_gate_meta_tokens_and_rank_set(tmp_p
                 "failed_requests": 0,
                 "total_prompt_tokens": 512 * 8000,
                 "total_completion_tokens": 512 * 2000,
+                "prompt_cohort_sha256": "d" * 64,
             }
         )
         + "\n"
@@ -532,7 +549,7 @@ def test_formal_artifact_validation_enforces_gate_meta_tokens_and_rank_set(tmp_p
     (root / "metrics_after.prom").write_text(_preemption_metrics(dp0=1, dp1=2))
 
     result = phase466.validate_formal_artifacts(root, spec=spec, gate=gate)
-    assert result["status"] == "PASS"
+    assert result["status"] == "ARTIFACT_VALID"
     assert [row["rank_id"] for row in result["rank_summary"]] == [0, 1]
 
     bad_gate = dict(gate)

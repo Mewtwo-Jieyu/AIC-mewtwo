@@ -27,7 +27,9 @@ PROCESS_PATTERN = (
     "VLLM::APIServer|VLLM::EngineCore"
 )
 NODE_LOCK_PATH = Path("/tmp/phase466_low_overhead_probe.lock")
-EXECUTION_MANIFEST_SCHEMA = "phase466_execution_manifest_v1"
+EXECUTION_MANIFEST_SCHEMA = "phase466_execution_manifest_v2"
+MODEL_IDENTITY_FILES = ("config.json", "tokenizer_config.json", "tokenizer.json")
+MODEL_REVISION_RE = re.compile(r"[0-9a-f]{40,64}")
 LD_LIBRARY_PATH = (
     "/nccl/lib:/usr/local/cuda/lib64:/usr/local/nvidia/lib:"
     "/usr/local/nvidia/lib64:/usr/lib/x86_64-linux-gnu:"
@@ -59,6 +61,9 @@ INTEGRITY_ERRORS = {
     "missing_iteration_rank_rows",
     "execution_manifest",
     "execution_tool_hash_mismatch",
+    "model_identity",
+    "model_revision",
+    "prompt_cohort_sha256",
 }
 
 
@@ -104,6 +109,15 @@ def validate_execution_plan(plan: dict[str, Any]) -> dict[str, list[dict[str, An
     if [str(run.get("scenario")) for run in formal] != expected_formal:
         raise ValueError("execution_plan_formal_order_mismatch")
     return {"overhead_runs": overhead, "formal_runs": formal}
+
+
+def formal_runs_for_gate(
+    gate: dict[str, Any],
+    validated: dict[str, list[dict[str, Any]]],
+) -> list[dict[str, Any]]:
+    if gate.get("status") != "PASS":
+        return []
+    return validated["formal_runs"]
 
 
 def failure_action(
@@ -273,6 +287,69 @@ def assert_imported_vllm_source_paths(
         raise RuntimeError(f"vllm_import_path_mismatch:{paths}!={expected}")
 
 
+def resolve_model_identity(model_path: str | Path) -> dict[str, Any]:
+    root = Path(model_path)
+    if not root.exists():
+        raise RuntimeError(f"model_identity_path_missing:{root}")
+    resolved = root.resolve()
+    revision = ""
+    snapshot = resolved
+    if resolved.parent.name == "snapshots" and MODEL_REVISION_RE.fullmatch(
+        resolved.name
+    ):
+        revision = resolved.name
+    else:
+        ref = root / "refs" / "main"
+        if not ref.is_file():
+            raise RuntimeError("model_revision_unresolved")
+        revision = ref.read_text(encoding="utf-8").strip()
+        if not MODEL_REVISION_RE.fullmatch(revision):
+            raise RuntimeError("model_revision_invalid")
+        snapshot = (root / "snapshots" / revision).resolve()
+    if not snapshot.is_dir():
+        raise RuntimeError(f"model_snapshot_missing:{snapshot}")
+    file_hashes: dict[str, str] = {}
+    for filename in MODEL_IDENTITY_FILES:
+        path = snapshot / filename
+        if not path.is_file():
+            raise RuntimeError(f"model_identity_file_missing:{filename}")
+        file_hashes[filename] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return {
+        "model_path": str(root),
+        "snapshot_path": str(snapshot),
+        "revision": revision,
+        "files_sha256": file_hashes,
+    }
+
+
+def expected_prompt_cohort_sha256(
+    contract: Any, *, benchmark_path: Path
+) -> dict[str, dict[str, str]]:
+    benchmark = _load_contract(benchmark_path)
+    identities: dict[str, dict[str, str]] = {}
+    cached: dict[tuple[int, int], str] = {}
+    for run in contract.build_run_plan()["runs"]:
+        per_run: dict[str, str] = {}
+        for label, num_prompts in (
+            ("warmup", int(run["warmup_num_prompts"])),
+            ("measurement", int(run["num_prompts"])),
+        ):
+            key = (int(run["input_len"]), num_prompts)
+            if key not in cached:
+                variants = benchmark.build_prompt_variants(
+                    contract.MODEL_PATH,
+                    key[0],
+                    max(1, key[1]),
+                    "fixed",
+                )
+                cached[key] = benchmark.prompt_cohort_sha256(
+                    variants, num_prompts=key[1]
+                )
+            per_run[label] = cached[key]
+        identities[str(run["id"])] = per_run
+    return identities
+
+
 def _write_source_hashes(path: Path, hashes: dict[str, str]) -> None:
     path.write_text(
         "".join(f"{digest}  {source}\n" for source, digest in hashes.items()),
@@ -285,11 +362,13 @@ def _tool_paths(
     *,
     supervisor_path: Path,
     benchmark_path: Path,
+    rank_analyzer_path: Path,
 ) -> dict[str, Path]:
     return {
         "contract": Path(contract.__file__).resolve(),
         "supervisor": supervisor_path.resolve(),
         "benchmark": benchmark_path.resolve(),
+        "rank_analyzer": rank_analyzer_path.resolve(),
     }
 
 
@@ -303,6 +382,7 @@ def _execution_tool_hashes(
         contract,
         supervisor_path=supervisor_path or Path(__file__),
         benchmark_path=workdir / "scripts" / "run_openai_fixed_shape_benchmark.py",
+        rank_analyzer_path=workdir / "scripts" / "analyze_phase466_rank_timing.py",
     )
     hashes: dict[str, str] = {}
     for name, path in paths.items():
@@ -318,6 +398,9 @@ def build_execution_manifest(
     source_commit: str,
     supervisor_path: Path,
     benchmark_path: Path,
+    rank_analyzer_path: Path,
+    model_identity: dict[str, Any] | None = None,
+    prompt_identities: dict[str, dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     if not re.fullmatch(r"[0-9a-f]{40}", source_commit):
         raise ValueError("invalid_source_commit")
@@ -325,18 +408,27 @@ def build_execution_manifest(
         contract,
         supervisor_path=supervisor_path,
         benchmark_path=benchmark_path,
+        rank_analyzer_path=rank_analyzer_path,
     )
     tool_hashes: dict[str, str] = {}
     for name, path in paths.items():
         if not path.is_file():
             raise RuntimeError(f"execution_tool_missing:{path}")
         tool_hashes[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+    if model_identity is None:
+        model_identity = resolve_model_identity(contract.MODEL_PATH)
+    if prompt_identities is None:
+        prompt_identities = expected_prompt_cohort_sha256(
+            contract, benchmark_path=benchmark_path
+        )
     return {
         "schema": EXECUTION_MANIFEST_SCHEMA,
         "contract_schema": contract.SCHEMA,
         "source_commit": source_commit,
         "tool_sha256": tool_hashes,
         "vllm_source_sha256": dict(contract.SOURCE_FILES),
+        "model_identity": model_identity,
+        "prompt_cohort_sha256": prompt_identities,
     }
 
 
@@ -353,6 +445,7 @@ def validate_execution_manifest(
     source_commit: str,
     supervisor_path: Path,
     benchmark_path: Path,
+    rank_analyzer_path: Path,
 ) -> None:
     if not re.fullmatch(r"[0-9a-f]{64}", expected_digest):
         raise RuntimeError("execution_manifest_digest_invalid")
@@ -366,18 +459,68 @@ def validate_execution_manifest(
         raise RuntimeError("execution_manifest_source_commit_mismatch")
     if manifest.get("vllm_source_sha256") != contract.SOURCE_FILES:
         raise RuntimeError("execution_manifest_vllm_source_mismatch")
-    actual = build_execution_manifest(
-        contract,
-        source_commit=source_commit,
-        supervisor_path=supervisor_path,
-        benchmark_path=benchmark_path,
-    )["tool_sha256"]
+    model_identity = manifest.get("model_identity")
+    if (
+        not isinstance(model_identity, dict)
+        or not MODEL_REVISION_RE.fullmatch(str(model_identity.get("revision", "")))
+        or set(model_identity.get("files_sha256", {})) != set(MODEL_IDENTITY_FILES)
+        or any(
+            not re.fullmatch(r"[0-9a-f]{64}", str(value))
+            for value in model_identity.get("files_sha256", {}).values()
+        )
+    ):
+        raise RuntimeError("execution_manifest_model_identity_missing")
+    prompt_identities = manifest.get("prompt_cohort_sha256")
+    expected_run_ids = {
+        str(run["id"]) for run in contract.build_run_plan().get("runs", [])
+    }
+    if not isinstance(prompt_identities, dict) or set(prompt_identities) != expected_run_ids:
+        raise RuntimeError("execution_manifest_prompt_cohort_sha256_missing")
+    for run_id, identity in prompt_identities.items():
+        if not isinstance(identity, dict) or set(identity) != {"warmup", "measurement"}:
+            raise RuntimeError(f"execution_manifest_prompt_cohort_sha256_missing:{run_id}")
+        if any(
+            not re.fullmatch(r"[0-9a-f]{64}", str(value))
+            for value in identity.values()
+        ):
+            raise RuntimeError(f"execution_manifest_prompt_cohort_sha256_invalid:{run_id}")
+    actual = {
+        name: hashlib.sha256(path.read_bytes()).hexdigest()
+        for name, path in _tool_paths(
+            contract,
+            supervisor_path=supervisor_path,
+            benchmark_path=benchmark_path,
+            rank_analyzer_path=rank_analyzer_path,
+        ).items()
+    }
     expected = manifest.get("tool_sha256")
     if not isinstance(expected, dict):
         raise RuntimeError("execution_manifest_tool_hashes_missing")
-    for name in ("contract", "supervisor", "benchmark"):
+    for name in ("contract", "supervisor", "benchmark", "rank_analyzer"):
         if actual.get(name) != expected.get(name):
             raise RuntimeError(f"execution_tool_hash_mismatch:{name}")
+
+
+def assert_model_identity(contract: Any, manifest: dict[str, Any]) -> dict[str, Any]:
+    actual = resolve_model_identity(contract.MODEL_PATH)
+    if actual != manifest.get("model_identity"):
+        raise RuntimeError("model_identity_mismatch")
+    return actual
+
+
+def assert_benchmark_prompt_identity(
+    path: Path, *, expected: str, label: str
+) -> str:
+    if not re.fullmatch(r"[0-9a-f]{64}", expected):
+        raise RuntimeError(f"prompt_cohort_sha256_expected_invalid:{label}")
+    try:
+        result = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"prompt_cohort_sha256_missing:{label}") from exc
+    actual = result.get("prompt_cohort_sha256") if isinstance(result, dict) else None
+    if actual != expected:
+        raise RuntimeError(f"prompt_cohort_sha256_mismatch:{label}")
+    return expected
 
 
 def verify_coordinator_checkout(
@@ -387,6 +530,7 @@ def verify_coordinator_checkout(
     contract_path: Path,
     supervisor_path: Path,
     benchmark_path: Path,
+    rank_analyzer_path: Path,
 ) -> None:
     head = _capture(
         ["git", "rev-parse", "HEAD"],
@@ -400,11 +544,13 @@ def verify_coordinator_checkout(
         "contract": workdir / "scripts" / "analyze_phase466_low_overhead_probe.py",
         "supervisor": workdir / "scripts" / "run_phase466_low_overhead_probe.py",
         "benchmark": workdir / "scripts" / "run_openai_fixed_shape_benchmark.py",
+        "rank_analyzer": workdir / "scripts" / "analyze_phase466_rank_timing.py",
     }
     actual_paths = {
         "contract": contract_path,
         "supervisor": supervisor_path,
         "benchmark": benchmark_path,
+        "rank_analyzer": rank_analyzer_path,
     }
     for name, expected in expected_paths.items():
         if actual_paths[name].resolve() != expected.resolve():
@@ -596,8 +742,12 @@ class Supervisor:
             source_commit=self.source_commit,
             supervisor_path=Path(__file__),
             benchmark_path=self.workdir / "scripts" / "run_openai_fixed_shape_benchmark.py",
+            rank_analyzer_path=self.workdir / "scripts" / "analyze_phase466_rank_timing.py",
         )
         return _execution_tool_hashes(self.contract, self.workdir)
+
+    def validate_model_identity(self) -> dict[str, Any]:
+        return assert_model_identity(self.contract, self.execution_manifest)
 
     def commit_terminal_result(
         self,
@@ -680,6 +830,7 @@ class Supervisor:
         self.owns_artifact_root = True
         self.status("preflight", "running")
         tooling_hashes = self.validate_tool_identity()
+        model_identity = self.validate_model_identity()
         _assert_clean_worker(self.workdir, self.env, label="preflight")
         version = _capture(
             ["python3", "-c", "import vllm; print(vllm.__version__)"],
@@ -720,6 +871,7 @@ class Supervisor:
                 "execution_manifest_sha256": self.execution_manifest_sha256,
                 "gpu": gpu,
                 "vllm_version": version,
+                "model_identity": model_identity,
                 "VLLM_ENABLE_CUDA_COMPATIBILITY": "1",
                 "LD_LIBRARY_PATH": LD_LIBRARY_PATH,
             },
@@ -778,6 +930,12 @@ class Supervisor:
     ) -> Path:
         self.raise_if_aborted()
         run_start_tool_hashes = self.validate_tool_identity()
+        run_start_model_identity = self.validate_model_identity()
+        prompt_identity = self.execution_manifest["prompt_cohort_sha256"].get(
+            str(spec["id"])
+        )
+        if not isinstance(prompt_identity, dict):
+            raise RuntimeError(f"prompt_cohort_sha256_missing:{spec['id']}")
         run_dir = self.artifact_root / str(spec["artifact_dir"])
         if run_dir.exists():
             raise RuntimeError(f"artifact_already_exists:{run_dir}")
@@ -803,6 +961,7 @@ class Supervisor:
         cleanup = False
         run_end_hashes: dict[str, str] | None = None
         run_end_tool_hashes: dict[str, str] | None = None
+        run_end_model_identity: dict[str, Any] | None = None
         try:
             _wait_for_service(process, port)
             warmup_argv = _materialize_argv(
@@ -811,6 +970,11 @@ class Supervisor:
                 absolute_root=run_dir / "warmup",
             )
             self.run_command(warmup_argv, output=run_dir / "warmup" / "bench.log")
+            assert_benchmark_prompt_identity(
+                run_dir / "warmup" / "bench_result.json",
+                expected=str(prompt_identity.get("warmup", "")),
+                label=f"{spec['id']}:warmup",
+            )
             time.sleep(2)
             log_stream.flush()
             if spec["probe_mode"] == "on":
@@ -828,6 +992,11 @@ class Supervisor:
             )
             self.status(spec["stage"], "measuring", run_id=spec["id"])
             self.run_command(bench_argv, output=run_dir / "bench.log")
+            assert_benchmark_prompt_identity(
+                run_dir / "bench_result.json",
+                expected=str(prompt_identity.get("measurement", "")),
+                label=f"{spec['id']}:measurement",
+            )
             (run_dir / "metrics_after.prom").write_text(_fetch_metrics(port), encoding="utf-8")
             time.sleep(2)
             log_stream.flush()
@@ -856,12 +1025,15 @@ class Supervisor:
             )
             run_end_hashes = assert_source_identity(self.contract)
             run_end_tool_hashes = self.validate_tool_identity()
+            run_end_model_identity = self.validate_model_identity()
         if not cleanup:
             raise RuntimeError("postflight_residue")
         if run_end_hashes != run_start_hashes:
             raise RuntimeError("vllm_source_hash_changed_during_run")
         if run_end_tool_hashes != run_start_tool_hashes:
             raise RuntimeError("execution_tool_hash_changed_during_run")
+        if run_end_model_identity != run_start_model_identity:
+            raise RuntimeError("model_identity_changed_during_run")
         self.raise_if_aborted()
         meta = self.contract.expected_run_meta(spec)
         meta.update(
@@ -869,6 +1041,10 @@ class Supervisor:
                 "vllm_version": "0.19.0",
                 "execution_manifest_sha256": self.execution_manifest_sha256,
                 "execution_tool_sha256": run_end_tool_hashes,
+                "model_revision": run_end_model_identity["revision"],
+                "model_files_sha256": run_end_model_identity["files_sha256"],
+                "warmup_prompt_cohort_sha256": prompt_identity["warmup"],
+                "prompt_cohort_sha256": prompt_identity["measurement"],
                 "measurement_start_after_iteration": {str(rank): value for rank, value in cutoffs.items()},
                 "measurement_end_at_iteration": {
                     str(rank): value for rank, value in measurement_ends.items()
@@ -880,6 +1056,7 @@ class Supervisor:
         _write_json(run_dir / "meta.json", meta)
         _write_source_hashes(run_dir / "source.sha256", run_end_hashes)
         _write_source_hashes(run_dir / "tooling.sha256", run_end_tool_hashes)
+        _write_json(run_dir / "prompt_identity.json", prompt_identity)
         self.status(spec["stage"], "run_complete", run_id=spec["id"])
         return run_dir
 
@@ -1135,7 +1312,7 @@ def _execute_plan(
 
     formal_results: list[dict[str, Any]] = []
     formal_failures: list[dict[str, Any]] = []
-    for run in validated["formal_runs"]:
+    for run in formal_runs_for_gate(gate, validated):
         try:
             run_dir = supervisor.execute_run(
                 run,
@@ -1188,9 +1365,43 @@ def _execute_plan(
                 action="STOP_ALL",
             )
             break
+    rank_timing_report: dict[str, Any] | None = None
+    if len(formal_results) == 3 and not formal_failures:
+        rank_timing_path = artifact_root / "rank_timing_report.json"
+        try:
+            _run(
+                [
+                    "python3",
+                    str(workdir / "scripts" / "analyze_phase466_rank_timing.py"),
+                    "--artifact-root",
+                    str(artifact_root),
+                    "--output-json",
+                    str(rank_timing_path),
+                ],
+                cwd=workdir,
+                env=supervisor.env,
+            )
+            rank_timing_report = json.loads(
+                rank_timing_path.read_text(encoding="utf-8")
+            )
+            if rank_timing_report.get("status") != "DIAGNOSTIC_COMPLETE":
+                raise RuntimeError("rank_timing_diagnostic_incomplete")
+        except Exception as exc:
+            formal_failures.append(
+                {
+                    "run_id": "rank-timing-analysis",
+                    "error": str(exc),
+                    "cleanup": True,
+                }
+            )
+    diagnostic_complete = (
+        len(formal_results) == 3
+        and not formal_failures
+        and rank_timing_report is not None
+    )
     final = {
         "schema": contract.SCHEMA,
-        "status": "PASS" if len(formal_results) == 3 and not formal_failures else "INCOMPLETE",
+        "status": "DIAGNOSTIC_COMPLETE" if diagnostic_complete else "INCOMPLETE",
         "gate_status": gate["status"],
         "formal_scenarios": [result["scenario"] for result in formal_results],
         "formal_failures": formal_failures,
@@ -1204,6 +1415,18 @@ def _execute_plan(
             result["scenario"]: result["iteration_rows_identity"]
             for result in formal_results
         },
+        "rank_timing_report": (
+            "rank_timing_report.json" if rank_timing_report is not None else None
+        ),
+        "rank_timing_report_sha256": (
+            hashlib.sha256(
+                (artifact_root / "rank_timing_report.json").read_bytes()
+            ).hexdigest()
+            if rank_timing_report is not None
+            else None
+        ),
+        "route_selection_executed": False,
+        "simulator_rank_rows_generated": False,
     }
     committed = finalize_result(
         supervisor=supervisor,
@@ -1215,7 +1438,7 @@ def _execute_plan(
     )
     if committed == "ABORTED":
         return 130
-    return 0 if final["status"] == "PASS" else 3
+    return 0 if final["status"] == "DIAGNOSTIC_COMPLETE" else 3
 
 
 def main() -> int:
@@ -1231,6 +1454,7 @@ def main() -> int:
     supervisor_path = Path(__file__).resolve()
     contract_path = supervisor_path.with_name("analyze_phase466_low_overhead_probe.py")
     benchmark_path = workdir / "scripts" / "run_openai_fixed_shape_benchmark.py"
+    rank_analyzer_path = workdir / "scripts" / "analyze_phase466_rank_timing.py"
     contract = _load_contract(contract_path)
     if args.write_execution_manifest is not None:
         verify_coordinator_checkout(
@@ -1239,12 +1463,14 @@ def main() -> int:
             contract_path=contract_path,
             supervisor_path=supervisor_path,
             benchmark_path=benchmark_path,
+            rank_analyzer_path=rank_analyzer_path,
         )
         manifest = build_execution_manifest(
             contract,
             source_commit=args.source_commit,
             supervisor_path=supervisor_path,
             benchmark_path=benchmark_path,
+            rank_analyzer_path=rank_analyzer_path,
         )
         _write_json(args.write_execution_manifest, manifest)
         print(execution_manifest_digest(manifest))

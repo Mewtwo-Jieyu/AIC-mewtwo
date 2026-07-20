@@ -1,30 +1,30 @@
 # Phase466 probe execution hardening
 
-结论：Phase466 的执行链已补成 fail-closed，但第一次远端试跑在独立 review 发现 contract blocker 后受控终止，
-没有形成有效 overhead gate。当前不能直接重跑：stock probe 缺少预注册的 queue/state 字段，且
-`tp4dp2-8k2k-bt65536` 的 simulator 仍是代表性单-replica 路径，无法生成可对齐的 DP-rank trace。
+结论：hardening 已以 fast-forward 方式吸收到 `feature/kimi-vllm019-cb-sim-post-baseline`。
+Phase466 v3 只采真实 rank-local timing，不再要求本轮生成 simulator DP-rank trace 或执行路线选择。
 
 | 项 | 结果 |
 |---|---|
 | base | `822ae421a0b79eb0a69e8f59a2c4d09cba327eaa` |
-| branch | `experiment/phase466-probe-execution-hardening` |
+| integration branch | `feature/kimi-vllm019-cb-sim-post-baseline` |
 | runtime/model/PerfDB change | none |
-| analyzer schema | `phase466_stock_probe_v2` |
+| analyzer schema | `phase466_rank_timing_v3` |
 | overhead design | 6 counterbalanced OFF/ON pairs; paired log-ratio TOST |
 | supervisor | node lock, heartbeat, immutable execution manifest, signal cleanup, no automatic rerun |
 | simulator export | exact H200 / vLLM 0.19.0; DP rank scope only; unsupported legacy DP path fails closed |
-| exit gate | exact three scenarios; rank-local join; incomplete fields cannot be human-overridden to `PASS` |
+| exit review | `phase466_exit_review_v2`; per-scenario judgement; not executed by this diagnostic run |
 | invalid remote attempt | `ABORTED_BY_REVIEW`; `gate_status=NOT_EVALUATED`; no formal runs |
-| current gate | `BLOCKED_BEFORE_RERUN` |
+| current gate | local contract verified; fresh v3 remote gate pending |
 | readiness | `diagnostic_only=true`; `valid_for_default=false`; `perf_database=false`; `No-Go` |
 
 ## Changed files
 
 - `scripts/analyze_phase466_low_overhead_probe.py`
 - `scripts/run_phase466_low_overhead_probe.py`
+- `scripts/analyze_phase466_rank_timing.py`
 - `scripts/export_phase466_cb_sim_iterations.py`
 - `scripts/analyze_phase466_exit_review.py`
-- four matching unit-test files
+- five matching unit-test files
 - `docs/iter_gap_investigation/phase466_low_overhead_probe_design.md`
 - `docs/iter_gap_investigation/phase466_residual_attribution.md`
 - this report
@@ -54,7 +54,9 @@
 | signal could race the final PASS/FAILED write | terminal result uses a single commit point; pre-commit signals rewrite the final artifact to `ABORTED` |
 | startup or validation failure could be treated like a skippable benchmark error | only an explicit benchmark command failure may continue; every other exception stops all runs |
 | uploaded tooling was checked only at preflight | contract, supervisor and benchmark hashes are revalidated before and after every run |
-| coordinator commit could be paired with an arbitrary contract path | production contract override is removed; all three tool paths must be the exact clean checkout paths for `source_commit` |
+| model/tokenizer identity was not immutable | manifest binds the snapshot revision and config/tokenizer SHA256; every run rechecks them before and after |
+| workload identity stopped at prompt length | benchmark records a digest of the exact token-id cohort; missing or changed digests stop execution |
+| coordinator commit could be paired with an arbitrary contract path | production contract override is removed; all four tool paths must be the exact clean checkout paths for `source_commit` |
 | formal execution and artifact validation shared one catch | artifact validation failure always stops remaining formal runs |
 | PASS result could precede compression/final audit | `phase466_result.json` is the final atomic write |
 | zero-token iterations disappeared from elapsed time | zero-token rows retain wall time and unchanged progress |
@@ -75,10 +77,9 @@ The remote service and benchmark process groups were stopped manually after free
 
 ## Next gate
 
-1. Decide whether the next run only collects rank timing, or must select one Phase467 route.
-2. If route selection is required, first close both known evidence gaps: stock real rows need the preregistered queue/state fields, and
-   the bt65536 DP simulator needs a validated per-rank execution semantic.
-3. Only after that amendment passes review may a fresh artifact root run the six counterbalanced pairs.
-4. Gate is not `PASS` means stop before N512. Gate `PASS` still does not waive the exact-three-scenario exit contract.
+1. Use a fresh `phase466_v3_rank_timing_<postbaseline_sha>_<timestamp>` artifact root.
+2. Run the six counterbalanced pairs; any non-`PASS` result stops before N512.
+3. After `PASS`, collect exactly three real scenarios and emit `DIAGNOSTIC_COMPLETE`.
+4. Phase467 remains reserved for a later model change supported by this evidence.
 
 No result from this phase may be written to PerfDatabase or used to enable Default AIC.

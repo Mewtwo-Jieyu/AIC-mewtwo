@@ -37,6 +37,21 @@ def test_rotating_prompt_variants_keep_length_and_change_prefix() -> None:
     assert len({prompt for prompt, _ in variants}) == 4
 
 
+def test_prompt_cohort_digest_binds_exact_request_token_ids() -> None:
+    sys.modules.setdefault("aiohttp", types.SimpleNamespace())
+    sys.modules.setdefault("transformers", types.SimpleNamespace(AutoTokenizer=object()))
+    bench = importlib.import_module("scripts.run_openai_fixed_shape_benchmark")
+    variants = [("a", [1, 2, 3]), ("b", [4, 5, 6])]
+
+    digest = bench.prompt_cohort_sha256(variants, num_prompts=4)
+
+    assert digest == bench.prompt_cohort_sha256(variants, num_prompts=4)
+    assert digest != bench.prompt_cohort_sha256(
+        [("a", [1, 2, 3]), ("b", [4, 5, 7])], num_prompts=4
+    )
+    assert digest != bench.prompt_cohort_sha256(variants, num_prompts=3)
+
+
 def test_diagnostic_request_headers_are_opt_in_and_unique() -> None:
     sys.modules.setdefault("aiohttp", types.SimpleNamespace())
     sys.modules.setdefault("transformers", types.SimpleNamespace(AutoTokenizer=object()))

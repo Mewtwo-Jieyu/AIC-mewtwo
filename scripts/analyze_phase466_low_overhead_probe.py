@@ -19,7 +19,7 @@ from typing import Any
 
 
 BASE_COMMIT = "822ae421a0b79eb0a69e8f59a2c4d09cba327eaa"
-SCHEMA = "phase466_stock_probe_v2"
+SCHEMA = "phase466_rank_timing_v3"
 PROBE_FLAG = "--enable-logging-iteration-details"
 MAX_OVERHEAD_PCT = 2.0
 OVERHEAD_PAIR_COUNT = 6
@@ -410,7 +410,7 @@ def build_run_plan() -> dict[str, Any]:
             ),
         },
         "sampling": {
-            "iteration_rank": "one aggregate stock-vLLM line per engine iteration",
+            "iteration_rank": "rank-local stock-vLLM timing per engine iteration",
             "preemptions": "Prometheus num_preemptions_total before/after per engine",
             "throughput": "one fixed-shape benchmark result per run",
             "gpu_health": "before/after compute-app residue snapshots",
@@ -467,14 +467,18 @@ def build_run_plan() -> dict[str, Any]:
             "formal/<scenario>/serve.log.gz",
             "formal/<scenario>/iteration_rows.csv",
             "formal/<scenario>/rank_summary.csv",
+            "formal/<scenario>/prompt_identity.json",
             "formal/<scenario>/probe_summary.json",
             "formal/<scenario>/gpu_compute_apps_after.txt",
             "formal/<scenario>/process_residue_after.txt",
+            "rank_timing_report.json",
         ],
         "stop_rules": [
             "preflight_gpu_or_process_residue",
             "vllm_version_not_0.19.0",
             "vllm_source_hash_mismatch",
+            "model_snapshot_or_tokenizer_identity_mismatch",
+            "prompt_cohort_sha256_missing_or_mismatch",
             "source_hash_changed_between_off_and_on",
             "benchmark_failed_or_token_counts_inexact",
             "service_exited_or_restarted",
@@ -863,6 +867,8 @@ def _validate_overhead_benchmark(result: dict[str, Any], *, root: Path) -> float
     for key, wanted in expected.items():
         if result.get(key) != wanted:
             raise ValueError(f"overhead_benchmark_mismatch:{root}:{key}")
+    if not re.fullmatch(r"[0-9a-f]{64}", str(result.get("prompt_cohort_sha256", ""))):
+        raise ValueError(f"overhead_prompt_cohort_sha256_missing:{root}")
     throughput = float(result["output_tok_s"])
     if not math.isfinite(throughput) or throughput <= 0:
         raise ValueError(f"overhead_benchmark_invalid_throughput:{root}")
@@ -881,6 +887,18 @@ def _validate_exact_run_meta(
             raise ValueError(f"run_meta_mismatch:{key}")
     if meta.get("vllm_version") != "0.19.0":
         raise ValueError("run_meta_mismatch:vllm_version")
+    if not re.fullmatch(r"[0-9a-f]{40,64}", str(meta.get("model_revision", ""))):
+        raise ValueError("run_meta_mismatch:model_revision")
+    model_files = meta.get("model_files_sha256")
+    if not isinstance(model_files, dict) or set(model_files) != {
+        "config.json",
+        "tokenizer_config.json",
+        "tokenizer.json",
+    } or any(
+        not re.fullmatch(r"[0-9a-f]{64}", str(value))
+        for value in model_files.values()
+    ):
+        raise ValueError("run_meta_mismatch:model_files_sha256")
     cutoffs = meta.get("measurement_start_after_iteration")
     if not isinstance(cutoffs, dict) or not cutoffs:
         raise ValueError("run_meta_mismatch:measurement_start_after_iteration")
@@ -903,6 +921,9 @@ def _validate_exact_run_meta(
     if expected_gate_digest is not None:
         if meta.get("overhead_gate_sha256") != expected_gate_digest:
             raise ValueError("run_meta_mismatch:overhead_gate_sha256")
+    for key in ("warmup_prompt_cohort_sha256", "prompt_cohort_sha256"):
+        if not re.fullmatch(r"[0-9a-f]{64}", str(meta.get(key, ""))):
+            raise ValueError(f"run_meta_mismatch:{key}")
 
 
 def _validate_source_and_cleanup(root: Path) -> None:
@@ -933,12 +954,16 @@ def validate_overhead_pair_artifacts(
     _validate_source_and_cleanup(off_dir)
     _validate_source_and_cleanup(on_dir)
 
-    off_throughput = _validate_overhead_benchmark(
-        _load_json(off_dir / "bench_result.json"), root=off_dir
-    )
-    on_throughput = _validate_overhead_benchmark(
-        _load_json(on_dir / "bench_result.json"), root=on_dir
-    )
+    off_benchmark = _load_json(off_dir / "bench_result.json")
+    on_benchmark = _load_json(on_dir / "bench_result.json")
+    off_throughput = _validate_overhead_benchmark(off_benchmark, root=off_dir)
+    on_throughput = _validate_overhead_benchmark(on_benchmark, root=on_dir)
+    if off_benchmark["prompt_cohort_sha256"] != off_meta["prompt_cohort_sha256"]:
+        raise ValueError("prompt_cohort_sha256_mismatch:off")
+    if on_benchmark["prompt_cohort_sha256"] != on_meta["prompt_cohort_sha256"]:
+        raise ValueError("prompt_cohort_sha256_mismatch:on")
+    if off_benchmark["prompt_cohort_sha256"] != on_benchmark["prompt_cohort_sha256"]:
+        raise ValueError("overhead_prompt_cohort_sha256_drift")
 
     serve_log = on_dir / "serve.log.gz"
     if not serve_log.exists():
@@ -1029,6 +1054,8 @@ def _validate_formal_benchmark(
     for key, value in expected.items():
         if result.get(key) != value:
             raise ValueError(f"formal_benchmark_mismatch:{key}")
+    if not re.fullmatch(r"[0-9a-f]{64}", str(result.get("prompt_cohort_sha256", ""))):
+        raise ValueError("formal_prompt_cohort_sha256_missing")
     throughput = float(result.get("output_tok_s", 0.0))
     if not math.isfinite(throughput) or throughput <= 0:
         raise ValueError("formal_benchmark_invalid_throughput")
@@ -1047,9 +1074,10 @@ def validate_formal_artifacts(
     meta = _load_json(root / "meta.json")
     _validate_exact_run_meta(meta, spec, expected_gate_digest=gate_digest)
     _validate_source_and_cleanup(root)
-    throughput = _validate_formal_benchmark(
-        _load_json(root / "bench_result.json"), spec=spec
-    )
+    benchmark = _load_json(root / "bench_result.json")
+    throughput = _validate_formal_benchmark(benchmark, spec=spec)
+    if benchmark["prompt_cohort_sha256"] != meta["prompt_cohort_sha256"]:
+        raise ValueError("formal_prompt_cohort_sha256_mismatch")
 
     serve_log = root / "serve.log.gz"
     if not serve_log.exists():
@@ -1087,7 +1115,7 @@ def validate_formal_artifacts(
         raise ValueError(f"formal_rank_set_mismatch:{actual_ranks}!={expected_ranks}")
     return {
         "schema": SCHEMA,
-        "status": "PASS",
+        "status": "ARTIFACT_VALID",
         "scenario": spec["scenario"],
         "output_tok_s": throughput,
         "iteration_rows": [asdict(row) for row in rows],

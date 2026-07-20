@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate Phase466 real/simulator evidence and enforce single-route exit semantics."""
+"""Validate Phase466 evidence and apply scenario-local exit-review semantics."""
 
 from __future__ import annotations
 
@@ -100,6 +100,7 @@ SIM_CANDIDATE_FIELDS = {
     "dp_rank_synchronization_asymmetry": BASE_FIELDS | STATE_FIELDS,
 }
 VALID_JUDGEMENTS = {"PASS", "DISPROVED", "INCONCLUSIVE"}
+EXIT_REVIEW_SCHEMA = "phase466_exit_review_v2"
 
 
 def execution_manifest_digest(manifest: dict[str, Any]) -> str:
@@ -318,7 +319,7 @@ def evaluate_evidence_coverage(
 def select_route(
     judgements: dict[str, str],
     *,
-    coverage: dict[str, dict[str, Any]] | None = None,
+    coverage: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if set(judgements) != set(CANDIDATES):
         raise ValueError("candidate_judgement_set_mismatch")
@@ -326,21 +327,67 @@ def select_route(
     if invalid:
         raise ValueError(f"invalid_candidate_judgement:{sorted(invalid)}")
     if coverage is not None:
-        if set(coverage) != set(FORMAL_SCENARIOS):
-            raise ValueError("coverage_scenario_set_mismatch")
+        candidate_coverage = coverage.get("candidate_coverage")
+        if not isinstance(candidate_coverage, dict) or set(candidate_coverage) != set(
+            CANDIDATES
+        ):
+            raise ValueError("coverage_candidate_set_mismatch")
         for candidate, judgement in judgements.items():
             if judgement != "PASS":
                 continue
-            statuses = {
-                scenario: coverage[scenario]["candidate_coverage"][candidate]["status"]
-                for scenario in FORMAL_SCENARIOS
-            }
-            if any(status != "EVALUABLE" for status in statuses.values()):
+            if candidate_coverage[candidate].get("status") != "EVALUABLE":
                 raise ValueError(f"pass_without_evaluable_coverage:{candidate}")
     passed = [candidate for candidate in CANDIDATES if judgements[candidate] == "PASS"]
-    if len(passed) == 1:
-        return {"status": "SELECTED", "selected_route": passed[0], "pass_count": 1}
-    return {"status": "INCONCLUSIVE", "selected_route": None, "pass_count": len(passed)}
+    disproved = [
+        candidate for candidate in CANDIDATES if judgements[candidate] == "DISPROVED"
+    ]
+    if len(passed) == 1 and len(disproved) == len(CANDIDATES) - 1:
+        return {
+            "status": "SELECTED",
+            "selected_route": passed[0],
+            "pass_count": 1,
+        }
+    return {
+        "status": "INCONCLUSIVE",
+        "selected_route": None,
+        "pass_count": len(passed),
+    }
+
+
+def select_scenario_routes(
+    judgements: dict[str, dict[str, str]],
+    *,
+    coverage: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    if set(judgements) != set(FORMAL_SCENARIOS):
+        raise ValueError("judgement_scenario_set_mismatch")
+    if set(coverage) != set(FORMAL_SCENARIOS):
+        raise ValueError("coverage_scenario_set_mismatch")
+    scenario_routes = {
+        scenario: select_route(
+            judgements[scenario], coverage=coverage[scenario]
+        )
+        for scenario in FORMAL_SCENARIOS
+    }
+    selected = [
+        result["selected_route"]
+        for result in scenario_routes.values()
+        if result["status"] == "SELECTED"
+    ]
+    shared_route = (
+        selected[0]
+        if len(selected) == len(FORMAL_SCENARIOS) and len(set(selected)) == 1
+        else None
+    )
+    return {
+        "status": (
+            "SCENARIO_ROUTES_SELECTED"
+            if len(selected) == len(FORMAL_SCENARIOS)
+            else "INCONCLUSIVE"
+        ),
+        "scenario_routes": scenario_routes,
+        "shared_route": shared_route,
+    }
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -350,6 +397,24 @@ def _load_json(path: Path) -> dict[str, Any]:
     return value
 
 
+def load_scenario_judgements(path: Path) -> dict[str, dict[str, str]]:
+    raw = _load_json(path)
+    if raw.get("schema") != EXIT_REVIEW_SCHEMA:
+        raise ValueError("exit_review_judgement_schema_mismatch")
+    scenario_judgements = raw.get("scenario_judgements")
+    if not isinstance(scenario_judgements, dict):
+        raise ValueError("scenario_judgements_must_be_object")
+    result: dict[str, dict[str, str]] = {}
+    for scenario, candidate_judgements in scenario_judgements.items():
+        if not isinstance(candidate_judgements, dict):
+            raise ValueError(f"candidate_judgements_must_be_object:{scenario}")
+        result[str(scenario)] = {
+            str(candidate): str(judgement)
+            for candidate, judgement in candidate_judgements.items()
+        }
+    return result
+
+
 def validate_real_artifact_root(root: Path) -> dict[str, Path]:
     result = _load_json(root / "phase466_result.json")
     gate = _load_json(root / "overhead" / "overhead_gate.json")
@@ -357,8 +422,34 @@ def validate_real_artifact_root(root: Path) -> dict[str, Path]:
     digest = execution_manifest_digest(manifest)
     if result.get("execution_manifest_sha256") != digest:
         raise ValueError("execution_manifest_digest_mismatch")
-    if result.get("status") != "PASS" or result.get("gate_status") != "PASS":
+    if (
+        result.get("status") != "DIAGNOSTIC_COMPLETE"
+        or result.get("gate_status") != "PASS"
+    ):
         raise ValueError("phase466_supervisor_not_passed")
+    if set(result.get("formal_scenarios", [])) != set(FORMAL_SCENARIOS):
+        raise ValueError("formal_scenario_set_mismatch")
+    if result.get("route_selection_executed") is not False:
+        raise ValueError("phase466_route_selection_must_not_run")
+    if result.get("simulator_rank_rows_generated") is not False:
+        raise ValueError("phase466_simulator_rank_rows_must_not_exist")
+    if result.get("rank_timing_report") != "rank_timing_report.json":
+        raise ValueError("rank_timing_report_missing")
+    rank_timing_path = root / "rank_timing_report.json"
+    if not rank_timing_path.is_file():
+        raise ValueError("rank_timing_report_missing")
+    if result.get("rank_timing_report_sha256") != hashlib.sha256(
+        rank_timing_path.read_bytes()
+    ).hexdigest():
+        raise ValueError("rank_timing_report_digest_mismatch")
+    rank_timing = _load_json(rank_timing_path)
+    if (
+        rank_timing.get("schema") != "phase466_rank_timing_report_v1"
+        or rank_timing.get("status") != "DIAGNOSTIC_COMPLETE"
+        or rank_timing.get("route_selection_executed") is not False
+        or rank_timing.get("simulator_rank_rows_generated") is not False
+    ):
+        raise ValueError("rank_timing_report_contract_mismatch")
     if gate.get("status") != "PASS" or gate.get("pair_count") != 6:
         raise ValueError("phase466_overhead_gate_not_passed")
     pairs = gate.get("pairs")
@@ -367,15 +458,32 @@ def validate_real_artifact_root(root: Path) -> dict[str, Path]:
     gate_digest = execution_manifest_digest(gate)
     if result.get("overhead_gate_sha256") != gate_digest:
         raise ValueError("overhead_gate_digest_mismatch")
-    if set(result.get("formal_scenarios", [])) != set(FORMAL_SCENARIOS):
-        raise ValueError("formal_scenario_set_mismatch")
     expected_tools = manifest.get("tool_sha256")
     if not isinstance(expected_tools, dict) or set(expected_tools) != {
         "contract",
         "supervisor",
         "benchmark",
+        "rank_analyzer",
     }:
         raise ValueError("execution_manifest_tool_hashes_missing")
+    model_identity = manifest.get("model_identity")
+    if not isinstance(model_identity, dict) or not re.fullmatch(
+        r"[0-9a-f]{40,64}", str(model_identity.get("revision", ""))
+    ):
+        raise ValueError("execution_manifest_model_identity_missing")
+    model_files = model_identity.get("files_sha256")
+    if not isinstance(model_files, dict) or set(model_files) != {
+        "config.json",
+        "tokenizer_config.json",
+        "tokenizer.json",
+    } or any(
+        not re.fullmatch(r"[0-9a-f]{64}", str(value))
+        for value in model_files.values()
+    ):
+        raise ValueError("execution_manifest_model_file_hashes_missing")
+    manifest_prompts = manifest.get("prompt_cohort_sha256")
+    if not isinstance(manifest_prompts, dict):
+        raise ValueError("execution_manifest_prompt_identity_missing")
     formal_artifacts = result.get("formal_artifacts")
     if not isinstance(formal_artifacts, dict) or set(formal_artifacts) != set(
         FORMAL_SCENARIOS
@@ -386,7 +494,7 @@ def validate_real_artifact_root(root: Path) -> dict[str, Path]:
         run_dir = root / "formal" / scenario
         summary = _load_json(run_dir / "probe_summary.json")
         meta = _load_json(run_dir / "meta.json")
-        if summary.get("status") != "PASS":
+        if summary.get("status") != "ARTIFACT_VALID":
             raise ValueError(f"formal_probe_not_passed:{scenario}")
         if meta.get("execution_manifest_sha256") != digest:
             raise ValueError(f"formal_execution_manifest_mismatch:{scenario}")
@@ -394,6 +502,32 @@ def validate_real_artifact_root(root: Path) -> dict[str, Path]:
             raise ValueError(f"formal_overhead_gate_mismatch:{scenario}")
         if meta.get("execution_tool_sha256") != expected_tools:
             raise ValueError(f"formal_execution_tool_mismatch:{scenario}")
+        if (
+            meta.get("model_revision") != model_identity["revision"]
+            or meta.get("model_files_sha256") != model_files
+        ):
+            raise ValueError(f"formal_model_identity_mismatch:{scenario}")
+        prompt_identity = _load_json(run_dir / "prompt_identity.json")
+        expected_prompt_identity = manifest_prompts.get(meta.get("id"))
+        if prompt_identity != expected_prompt_identity:
+            raise ValueError(f"formal_manifest_prompt_identity_mismatch:{scenario}")
+        if (
+            prompt_identity.get("measurement")
+            != meta.get("prompt_cohort_sha256")
+            or prompt_identity.get("warmup")
+            != meta.get("warmup_prompt_cohort_sha256")
+        ):
+            raise ValueError(f"formal_prompt_identity_mismatch:{scenario}")
+        benchmark = _load_json(run_dir / "bench_result.json")
+        if benchmark.get("prompt_cohort_sha256") != prompt_identity.get(
+            "measurement"
+        ):
+            raise ValueError(f"formal_prompt_digest_mismatch:{scenario}")
+        warmup_benchmark = _load_json(run_dir / "warmup" / "bench_result.json")
+        if warmup_benchmark.get("prompt_cohort_sha256") != prompt_identity.get(
+            "warmup"
+        ):
+            raise ValueError(f"formal_warmup_prompt_digest_mismatch:{scenario}")
         if _load_hash_file(run_dir / "tooling.sha256") != expected_tools:
             raise ValueError(f"formal_tooling_file_mismatch:{scenario}")
         for name in ("gpu_compute_apps_after.txt", "process_residue_after.txt"):
@@ -483,17 +617,17 @@ def main() -> int:
         )
         for scenario in FORMAL_SCENARIOS
     }
-    judgements = {candidate: "INCONCLUSIVE" for candidate in CANDIDATES}
+    judgements = {
+        scenario: {candidate: "INCONCLUSIVE" for candidate in CANDIDATES}
+        for scenario in FORMAL_SCENARIOS
+    }
     if args.judgements_json is not None:
-        raw = json.loads(args.judgements_json.read_text(encoding="utf-8"))
-        if not isinstance(raw, dict):
-            raise ValueError("candidate_judgements_must_be_object")
-        judgements = {str(key): str(value) for key, value in raw.items()}
+        judgements = load_scenario_judgements(args.judgements_json)
     result = {
-        "schema": "phase466_exit_review_v1",
+        "schema": EXIT_REVIEW_SCHEMA,
         "coverage": coverage,
         "human_reviewed_judgements": judgements,
-        "route_selection": select_route(judgements, coverage=coverage),
+        "route_selection": select_scenario_routes(judgements, coverage=coverage),
         "diagnostic_only": True,
         "valid_for_default": False,
         "perf_database": False,

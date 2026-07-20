@@ -116,6 +116,49 @@ def test_route_selection_requires_exactly_one_human_reviewed_pass() -> None:
         "pass_count": 2,
     }
 
+    unresolved = {candidate: "INCONCLUSIVE" for candidate in candidates}
+    unresolved["dp_rank_synchronization_asymmetry"] = "PASS"
+    assert analysis.select_route(unresolved)["status"] == "INCONCLUSIVE"
+
+
+def test_scenario_routes_may_differ_without_shared_route() -> None:
+    analysis = _load_module()
+    judgements = {}
+    coverage = {}
+    for index, scenario in enumerate(analysis.FORMAL_SCENARIOS):
+        selected = analysis.CANDIDATES[index]
+        judgements[scenario] = {
+            candidate: "PASS" if candidate == selected else "DISPROVED"
+            for candidate in analysis.CANDIDATES
+        }
+        coverage[scenario] = {
+            "candidate_coverage": {
+                candidate: {"status": "EVALUABLE"}
+                for candidate in analysis.CANDIDATES
+            }
+        }
+
+    result = analysis.select_scenario_routes(judgements, coverage=coverage)
+
+    assert result["status"] == "SCENARIO_ROUTES_SELECTED"
+    assert result["shared_route"] is None
+    assert {
+        scenario: item["selected_route"]
+        for scenario, item in result["scenario_routes"].items()
+    } == {
+        scenario: analysis.CANDIDATES[index]
+        for index, scenario in enumerate(analysis.FORMAL_SCENARIOS)
+    }
+
+
+def test_old_judgement_schema_fails_closed(tmp_path: Path) -> None:
+    analysis = _load_module()
+    path = tmp_path / "judgements.json"
+    path.write_text(json.dumps({candidate: "INCONCLUSIVE" for candidate in analysis.CANDIDATES}))
+
+    with pytest.raises(ValueError, match="exit_review_judgement_schema_mismatch"):
+        analysis.load_scenario_judgements(path)
+
 
 def test_evidence_coverage_rejects_wrong_scope_or_unjoinable_digest() -> None:
     analysis = _load_module()
@@ -214,19 +257,16 @@ def test_route_selection_rejects_pass_without_evaluable_coverage() -> None:
     judgements = {candidate: "DISPROVED" for candidate in analysis.CANDIDATES}
     judgements["schedule_merged_batch_composition"] = "PASS"
     coverage = {
-        scenario: {
-            "candidate_coverage": {
-                candidate: {
-                    "status": (
-                        "INCONCLUSIVE_MISSING_FIELDS"
-                        if candidate == "schedule_merged_batch_composition"
-                        else "EVALUABLE"
-                    )
-                }
-                for candidate in analysis.CANDIDATES
+        "candidate_coverage": {
+            candidate: {
+                "status": (
+                    "INCONCLUSIVE_MISSING_FIELDS"
+                    if candidate == "schedule_merged_batch_composition"
+                    else "EVALUABLE"
+                )
             }
+            for candidate in analysis.CANDIDATES
         }
-        for scenario in analysis.FORMAL_SCENARIOS
     }
 
     with pytest.raises(ValueError, match="pass_without_evaluable_coverage"):
@@ -241,7 +281,7 @@ def test_real_artifact_root_requires_passed_gate_and_exact_three_scenarios(
     (tmp_path / "phase466_result.json").write_text(
         json.dumps(
             {
-                "status": "PASS",
+                "status": "DIAGNOSTIC_COMPLETE",
                 "gate_status": "PASS",
                 "formal_scenarios": list(analysis.FORMAL_SCENARIOS),
                 "execution_manifest_sha256": "a" * 64,
@@ -276,7 +316,7 @@ def test_real_artifact_root_rejects_incomplete_formal_set(tmp_path: Path) -> Non
     (tmp_path / "phase466_result.json").write_text(
         json.dumps(
             {
-                "status": "PASS",
+                "status": "DIAGNOSTIC_COMPLETE",
                 "gate_status": "PASS",
                 "formal_scenarios": [analysis.FORMAL_SCENARIOS[0]],
                 "execution_manifest_sha256": digest,
@@ -307,11 +347,27 @@ def _write_iteration_csv(path: Path, row: dict[str, object]) -> None:
 def test_real_artifact_root_rejects_iteration_csv_tampering(tmp_path: Path) -> None:
     analysis = _load_module()
     manifest = {
-        "schema": "phase466_execution_manifest_v1",
+        "schema": "phase466_execution_manifest_v2",
         "tool_sha256": {
             "contract": "1" * 64,
             "supervisor": "2" * 64,
             "benchmark": "3" * 64,
+            "rank_analyzer": "4" * 64,
+        },
+        "model_identity": {
+            "revision": "a" * 40,
+            "files_sha256": {
+                "config.json": "5" * 64,
+                "tokenizer_config.json": "6" * 64,
+                "tokenizer.json": "7" * 64,
+            },
+        },
+        "prompt_cohort_sha256": {
+            f"formal-{scenario}": {
+                "warmup": "8" * 64,
+                "measurement": "9" * 64,
+            }
+            for scenario in analysis.FORMAL_SCENARIOS
         },
     }
     digest = analysis.execution_manifest_digest(manifest)
@@ -332,14 +388,19 @@ def test_real_artifact_root_rejects_iteration_csv_tampering(tmp_path: Path) -> N
         identity = analysis.iteration_csv_identity(csv_path)
         identities[scenario] = identity
         (run_dir / "probe_summary.json").write_text(
-            json.dumps({"status": "PASS", "iteration_rows_identity": identity})
+            json.dumps({"status": "ARTIFACT_VALID", "iteration_rows_identity": identity})
         )
         (run_dir / "meta.json").write_text(
             json.dumps(
                 {
+                    "id": f"formal-{scenario}",
                     "execution_manifest_sha256": digest,
                     "overhead_gate_sha256": gate_digest,
                     "execution_tool_sha256": manifest["tool_sha256"],
+                    "model_revision": manifest["model_identity"]["revision"],
+                    "model_files_sha256": manifest["model_identity"]["files_sha256"],
+                    "warmup_prompt_cohort_sha256": "8" * 64,
+                    "prompt_cohort_sha256": "9" * 64,
                 }
             )
         )
@@ -349,22 +410,59 @@ def test_real_artifact_root_rejects_iteration_csv_tampering(tmp_path: Path) -> N
                 for key, value in manifest["tool_sha256"].items()
             )
         )
+        (run_dir / "prompt_identity.json").write_text(
+            json.dumps({"warmup": "8" * 64, "measurement": "9" * 64})
+        )
+        (run_dir / "bench_result.json").write_text(
+            json.dumps({"prompt_cohort_sha256": "9" * 64})
+        )
+        (run_dir / "warmup").mkdir()
+        (run_dir / "warmup" / "bench_result.json").write_text(
+            json.dumps({"prompt_cohort_sha256": "8" * 64})
+        )
         (run_dir / "gpu_compute_apps_after.txt").write_text("")
         (run_dir / "process_residue_after.txt").write_text("")
+    rank_timing_report = {
+        "schema": "phase466_rank_timing_report_v1",
+        "status": "DIAGNOSTIC_COMPLETE",
+        "route_selection_executed": False,
+        "simulator_rank_rows_generated": False,
+    }
+    rank_timing_path = tmp_path / "rank_timing_report.json"
+    rank_timing_path.write_text(json.dumps(rank_timing_report))
+    rank_timing_digest = analysis.hashlib.sha256(rank_timing_path.read_bytes()).hexdigest()
     (tmp_path / "phase466_result.json").write_text(
         json.dumps(
             {
-                "status": "PASS",
+                "status": "DIAGNOSTIC_COMPLETE",
                 "gate_status": "PASS",
                 "formal_scenarios": list(analysis.FORMAL_SCENARIOS),
                 "execution_manifest_sha256": digest,
                 "overhead_gate_sha256": gate_digest,
                 "formal_artifacts": identities,
+                "rank_timing_report": "rank_timing_report.json",
+                "rank_timing_report_sha256": rank_timing_digest,
+                "route_selection_executed": False,
+                "simulator_rank_rows_generated": False,
             }
         )
     )
 
     analysis.validate_real_artifact_root(tmp_path)
+    result_path = tmp_path / "phase466_result.json"
+    result = json.loads(result_path.read_text())
+    result["route_selection_executed"] = True
+    result_path.write_text(json.dumps(result))
+    with pytest.raises(ValueError, match="phase466_route_selection_must_not_run"):
+        analysis.validate_real_artifact_root(tmp_path)
+    result["route_selection_executed"] = False
+    result_path.write_text(json.dumps(result))
+
+    rank_timing_path.write_text(json.dumps({**rank_timing_report, "status": "tampered"}))
+    with pytest.raises(ValueError, match="rank_timing_report_digest_mismatch"):
+        analysis.validate_real_artifact_root(tmp_path)
+    rank_timing_path.write_text(json.dumps(rank_timing_report))
+
     target = tmp_path / "formal" / analysis.FORMAL_SCENARIOS[0] / "iteration_rows.csv"
     target.write_text(target.read_text() + "\n")
 
