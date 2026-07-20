@@ -28,7 +28,12 @@ PROCESS_PATTERN = (
 )
 NODE_LOCK_PATH = Path("/tmp/phase466_low_overhead_probe.lock")
 EXECUTION_MANIFEST_SCHEMA = "phase466_execution_manifest_v2"
-MODEL_IDENTITY_FILES = ("config.json", "tokenizer_config.json", "tokenizer.json")
+MODEL_IDENTITY_FILES = (
+    "config.json",
+    "tokenizer_config.json",
+    "tiktoken.model",
+    "tokenization_kimi.py",
+)
 MODEL_REVISION_RE = re.compile(r"[0-9a-f]{40,64}")
 LD_LIBRARY_PATH = (
     "/nccl/lib:/usr/local/cuda/lib64:/usr/local/nvidia/lib:"

@@ -893,7 +893,8 @@ def _validate_exact_run_meta(
     if not isinstance(model_files, dict) or set(model_files) != {
         "config.json",
         "tokenizer_config.json",
-        "tokenizer.json",
+        "tiktoken.model",
+        "tokenization_kimi.py",
     } or any(
         not re.fullmatch(r"[0-9a-f]{64}", str(value))
         for value in model_files.values()

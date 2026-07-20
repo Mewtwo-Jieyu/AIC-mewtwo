@@ -54,7 +54,7 @@ Phase466 v3 只采真实 rank-local timing，不再要求本轮生成 simulator 
 | signal could race the final PASS/FAILED write | terminal result uses a single commit point; pre-commit signals rewrite the final artifact to `ABORTED` |
 | startup or validation failure could be treated like a skippable benchmark error | only an explicit benchmark command failure may continue; every other exception stops all runs |
 | uploaded tooling was checked only at preflight | contract, supervisor and benchmark hashes are revalidated before and after every run |
-| model/tokenizer identity was not immutable | manifest binds the snapshot revision and config/tokenizer SHA256; every run rechecks them before and after |
+| model/tokenizer identity was not immutable | manifest binds the snapshot revision and SHA256 of `config.json`, `tokenizer_config.json`, `tiktoken.model`, and `tokenization_kimi.py`; every run rechecks them before and after |
 | workload identity stopped at prompt length | benchmark records a digest of the exact token-id cohort; missing or changed digests stop execution |
 | coordinator commit could be paired with an arbitrary contract path | production contract override is removed; all four tool paths must be the exact clean checkout paths for `source_commit` |
 | formal execution and artifact validation shared one catch | artifact validation failure always stops remaining formal runs |

@@ -359,7 +359,8 @@ def test_real_artifact_root_rejects_iteration_csv_tampering(tmp_path: Path) -> N
             "files_sha256": {
                 "config.json": "5" * 64,
                 "tokenizer_config.json": "6" * 64,
-                "tokenizer.json": "7" * 64,
+                "tiktoken.model": "7" * 64,
+                "tokenization_kimi.py": "8" * 64,
             },
         },
         "prompt_cohort_sha256": {

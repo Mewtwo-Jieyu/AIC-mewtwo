@@ -61,7 +61,8 @@ def _identity_meta(prompt_digest: str = "d" * 64) -> dict[str, object]:
         "model_files_sha256": {
             "config.json": "1" * 64,
             "tokenizer_config.json": "2" * 64,
-            "tokenizer.json": "3" * 64,
+            "tiktoken.model": "3" * 64,
+            "tokenization_kimi.py": "4" * 64,
         },
         "warmup_prompt_cohort_sha256": "c" * 64,
         "prompt_cohort_sha256": prompt_digest,

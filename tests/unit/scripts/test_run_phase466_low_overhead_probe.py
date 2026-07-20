@@ -167,7 +167,8 @@ def test_execution_manifest_binds_commit_tools_and_source_hashes(tmp_path: Path)
         "files_sha256": {
             "config.json": "1" * 64,
             "tokenizer_config.json": "2" * 64,
-            "tokenizer.json": "3" * 64,
+            "tiktoken.model": "3" * 64,
+            "tokenization_kimi.py": "4" * 64,
         },
     }
     prompt_identities = {
@@ -224,7 +225,7 @@ def test_model_revision_and_tokenizer_hash_are_fail_closed(tmp_path: Path) -> No
     assert set(identity["files_sha256"]) == set(runner.MODEL_IDENTITY_FILES)
     contract = SimpleNamespace(MODEL_PATH=str(model))
     assert runner.assert_model_identity(contract, {"model_identity": identity}) == identity
-    (snapshot / "tokenizer.json").write_text("changed")
+    (snapshot / "tiktoken.model").write_text("changed")
     with pytest.raises(RuntimeError, match="model_identity_mismatch"):
         runner.assert_model_identity(contract, {"model_identity": identity})
 
@@ -552,7 +553,8 @@ def test_preflight_captures_source_commit_gpu_and_runtime_environment(
         "files_sha256": {
             "config.json": "1" * 64,
             "tokenizer_config.json": "2" * 64,
-            "tokenizer.json": "3" * 64,
+            "tiktoken.model": "3" * 64,
+            "tokenization_kimi.py": "4" * 64,
         },
     }
     monkeypatch.setattr(
