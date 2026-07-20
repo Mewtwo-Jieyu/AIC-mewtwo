@@ -27,9 +27,10 @@ PROCESS_PATTERN = (
     "VLLM::APIServer|VLLM::EngineCore"
 )
 NODE_LOCK_PATH = Path("/tmp/phase466_low_overhead_probe.lock")
-COORDINATOR_MANIFEST_SCHEMA = "phase466_coordinator_manifest_v1"
-WORKER_ATTESTATION_SCHEMA = "phase466_worker_attestation_v1"
-EXECUTION_MANIFEST_SCHEMA = "phase466_execution_manifest_v3"
+COORDINATOR_MANIFEST_SCHEMA = "phase466_coordinator_manifest_v2"
+WORKER_ATTESTATION_SCHEMA = "phase466_worker_attestation_v2"
+EXECUTION_MANIFEST_SCHEMA = "phase466_execution_manifest_v4"
+RANK_LOGGING_TRANSPORT_SCHEMA = "phase466_rank_logging_transport_v1"
 FLAT_MODEL_FINGERPRINT_SCHEMA = "phase466_flat_model_fingerprint_v1"
 SNAPSHOT_MODEL_IDENTITY_SCHEMA = "phase466_snapshot_model_identity_v1"
 MAX_SAFETENSORS_HEADER_BYTES = 128 * 1024 * 1024
@@ -38,6 +39,8 @@ COORDINATOR_TOOL_RELATIVE_PATHS = {
     "supervisor": "scripts/run_phase466_low_overhead_probe.py",
     "benchmark": "scripts/run_openai_fixed_shape_benchmark.py",
     "rank_analyzer": "scripts/analyze_phase466_rank_timing.py",
+    "rank_logging_handler": "scripts/phase466_rank_local_logging.py",
+    "rank_logging_config": "scripts/phase466_rank_local_logging.json",
 }
 MODEL_IDENTITY_FILES = (
     "config.json",
@@ -56,9 +59,6 @@ PATH = (
     "/opt/py3/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:"
     "/usr/sbin:/usr/bin:/sbin:/bin:/kubebrain:/usr/local/nvidia/bin"
 )
-ITERATION_ID_RE = re.compile(
-    r"EngineCore(?:_DP(?P<rank>\d+))?.*?Iteration\((?P<iteration>\d+)\):"
-)
 INTEGRITY_ERRORS = {
     "missing_residue_check",
     "nonempty_gpu_residue",
@@ -75,6 +75,8 @@ INTEGRITY_ERRORS = {
     "missing_probe_serve_log",
     "missing_probe_metrics",
     "missing_iteration_rank_rows",
+    "rank_log",
+    "rank_iteration",
     "execution_manifest",
     "coordinator_manifest",
     "worker_attestation",
@@ -160,16 +162,12 @@ def is_integrity_failure(error: str) -> bool:
     return any(marker in error for marker in INTEGRITY_ERRORS)
 
 
-def last_iteration_by_rank(text: str, *, expected_ranks: list[int]) -> dict[int, int]:
-    latest: dict[int, int] = {}
-    for line in text.splitlines():
-        match = ITERATION_ID_RE.search(line)
-        if match:
-            rank = int(match.group("rank") or 0)
-            latest[rank] = max(latest.get(rank, -1), int(match.group("iteration")))
-    if sorted(latest) != expected_ranks:
-        raise ValueError(f"warmup_iteration_rank_mismatch:{sorted(latest)}!={expected_ranks}")
-    return latest
+def rank_log_cutoff(
+    contract: Any, rank_log_dir: Path, *, expected_ranks: set[int]
+) -> dict[int, int]:
+    return contract.last_iteration_by_rank(
+        rank_log_dir, expected_ranks=expected_ranks
+    )
 
 
 def _write_json(path: Path, value: Any) -> None:
@@ -220,20 +218,85 @@ def _capture(
     return text
 
 
-def _runtime_env() -> dict[str, str]:
+def rank_logging_transport(workdir: Path) -> dict[str, str]:
+    scripts_dir = (workdir / "scripts").resolve()
+    return {
+        "schema": RANK_LOGGING_TRANSPORT_SCHEMA,
+        "config_path": str(scripts_dir / "phase466_rank_local_logging.json"),
+        "handler_module": "phase466_rank_local_logging",
+        "rank_log_dir_env": "PHASE466_RANK_LOG_DIR",
+        "pythonpath": str(scripts_dir),
+    }
+
+
+def _runtime_env(workdir: Path) -> dict[str, str]:
     env = dict(os.environ)
+    transport = rank_logging_transport(workdir)
     env.update(
         {
             "PATH": PATH,
             "LD_LIBRARY_PATH": LD_LIBRARY_PATH,
             "VLLM_ENABLE_CUDA_COMPATIBILITY": "1",
             "VLLM_LOGGING_LEVEL": "INFO",
+            "VLLM_LOGGING_CONFIG_PATH": transport["config_path"],
+            "PYTHONPATH": transport["pythonpath"],
             "PYTHONUNBUFFERED": "1",
         }
     )
     env.pop("VLLM_NUM_GPU_BLOCKS_OVERRIDE", None)
     env.pop("NUM_GPU_BLOCKS_OVERRIDE", None)
     return env
+
+
+def _rank_logging_env(base_env: dict[str, str], rank_log_dir: Path) -> dict[str, str]:
+    env = dict(base_env)
+    env["PHASE466_RANK_LOG_DIR"] = str(rank_log_dir.resolve())
+    return env
+
+
+def build_rank_local_canary_spec(contract: Any) -> dict[str, Any]:
+    scenario = contract.Scenario(
+        "K2.5-tp4ep8dp2-rank-local-canary",
+        4,
+        2,
+        8,
+        128,
+        16,
+        65536,
+        131072,
+    )
+    return {
+        "id": "rank-local-canary",
+        "stage": "rank_local_canary",
+        "scenario": scenario.name,
+        "probe_enabled": True,
+        "probe_mode": "on",
+        "source": "real",
+        "artifact_dir": "canary",
+        "num_prompts": 16,
+        "concurrency": 16,
+        "warmup_num_prompts": 0,
+        "warmup_concurrency": 0,
+        "tp": scenario.tp,
+        "dp": scenario.dp,
+        "ep": scenario.ep,
+        "input_len": scenario.input_len,
+        "output_len": scenario.output_len,
+        "max_num_batched_tokens": scenario.max_num_batched_tokens,
+        "workload_cohort_digest": contract.workload_digest(
+            scenario, num_prompts=16, concurrency=16
+        ),
+        "serve_argv": contract._serve_argv(
+            scenario, port=21459, probe_enabled=True
+        ),
+        "benchmark_argv": contract._benchmark_argv(
+            scenario,
+            port=21459,
+            num_prompts=16,
+            concurrency=16,
+            artifact_dir="canary",
+        ),
+    }
 
 
 def _gpu_residue(cwd: Path, env: dict[str, str]) -> str:
@@ -291,9 +354,10 @@ def assert_imported_vllm_source_paths(
 ) -> list[str]:
     command = (
         "import json; "
+        "from vllm import logger; "
         "from vllm.v1.engine import core; "
         "from vllm.v1.core.sched import scheduler; "
-        "print(json.dumps([core.__file__, scheduler.__file__]))"
+        "print(json.dumps([logger.__file__, core.__file__, scheduler.__file__]))"
     )
     raw = _capture(
         ["python3", "-c", command],
@@ -503,6 +567,22 @@ def expected_prompt_cohort_sha256(
             per_run[label] = cached[key]
         identities[str(run["id"])] = per_run
     return identities
+
+
+def expected_rank_local_canary_prompt_sha256(
+    contract: Any, *, benchmark_path: Path
+) -> str:
+    benchmark = _load_contract(benchmark_path)
+    spec = build_rank_local_canary_spec(contract)
+    variants = benchmark.build_prompt_variants(
+        contract.MODEL_PATH,
+        int(spec["input_len"]),
+        int(spec["num_prompts"]),
+        "fixed",
+    )
+    return benchmark.prompt_cohort_sha256(
+        variants, num_prompts=int(spec["num_prompts"])
+    )
 
 
 def _write_source_hashes(path: Path, hashes: dict[str, str]) -> None:
@@ -749,7 +829,7 @@ def build_worker_attestation(
         workdir=workdir,
         contract_schema=contract.SCHEMA,
     )
-    env = _runtime_env()
+    env = _runtime_env(workdir)
     version = _capture(
         ["python3", "-c", "import vllm; print(vllm.__version__)"],
         cwd=workdir,
@@ -785,6 +865,12 @@ def build_worker_attestation(
         "prompt_cohort_sha256": expected_prompt_cohort_sha256(
             contract, benchmark_path=benchmark_path
         ),
+        "rank_local_canary_prompt_cohort_sha256": (
+            expected_rank_local_canary_prompt_sha256(
+                contract, benchmark_path=benchmark_path
+            )
+        ),
+        "rank_logging_transport": rank_logging_transport(workdir),
         "diagnostic_only": True,
         "valid_for_default": False,
         "perf_database": False,
@@ -821,6 +907,24 @@ def _validate_worker_attestation(
         raise RuntimeError("worker_attestation_vllm_source_mismatch")
     if attestation.get("vllm_import_paths") != list(contract.SOURCE_FILES):
         raise RuntimeError("worker_attestation_vllm_import_path_mismatch")
+    transport = attestation.get("rank_logging_transport")
+    if (
+        not isinstance(transport, dict)
+        or transport.get("schema") != RANK_LOGGING_TRANSPORT_SCHEMA
+        or set(transport)
+        != {
+            "schema",
+            "config_path",
+            "handler_module",
+            "rank_log_dir_env",
+            "pythonpath",
+        }
+        or transport.get("handler_module") != "phase466_rank_local_logging"
+        or transport.get("rank_log_dir_env") != "PHASE466_RANK_LOG_DIR"
+        or not Path(str(transport.get("config_path", ""))).is_absolute()
+        or not Path(str(transport.get("pythonpath", ""))).is_absolute()
+    ):
+        raise RuntimeError("worker_attestation_rank_logging_transport_invalid")
     gpu_identity = attestation.get("gpu_identity")
     if (
         not isinstance(gpu_identity, dict)
@@ -831,6 +935,13 @@ def _validate_worker_attestation(
         raise RuntimeError("worker_attestation_gpu_identity_missing")
     _validate_model_identity_shape(attestation.get("model_identity"))
     _validate_prompt_identities(attestation.get("prompt_cohort_sha256"), contract=contract)
+    if not re.fullmatch(
+        r"[0-9a-f]{64}",
+        str(attestation.get("rank_local_canary_prompt_cohort_sha256", "")),
+    ):
+        raise RuntimeError(
+            "worker_attestation_canary_prompt_cohort_sha256_invalid"
+        )
     for field in ("diagnostic_only", "valid_for_default", "perf_database"):
         expected = field == "diagnostic_only"
         if attestation.get(field) is not expected:
@@ -903,6 +1014,8 @@ def validate_execution_manifest(
     )
     if attestation["tool_sha256"] != actual_tools:
         raise RuntimeError("execution_manifest_tool_hash_mismatch")
+    if attestation["rank_logging_transport"] != rank_logging_transport(workdir):
+        raise RuntimeError("execution_manifest_rank_logging_transport_mismatch")
     if assert_source_identity(contract) != attestation["vllm_source_sha256"]:
         raise RuntimeError("vllm_source_hash_mismatch")
     actual_model = resolve_model_identity(contract.MODEL_PATH)
@@ -1070,7 +1183,7 @@ class Supervisor:
         self.source_commit = source_commit
         self.execution_manifest = execution_manifest
         self.execution_manifest_sha256 = execution_manifest_sha256
-        self.env = _runtime_env()
+        self.env = _runtime_env(workdir)
         self.status_path = artifact_root / "status.json"
         self._status_lock = threading.Lock()
         self._last_status: dict[str, Any] | None = None
@@ -1253,6 +1366,10 @@ class Supervisor:
                 "vllm_version": version,
                 "model_identity": model_identity,
                 "VLLM_ENABLE_CUDA_COMPATIBILITY": "1",
+                "VLLM_LOGGING_CONFIG_PATH": self.env[
+                    "VLLM_LOGGING_CONFIG_PATH"
+                ],
+                "PYTHONPATH": self.env["PYTHONPATH"],
                 "LD_LIBRARY_PATH": LD_LIBRARY_PATH,
             },
         )
@@ -1311,21 +1428,34 @@ class Supervisor:
         self.raise_if_aborted()
         run_start_tool_hashes = self.validate_tool_identity()
         run_start_model_identity = self.validate_model_identity()
-        prompt_identity = self.execution_manifest["worker_attestation"][
-            "prompt_cohort_sha256"
-        ].get(
-            str(spec["id"])
-        )
-        if not isinstance(prompt_identity, dict):
+        is_canary = spec["stage"] == "rank_local_canary"
+        attestation = self.execution_manifest["worker_attestation"]
+        if is_canary:
+            prompt_identity = {
+                "measurement": attestation.get(
+                    "rank_local_canary_prompt_cohort_sha256"
+                )
+            }
+        else:
+            prompt_identity = attestation["prompt_cohort_sha256"].get(
+                str(spec["id"])
+            )
+        if not isinstance(prompt_identity, dict) or not re.fullmatch(
+            r"[0-9a-f]{64}", str(prompt_identity.get("measurement", ""))
+        ):
             raise RuntimeError(f"prompt_cohort_sha256_missing:{spec['id']}")
         run_dir = self.artifact_root / str(spec["artifact_dir"])
         if run_dir.exists():
             raise RuntimeError(f"artifact_already_exists:{run_dir}")
         run_dir.mkdir(parents=True)
-        (run_dir / "warmup").mkdir()
+        if not is_canary:
+            (run_dir / "warmup").mkdir()
+        rank_log_dir = run_dir / "rank_logs"
+        rank_log_dir.mkdir()
+        run_env = _rank_logging_env(self.env, rank_log_dir)
         serve_log = run_dir / "serve.log"
         port = int(spec["serve_argv"][spec["serve_argv"].index("--port") + 1])
-        expected_ranks = list(range(int(spec["dp"])))
+        expected_ranks = set(range(int(spec["dp"])))
         run_start_hashes = assert_source_identity(self.contract)
         if run_start_hashes != hashes:
             raise RuntimeError("vllm_source_hash_changed_before_run")
@@ -1334,7 +1464,7 @@ class Supervisor:
         process = subprocess.Popen(
             spec["serve_argv"],
             cwd=self.workdir,
-            env=self.env,
+            env=run_env,
             stdout=log_stream,
             stderr=subprocess.STDOUT,
             start_new_session=True,
@@ -1346,26 +1476,31 @@ class Supervisor:
         run_end_model_identity: dict[str, Any] | None = None
         try:
             _wait_for_service(process, port)
-            warmup_argv = _materialize_argv(
-                list(spec["warmup_benchmark_argv"]),
-                relative_root=f"{spec['artifact_dir']}/warmup",
-                absolute_root=run_dir / "warmup",
-            )
-            self.run_command(warmup_argv, output=run_dir / "warmup" / "bench.log")
-            assert_benchmark_prompt_identity(
-                run_dir / "warmup" / "bench_result.json",
-                expected=str(prompt_identity.get("warmup", "")),
-                label=f"{spec['id']}:warmup",
-            )
-            time.sleep(2)
-            log_stream.flush()
-            if spec["probe_mode"] == "on":
-                cutoffs = last_iteration_by_rank(
-                    serve_log.read_text(encoding="utf-8", errors="replace"),
-                    expected_ranks=expected_ranks,
-                )
+            if is_canary:
+                cutoffs: dict[int, int] | None = None
             else:
-                cutoffs = {rank: -1 for rank in expected_ranks}
+                warmup_argv = _materialize_argv(
+                    list(spec["warmup_benchmark_argv"]),
+                    relative_root=f"{spec['artifact_dir']}/warmup",
+                    absolute_root=run_dir / "warmup",
+                )
+                self.run_command(
+                    warmup_argv, output=run_dir / "warmup" / "bench.log"
+                )
+                assert_benchmark_prompt_identity(
+                    run_dir / "warmup" / "bench_result.json",
+                    expected=str(prompt_identity.get("warmup", "")),
+                    label=f"{spec['id']}:warmup",
+                )
+                time.sleep(2)
+                if spec["probe_mode"] == "on":
+                    cutoffs = rank_log_cutoff(
+                        self.contract,
+                        rank_log_dir,
+                        expected_ranks=expected_ranks,
+                    )
+                else:
+                    cutoffs = {}
             (run_dir / "metrics_before.prom").write_text(_fetch_metrics(port), encoding="utf-8")
             bench_argv = _materialize_argv(
                 list(spec["benchmark_argv"]),
@@ -1381,14 +1516,14 @@ class Supervisor:
             )
             (run_dir / "metrics_after.prom").write_text(_fetch_metrics(port), encoding="utf-8")
             time.sleep(2)
-            log_stream.flush()
             if spec["probe_mode"] == "on":
-                measurement_ends = last_iteration_by_rank(
-                    serve_log.read_text(encoding="utf-8", errors="replace"),
+                measurement_ends = rank_log_cutoff(
+                    self.contract,
+                    rank_log_dir,
                     expected_ranks=expected_ranks,
                 )
             else:
-                measurement_ends = {rank: -1 for rank in expected_ranks}
+                measurement_ends = {}
             if process.poll() is not None:
                 raise RuntimeError("service_exited_during_benchmark")
         finally:
@@ -1416,8 +1551,43 @@ class Supervisor:
             raise RuntimeError("execution_tool_hash_changed_during_run")
         if run_end_model_identity != run_start_model_identity:
             raise RuntimeError("model_identity_changed_during_run")
+        if spec["probe_mode"] == "on":
+            rank_logs_identity = self.contract.rank_log_identity(
+                rank_log_dir, expected_ranks=expected_ranks
+            )
+        else:
+            if any(rank_log_dir.iterdir()):
+                raise RuntimeError("off_rank_logs_present")
+            rank_logs_identity = self.contract.empty_rank_log_identity()
+        if is_canary:
+            cutoffs = {
+                int(item["rank"]): int(item["first_iteration_seq"]) - 1
+                for item in rank_logs_identity["files"].values()
+            }
         self.raise_if_aborted()
-        meta = self.contract.expected_run_meta(spec)
+        meta = (
+            {
+                key: spec[key]
+                for key in (
+                    "id",
+                    "stage",
+                    "scenario",
+                    "probe_mode",
+                    "source",
+                    "workload_cohort_digest",
+                    "num_prompts",
+                    "concurrency",
+                    "tp",
+                    "dp",
+                    "ep",
+                    "input_len",
+                    "output_len",
+                    "max_num_batched_tokens",
+                )
+            }
+            if is_canary
+            else self.contract.expected_run_meta(spec)
+        )
         meta.update(
             {
                 "vllm_version": "0.19.0",
@@ -1425,14 +1595,16 @@ class Supervisor:
                 "execution_tool_sha256": run_end_tool_hashes,
                 "model_identity_schema": run_end_model_identity["schema"],
                 "model_identity_sha256": model_identity_digest(run_end_model_identity),
-                "warmup_prompt_cohort_sha256": prompt_identity["warmup"],
                 "prompt_cohort_sha256": prompt_identity["measurement"],
                 "measurement_start_after_iteration": {str(rank): value for rank, value in cutoffs.items()},
                 "measurement_end_at_iteration": {
                     str(rank): value for rank, value in measurement_ends.items()
                 },
+                "rank_logs_identity": rank_logs_identity,
             }
         )
+        if not is_canary:
+            meta["warmup_prompt_cohort_sha256"] = prompt_identity["warmup"]
         if overhead_gate_sha256 is not None:
             meta["overhead_gate_sha256"] = overhead_gate_sha256
         _write_json(run_dir / "meta.json", meta)
@@ -1504,6 +1676,171 @@ def gate_stop_result(gate: dict[str, Any]) -> dict[str, Any]:
         "perf_database": False,
         "default_readiness": "No-Go",
     }
+
+
+def validate_rank_local_canary(
+    contract: Any, *, run_dir: Path, spec: dict[str, Any]
+) -> dict[str, Any]:
+    meta = json.loads((run_dir / "meta.json").read_text(encoding="utf-8"))
+    if not isinstance(meta, dict):
+        raise RuntimeError("canary_meta_invalid")
+    for key in (
+        "id",
+        "stage",
+        "scenario",
+        "probe_mode",
+        "source",
+        "workload_cohort_digest",
+        "num_prompts",
+        "concurrency",
+        "tp",
+        "dp",
+        "ep",
+        "input_len",
+        "output_len",
+        "max_num_batched_tokens",
+    ):
+        if meta.get(key) != spec.get(key):
+            raise RuntimeError(f"canary_meta_mismatch:{key}")
+    identity = contract.rank_log_identity(
+        run_dir / "rank_logs", expected_ranks={0, 1}
+    )
+    if meta.get("rank_logs_identity") != identity:
+        raise RuntimeError("canary_rank_logs_identity_mismatch")
+    expected_starts = {
+        str(item["rank"]): int(item["first_iteration_seq"]) - 1
+        for item in identity["files"].values()
+    }
+    expected_ends = {
+        str(item["rank"]): int(item["last_iteration_seq"])
+        for item in identity["files"].values()
+    }
+    if meta.get("measurement_start_after_iteration") != expected_starts:
+        raise RuntimeError("canary_measurement_start_mismatch")
+    if meta.get("measurement_end_at_iteration") != expected_ends:
+        raise RuntimeError("canary_measurement_end_mismatch")
+    benchmark = json.loads(
+        (run_dir / "bench_result.json").read_text(encoding="utf-8")
+    )
+    expected = {
+        "ok_requests": 16,
+        "failed_requests": 0,
+        "total_prompt_tokens": 16 * 128,
+        "total_completion_tokens": 16 * 16,
+    }
+    if not isinstance(benchmark, dict):
+        raise RuntimeError("canary_benchmark_invalid")
+    for key, value in expected.items():
+        if benchmark.get(key) != value:
+            raise RuntimeError(f"canary_benchmark_mismatch:{key}")
+    if benchmark.get("prompt_cohort_sha256") != meta.get(
+        "prompt_cohort_sha256"
+    ):
+        raise RuntimeError("canary_prompt_cohort_sha256_mismatch")
+    if any(
+        (run_dir / name).read_text(encoding="utf-8").strip()
+        for name in (
+            "gpu_compute_apps_after.txt",
+            "process_residue_after.txt",
+        )
+    ):
+        raise RuntimeError("canary_postflight_residue")
+    return {
+        "schema": "phase466_rank_local_canary_v1",
+        "status": "PASS",
+        "scenario": spec["scenario"],
+        "rank_logs_identity": identity,
+        "diagnostic_only": True,
+        "valid_for_default": False,
+        "perf_database": False,
+        "default_readiness": "No-Go",
+    }
+
+
+def run_rank_local_canary(
+    contract: Any,
+    *,
+    workdir: Path,
+    artifact_root: Path,
+    execution_manifest: dict[str, Any],
+    execution_manifest_sha256: str,
+    node_lock_path: Path = NODE_LOCK_PATH,
+) -> int:
+    supervisor = Supervisor(
+        contract=contract,
+        workdir=workdir,
+        artifact_root=artifact_root,
+        execution_manifest=execution_manifest,
+        execution_manifest_sha256=execution_manifest_sha256,
+    )
+    node_lock = None
+    try:
+        node_lock = acquire_node_lock(node_lock_path)
+        supervisor.install_signal_handlers()
+        hashes = supervisor.preflight()
+        supervisor.start_heartbeat()
+        spec = build_rank_local_canary_spec(contract)
+        _write_json(artifact_root / "canary_spec.json", spec)
+        run_dir = supervisor.execute_run(spec, hashes)
+        result = validate_rank_local_canary(
+            contract, run_dir=run_dir, spec=spec
+        )
+        result["execution_manifest_sha256"] = execution_manifest_sha256
+        committed = finalize_result(
+            supervisor=supervisor,
+            result=result,
+            final_residue_check=lambda: _assert_terminal_clean(
+                supervisor, label="canary_postflight"
+            ),
+            terminal_status=lambda status: supervisor.status(
+                "complete", status
+            ),
+        )
+        return 0 if committed == "PASS" else 130
+    except AbortRequested as exc:
+        result = {
+            "schema": "phase466_rank_local_canary_v1",
+            "status": "ABORTED",
+            "reason": str(exc),
+            "diagnostic_only": True,
+            "valid_for_default": False,
+            "perf_database": False,
+            "default_readiness": "No-Go",
+        }
+        if supervisor.owns_artifact_root:
+            finalize_failure_result(
+                supervisor=supervisor,
+                result=result,
+                terminal_status=lambda status: supervisor.status(
+                    "complete", status
+                ),
+            )
+        return 130
+    except Exception as exc:
+        result = {
+            "schema": "phase466_rank_local_canary_v1",
+            "status": "FAILED",
+            "reason": str(exc),
+            "diagnostic_only": True,
+            "valid_for_default": False,
+            "perf_database": False,
+            "default_readiness": "No-Go",
+        }
+        if supervisor.owns_artifact_root:
+            finalize_failure_result(
+                supervisor=supervisor,
+                result=result,
+                terminal_status=lambda status: supervisor.status(
+                    "complete", status
+                ),
+            )
+        return 4
+    finally:
+        if supervisor.heartbeat_alive:
+            supervisor.stop_heartbeat()
+        supervisor.restore_signal_handlers()
+        if node_lock is not None:
+            release_node_lock(node_lock)
 
 
 def _assert_terminal_clean(supervisor: Supervisor, *, label: str) -> None:
@@ -1835,6 +2172,7 @@ def main() -> int:
     parser.add_argument("--expected-execution-manifest", type=Path)
     parser.add_argument("--expected-execution-manifest-sha256")
     write_modes.add_argument("--write-execution-manifest", type=Path)
+    write_modes.add_argument("--rank-local-canary", action="store_true")
     args = parser.parse_args()
     workdir = args.workdir.resolve()
     supervisor_path = Path(__file__).resolve()
@@ -1856,7 +2194,9 @@ def main() -> int:
         )
         if not isinstance(coordinator, dict):
             raise ValueError("coordinator_manifest_must_be_object")
-        _assert_clean_worker(workdir, _runtime_env(), label="identity_preflight_before")
+        _assert_clean_worker(
+            workdir, _runtime_env(workdir), label="identity_preflight_before"
+        )
         attestation = build_worker_attestation(
             contract,
             coordinator_manifest=coordinator,
@@ -1864,7 +2204,9 @@ def main() -> int:
             workdir=workdir,
             benchmark_path=benchmark_path,
         )
-        _assert_clean_worker(workdir, _runtime_env(), label="identity_preflight_after")
+        _assert_clean_worker(
+            workdir, _runtime_env(workdir), label="identity_preflight_after"
+        )
         _write_json(args.write_worker_attestation, attestation)
         print(execution_manifest_digest(attestation))
         return 0
@@ -1903,7 +2245,8 @@ def main() -> int:
     manifest = json.loads(args.expected_execution_manifest.read_text(encoding="utf-8"))
     if not isinstance(manifest, dict):
         raise ValueError("expected_execution_manifest_must_be_object")
-    return run_all(
+    execute = run_rank_local_canary if args.rank_local_canary else run_all
+    return execute(
         contract,
         workdir=workdir,
         artifact_root=args.artifact_root.resolve(),

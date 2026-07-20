@@ -462,7 +462,7 @@ def validate_real_artifact_root(root: Path) -> dict[str, Path]:
     gate_digest = execution_manifest_digest(gate)
     if result.get("overhead_gate_sha256") != gate_digest:
         raise ValueError("overhead_gate_digest_mismatch")
-    if manifest.get("schema") != "phase466_execution_manifest_v3":
+    if manifest.get("schema") != "phase466_execution_manifest_v4":
         raise ValueError("execution_manifest_schema_mismatch")
     coordinator = manifest.get("coordinator_manifest")
     attestation = manifest.get("worker_attestation")
@@ -471,12 +471,12 @@ def validate_real_artifact_root(root: Path) -> dict[str, Path]:
     coordinator_digest = execution_manifest_digest(coordinator)
     attestation_digest = execution_manifest_digest(attestation)
     if (
-        coordinator.get("schema") != "phase466_coordinator_manifest_v1"
+        coordinator.get("schema") != "phase466_coordinator_manifest_v2"
         or manifest.get("coordinator_manifest_sha256") != coordinator_digest
     ):
         raise ValueError("coordinator_manifest_digest_mismatch")
     if (
-        attestation.get("schema") != "phase466_worker_attestation_v1"
+        attestation.get("schema") != "phase466_worker_attestation_v2"
         or manifest.get("worker_attestation_sha256") != attestation_digest
         or attestation.get("coordinator_manifest_sha256") != coordinator_digest
     ):
@@ -487,8 +487,22 @@ def validate_real_artifact_root(root: Path) -> dict[str, Path]:
         "supervisor",
         "benchmark",
         "rank_analyzer",
+        "rank_logging_handler",
+        "rank_logging_config",
     }:
         raise ValueError("execution_manifest_tool_hashes_missing")
+    transport = attestation.get("rank_logging_transport")
+    if (
+        not isinstance(transport, dict)
+        or transport.get("schema") != "phase466_rank_logging_transport_v1"
+        or transport.get("handler_module") != "phase466_rank_local_logging"
+        or transport.get("rank_log_dir_env") != "PHASE466_RANK_LOG_DIR"
+        or not re.fullmatch(
+            r"[0-9a-f]{64}",
+            str(attestation.get("rank_local_canary_prompt_cohort_sha256", "")),
+        )
+    ):
+        raise ValueError("rank_logging_transport_identity_missing")
     coordinator_tools = coordinator.get("tools")
     if not isinstance(coordinator_tools, dict) or {
         name: item.get("sha256") if isinstance(item, dict) else None

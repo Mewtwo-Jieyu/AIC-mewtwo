@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "disable_existing_loggers": false,
+  "formatters": {
+    "vllm": {
+      "()": "vllm.logging_utils.NewLineFormatter",
+      "datefmt": "%m-%d %H:%M:%S",
+      "format": "%(levelname)s %(asctime)s [%(processName)s] %(name)s:%(lineno)d] %(message)s"
+    }
+  },
+  "filters": {
+    "non_iteration": {
+      "()": "phase466_rank_local_logging.NonIterationConsoleFilter"
+    }
+  },
+  "handlers": {
+    "console": {
+      "class": "logging.StreamHandler",
+      "formatter": "vllm",
+      "filters": ["non_iteration"],
+      "stream": "ext://sys.stdout"
+    },
+    "rank_local": {
+      "()": "phase466_rank_local_logging.RankLocalIterationHandler"
+    }
+  },
+  "loggers": {
+    "vllm": {
+      "handlers": ["console", "rank_local"],
+      "level": "INFO",
+      "propagate": false
+    }
+  }
+}

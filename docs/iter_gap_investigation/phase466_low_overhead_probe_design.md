@@ -1,6 +1,6 @@
 # Phase466 low-overhead probe design
 
-结论：Phase466 v3 的本地执行契约已闭合。probe 默认关闭，只使用 vLLM 0.19.0 自带的
+结论：Phase466 v3.2 的本地执行契约已闭合。probe 默认关闭，只使用 vLLM 0.19.0 自带的
 `--enable-logging-iteration-details` 和 Prometheus preemption counter，不修改 vLLM 源码，不采
 per-request 高频 composition 事件。本轮只形成 rank-timing 诊断，Default AIC 继续 `No-Go`。
 
@@ -11,9 +11,9 @@ per-request 高频 composition 事件。本轮只形成 rank-timing 诊断，Def
 | integration base | `822ae421a0b79eb0a69e8f59a2c4d09cba327eaa` |
 | execution branch | `feature/kimi-vllm019-cb-sim-post-baseline` |
 | hardware/runtime | H200 SXM / vLLM 0.19.0 / Kimi-K2.5 |
-| implementation | stock vLLM aggregate iteration details; no source patch |
-| local result | 102 Phase466/benchmark tests passed; default simulator validation passed |
-| remote result | fresh v3 run pending |
+| implementation | stock vLLM iteration details + rank-local logging handler; no source patch |
+| local result | v3.2 verification pending |
+| remote result | rank-local canary pending |
 | flags | `diagnostic_only=true`; `valid_for_default=false`; `perf_database=false` |
 
 ## Measurement contract
@@ -40,7 +40,9 @@ progress windows; absolute clocks and naked iteration ids are not join keys.
 |---|---|
 | supervisor | fixed node lock, serialized runs, atomic status updates and a 30-second heartbeat |
 | identity preflight | no artifact and no vLLM service; validate uploaded bytes, vLLM/GPU/prompt identity, and snapshot or flat-mirror fingerprint |
-| execution preflight | only accepts `phase466_execution_manifest_v3`; then creates the fresh artifact root and rechecks clean GPU/process state |
+| execution preflight | only accepts `phase466_execution_manifest_v4`; then creates the fresh artifact root and rechecks clean GPU/process state |
+| log transport | custom logging config filters iteration records from stdout and writes strict per-rank JSONL; no stdout rank fallback |
+| canary | one DP2 N16/C16 run must produce exactly rank0/rank1 files before the full gate is allowed |
 | cleanup | terminate the service process group, then require empty GPU/process residue |
 | failure handling | normal benchmark failure may continue to the next preregistered run; cleanup or integrity failure stops all runs |
 | gate validation | validates all 6 complete pairs; the old single-pair gate entry no longer exists |
@@ -75,8 +77,8 @@ They do not produce a model attribution `PASS`, do not execute route selection a
 | preregistered plan generation | PASS |
 | exact vLLM 0.19.0 simulator export | expected fail-closed at `tp4dp2-8k2k-bt65536`; no output directory written |
 | `git diff --check` | PASS |
-| SSH/GPU | invalid partial attempt stopped; no residue; not gate evidence |
+| SSH/GPU | prior merged-stdout attempt invalid; v3.2 canary pending |
 
-The next action is a fresh serialized six-pair gate on the approved worker. A non-`PASS` gate stops before N512;
-`PASS` runs exactly the three real scenarios. This design is not GPU evidence, not a PerfDatabase row,
+The next action is one rank-local canary on the approved worker. Only a canary `PASS` permits a fresh serialized
+six-pair gate. A non-`PASS` gate stops before N512; `PASS` runs exactly the three real scenarios. This design is not GPU evidence, not a PerfDatabase row,
 not a latency model and not evidence for enabling Default AIC.

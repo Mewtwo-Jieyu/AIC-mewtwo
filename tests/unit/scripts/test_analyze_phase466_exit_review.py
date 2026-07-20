@@ -368,16 +368,18 @@ def _write_iteration_csv(path: Path, row: dict[str, object]) -> None:
         writer.writerow(row)
 
 
-def _execution_manifest_v3(analysis) -> dict[str, object]:
+def _execution_manifest_v4(analysis) -> dict[str, object]:
     tool_hashes = {
         "contract": "1" * 64,
         "supervisor": "2" * 64,
         "benchmark": "3" * 64,
         "rank_analyzer": "4" * 64,
+        "rank_logging_handler": "a" * 64,
+        "rank_logging_config": "b" * 64,
     }
     coordinator = {
-        "schema": "phase466_coordinator_manifest_v1",
-        "contract_schema": "phase466_rank_timing_v3",
+        "schema": "phase466_coordinator_manifest_v2",
+        "contract_schema": "phase466_rank_timing_v4",
         "source_commit": "a" * 40,
         "tools": {
             name: {"path": f"scripts/{name}.py", "sha256": digest}
@@ -410,8 +412,8 @@ def _execution_manifest_v3(analysis) -> dict[str, object]:
         model_payload
     )
     attestation = {
-        "schema": "phase466_worker_attestation_v1",
-        "contract_schema": "phase466_rank_timing_v3",
+        "schema": "phase466_worker_attestation_v2",
+        "contract_schema": "phase466_rank_timing_v4",
         "coordinator_manifest_sha256": coordinator_digest,
         "tool_sha256": tool_hashes,
         "vllm_version": "0.19.0",
@@ -426,14 +428,22 @@ def _execution_manifest_v3(analysis) -> dict[str, object]:
             }
             for scenario in analysis.FORMAL_SCENARIOS
         },
+        "rank_local_canary_prompt_cohort_sha256": "c" * 64,
+        "rank_logging_transport": {
+            "schema": "phase466_rank_logging_transport_v1",
+            "config_path": "/worker/scripts/phase466_rank_local_logging.json",
+            "handler_module": "phase466_rank_local_logging",
+            "rank_log_dir_env": "PHASE466_RANK_LOG_DIR",
+            "pythonpath": "/worker/scripts",
+        },
         "diagnostic_only": True,
         "valid_for_default": False,
         "perf_database": False,
     }
     attestation_digest = analysis.execution_manifest_digest(attestation)
     return {
-        "schema": "phase466_execution_manifest_v3",
-        "contract_schema": "phase466_rank_timing_v3",
+        "schema": "phase466_execution_manifest_v4",
+        "contract_schema": "phase466_rank_timing_v4",
         "coordinator_manifest_sha256": coordinator_digest,
         "worker_attestation_sha256": attestation_digest,
         "coordinator_manifest": coordinator,
@@ -443,7 +453,7 @@ def _execution_manifest_v3(analysis) -> dict[str, object]:
 
 def test_real_artifact_root_rejects_iteration_csv_tampering(tmp_path: Path) -> None:
     analysis = _load_module()
-    manifest = _execution_manifest_v3(analysis)
+    manifest = _execution_manifest_v4(analysis)
     attestation = manifest["worker_attestation"]
     model_identity = attestation["model_identity"]
     tool_hashes = attestation["tool_sha256"]

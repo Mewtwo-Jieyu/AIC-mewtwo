@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import csv
-import gzip
 import hashlib
 import json
 import math
@@ -19,7 +18,8 @@ from typing import Any
 
 
 BASE_COMMIT = "822ae421a0b79eb0a69e8f59a2c4d09cba327eaa"
-SCHEMA = "phase466_rank_timing_v3"
+SCHEMA = "phase466_rank_timing_v4"
+RANK_LOG_IDENTITY_SCHEMA = "phase466_rank_log_identity_v1"
 PROBE_FLAG = "--enable-logging-iteration-details"
 MAX_OVERHEAD_PCT = 2.0
 OVERHEAD_PAIR_COUNT = 6
@@ -38,6 +38,9 @@ FORMAL_SCENARIOS = (
     "K2.5-tp4ep8dp2-8k2k-bt65536",
 )
 SOURCE_FILES = {
+    "/usr/local/lib/python3.12/dist-packages/vllm/logger.py": (
+        "233720900b1207434e4824bbddcf86dba0dc8557a0bfe78a639545462a9e85b5"
+    ),
     "/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core.py": (
         "896730e749cbcabb487ce50c703974594d197fc31a1d3b26fe096197d142d2d5"
     ),
@@ -46,16 +49,13 @@ SOURCE_FILES = {
     ),
 }
 
-ENGINE_CORE_PREFIX_RE = re.compile(
-    r"EngineCore(?:_DP(?P<rank>\d+))?(?![A-Za-z0-9_])"
-)
 ITERATION_RE = re.compile(
-    r"Iteration\((?P<iteration>\d+)\):\s+"
+    r"^Iteration\((?P<iteration>\d+)\):\s+"
     r"(?P<context_requests>\d+)\s+context requests,\s+"
     r"(?P<context_tokens>\d+)\s+context tokens,\s+"
     r"(?P<generation_requests>\d+)\s+generation requests,\s+"
     r"(?P<generation_tokens>\d+)\s+generation tokens,\s+"
-    r"iteration elapsed time:\s+(?P<elapsed_ms>[0-9.]+)\s+ms"
+    r"iteration elapsed time:\s+(?P<elapsed_ms>[0-9.]+)\s+ms$"
 )
 PROM_RE = re.compile(
     r"^(?P<name>[A-Za-z_:][A-Za-z0-9_:]*)"
@@ -95,6 +95,14 @@ class IterationRow:
     iteration_end_offset_ms: float
     cumulative_scheduled_tokens: int
     progress_window_id: int
+
+
+@dataclass(frozen=True)
+class RankLogRecord:
+    rank: int
+    pid: int
+    process_name: str
+    match: re.Match[str]
 
 
 SCENARIOS = {
@@ -255,7 +263,7 @@ def _run_spec(
         "concurrency": 128,
         "warmup_num_prompts": 128,
         "warmup_concurrency": 128,
-        "measurement_requires_warmup_cutoff": True,
+        "measurement_requires_warmup_cutoff": probe_enabled,
         "pair_id": pair_id,
         "order_index": order_index,
         "tp": scenario.tp,
@@ -379,7 +387,7 @@ def build_run_plan() -> dict[str, Any]:
         "phase": "phase466",
         "base_commit": BASE_COMMIT,
         "probe_default": "off",
-        "implementation": "stock_vllm_iteration_details_no_source_patch",
+        "implementation": "rank_local_logging_handler_no_vllm_source_patch",
         "comparison_semantics": {
             "tp8_vs_tp4dp2": "topology_control_not_pure_dp_control",
         },
@@ -391,6 +399,8 @@ def build_run_plan() -> dict[str, Any]:
         "environment": {
             "VLLM_ENABLE_CUDA_COMPATIBILITY": "1",
             "VLLM_LOGGING_LEVEL": "INFO",
+            "VLLM_LOGGING_CONFIG_PATH": "scripts/phase466_rank_local_logging.json",
+            "PYTHONPATH": "<workdir>/scripts",
             "VLLM_NUM_GPU_BLOCKS_OVERRIDE": "unset",
             "NUM_GPU_BLOCKS_OVERRIDE": "unset",
         },
@@ -457,6 +467,7 @@ def build_run_plan() -> dict[str, Any]:
             "overhead/<pair-id>/<mode>/metrics_before.prom",
             "overhead/<pair-id>/<mode>/metrics_after.prom",
             "overhead/<pair-id>/<mode>/serve.log.gz",
+            "overhead/<pair-id>/<mode>/rank_logs/rank-<id>.jsonl",
             "overhead/<pair-id>/<mode>/gpu_compute_apps_after.txt",
             "overhead/<pair-id>/<mode>/process_residue_after.txt",
             "overhead/<pair-id>/pair_result.json",
@@ -467,6 +478,7 @@ def build_run_plan() -> dict[str, Any]:
             "formal/<scenario>/metrics_before.prom",
             "formal/<scenario>/metrics_after.prom",
             "formal/<scenario>/serve.log.gz",
+            "formal/<scenario>/rank_logs/rank-<id>.jsonl",
             "formal/<scenario>/iteration_rows.csv",
             "formal/<scenario>/rank_summary.csv",
             "formal/<scenario>/prompt_identity.json",
@@ -494,152 +506,191 @@ def build_run_plan() -> dict[str, Any]:
     }
 
 
+def empty_rank_log_identity() -> dict[str, Any]:
+    return {"schema": RANK_LOG_IDENTITY_SCHEMA, "files": {}}
+
+
+def _load_rank_logs(
+    rank_log_dir: Path, *, expected_ranks: set[int]
+) -> tuple[dict[int, list[RankLogRecord]], dict[str, Any]]:
+    if not expected_ranks or expected_ranks != set(range(len(expected_ranks))):
+        raise ValueError(f"invalid_expected_rank_set:{sorted(expected_ranks)}")
+    if not rank_log_dir.is_dir():
+        raise ValueError(f"missing_rank_log_dir:{rank_log_dir}")
+    expected_files = {f"rank-{rank}.jsonl" for rank in expected_ranks}
+    actual_files = {path.name for path in rank_log_dir.iterdir()}
+    if actual_files != expected_files:
+        raise ValueError(
+            f"rank_log_file_set_mismatch:{sorted(actual_files)}!={sorted(expected_files)}"
+        )
+
+    by_rank: dict[int, list[RankLogRecord]] = {}
+    files_identity: dict[str, dict[str, Any]] = {}
+    expected_dp_process_names = len(expected_ranks) > 1
+    for rank in sorted(expected_ranks):
+        filename = f"rank-{rank}.jsonl"
+        path = rank_log_dir / filename
+        content = path.read_bytes()
+        try:
+            lines = content.decode("utf-8").splitlines()
+        except UnicodeDecodeError as exc:
+            raise ValueError(f"rank_log_not_utf8:{filename}") from exc
+        if not lines:
+            raise ValueError(f"empty_rank_log:{filename}")
+        expected_process_name = (
+            f"EngineCore_DP{rank}" if expected_dp_process_names else "EngineCore"
+        )
+        records: list[RankLogRecord] = []
+        pids: set[int] = set()
+        iterations: list[int] = []
+        for line_number, line in enumerate(lines, start=1):
+            try:
+                value = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"invalid_rank_log_json:{filename}:{line_number}") from exc
+            if not isinstance(value, dict) or set(value) != {
+                "rank",
+                "pid",
+                "process_name",
+                "message",
+            }:
+                raise ValueError(f"invalid_rank_log_record:{filename}:{line_number}")
+            record_rank = value["rank"]
+            pid = value["pid"]
+            process_name = value["process_name"]
+            message = value["message"]
+            if isinstance(record_rank, bool) or record_rank != rank:
+                raise ValueError(f"rank_log_record_rank_mismatch:{filename}:{line_number}")
+            if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
+                raise ValueError(f"invalid_rank_log_pid:{filename}:{line_number}")
+            if process_name != expected_process_name:
+                raise ValueError(f"rank_log_process_name_mismatch:{filename}:{line_number}")
+            if not isinstance(message, str):
+                raise ValueError(f"invalid_rank_log_message:{filename}:{line_number}")
+            match = ITERATION_RE.fullmatch(message)
+            if match is None:
+                raise ValueError(f"invalid_rank_iteration_message:{filename}:{line_number}")
+            elapsed_ms = float(match.group("elapsed_ms"))
+            if not math.isfinite(elapsed_ms) or elapsed_ms <= 0:
+                raise ValueError(f"invalid_iteration_elapsed:{filename}:{line_number}")
+            pids.add(pid)
+            iterations.append(int(match.group("iteration")))
+            records.append(RankLogRecord(rank, pid, process_name, match))
+        if len(pids) != 1:
+            raise ValueError(f"rank_log_pid_drift:{filename}")
+        if iterations != list(range(iterations[0], iterations[-1] + 1)):
+            raise ValueError(f"rank_iteration_not_contiguous:{filename}")
+        by_rank[rank] = records
+        files_identity[filename] = {
+            "rank": rank,
+            "pid": next(iter(pids)),
+            "process_name": expected_process_name,
+            "sha256": hashlib.sha256(content).hexdigest(),
+            "line_count": len(lines),
+            "first_iteration_seq": iterations[0],
+            "last_iteration_seq": iterations[-1],
+        }
+    return by_rank, {
+        "schema": RANK_LOG_IDENTITY_SCHEMA,
+        "files": files_identity,
+    }
+
+
+def rank_log_identity(
+    rank_log_dir: Path, *, expected_ranks: set[int]
+) -> dict[str, Any]:
+    _, identity = _load_rank_logs(rank_log_dir, expected_ranks=expected_ranks)
+    return identity
+
+
+def last_iteration_by_rank(
+    rank_log_dir: Path, *, expected_ranks: set[int]
+) -> dict[int, int]:
+    _, identity = _load_rank_logs(rank_log_dir, expected_ranks=expected_ranks)
+    return {
+        int(row["rank"]): int(row["last_iteration_seq"])
+        for row in identity["files"].values()
+    }
+
+
 def parse_iteration_rows(
-    text: str,
+    rank_log_dir: Path,
     *,
+    expected_ranks: set[int],
     run_id: str = "",
     source: str = "",
     workload_cohort_digest: str = "",
     after_iteration_by_rank: dict[int, int] | None = None,
     through_iteration_by_rank: dict[int, int] | None = None,
 ) -> list[IterationRow]:
-    parsed: list[tuple[re.Match[str], set[int]]] = []
-    by_iteration: dict[int, list[int]] = defaultdict(list)
-    for line in text.splitlines():
-        match = ITERATION_RE.search(line)
-        if not match:
-            continue
-        candidate_ranks = {
-            int(prefix.group("rank") or 0)
-            for prefix in ENGINE_CORE_PREFIX_RE.finditer(line, 0, match.start())
-        }
-        if not candidate_ranks:
-            continue
-        iteration_seq = int(match.group("iteration"))
-        if after_iteration_by_rank is not None:
-            missing = candidate_ranks - set(after_iteration_by_rank)
-            if missing:
-                raise ValueError(f"missing_warmup_cutoff_rank:{min(missing)}")
-            candidate_ranks = {
-                rank
-                for rank in candidate_ranks
-                if iteration_seq > after_iteration_by_rank[rank]
-            }
-        if through_iteration_by_rank is not None:
-            missing = candidate_ranks - set(through_iteration_by_rank)
-            if missing:
-                raise ValueError(f"missing_measurement_end_rank:{min(missing)}")
-            candidate_ranks = {
-                rank
-                for rank in candidate_ranks
-                if iteration_seq <= through_iteration_by_rank[rank]
-            }
-        if not candidate_ranks:
-            continue
-        parsed_index = len(parsed)
-        parsed.append((match, candidate_ranks))
-        by_iteration[iteration_seq].append(parsed_index)
-
-    resolved_ranks: dict[int, int] = {}
-    for iteration_seq, indexes in by_iteration.items():
-        occupied: set[int] = set()
-        pending: list[int] = []
-        for index in indexes:
-            candidates = parsed[index][1]
-            if len(candidates) == 1:
-                rank = next(iter(candidates))
-                resolved_ranks[index] = rank
-                occupied.add(rank)
-            else:
-                pending.append(index)
-        while pending:
-            unresolved: list[int] = []
-            progress = False
-            for index in pending:
-                available = parsed[index][1] - occupied
-                if len(available) == 1:
-                    rank = next(iter(available))
-                    resolved_ranks[index] = rank
-                    occupied.add(rank)
-                    progress = True
-                else:
-                    unresolved.append(index)
-            if not progress:
-                candidates = [sorted(parsed[index][1]) for index in unresolved]
-                raise ValueError(
-                    f"ambiguous_rank_iteration:{iteration_seq}:{candidates}"
-                )
-            pending = unresolved
-
-    rows: list[IterationRow] = []
-    seen: set[tuple[int, int]] = set()
-    elapsed_by_rank: dict[int, float] = defaultdict(float)
-    tokens_by_rank: dict[int, int] = defaultdict(int)
-    observed_by_rank: dict[int, list[int]] = defaultdict(list)
-    for index, (match, _) in enumerate(parsed):
-        rank = resolved_ranks[index]
-        iteration_seq = int(match.group("iteration"))
-        if after_iteration_by_rank is not None:
-            if rank not in after_iteration_by_rank:
-                raise ValueError(f"missing_warmup_cutoff_rank:{rank}")
-            if iteration_seq <= after_iteration_by_rank[rank]:
-                continue
-        if through_iteration_by_rank is not None:
-            if rank not in through_iteration_by_rank:
-                raise ValueError(f"missing_measurement_end_rank:{rank}")
-            if iteration_seq > through_iteration_by_rank[rank]:
-                continue
-        observed_by_rank[rank].append(iteration_seq)
-        elapsed_ms = float(match.group("elapsed_ms"))
-        scheduled_tokens = int(match.group("context_tokens")) + int(
-            match.group("generation_tokens")
-        )
-        start_offset_ms = elapsed_by_rank[rank]
-        end_offset_ms = start_offset_ms + elapsed_ms
-        progress_start_tokens = tokens_by_rank[rank]
-        cumulative_scheduled_tokens = progress_start_tokens + scheduled_tokens
-        row = IterationRow(
-            rank_id=rank,
-            rank_scope="dp_rank",
-            run_id=run_id,
-            source=source,
-            workload_cohort_digest=workload_cohort_digest,
-            iteration_seq=iteration_seq,
-            progress_start_tokens=progress_start_tokens,
-            progress_end_tokens=cumulative_scheduled_tokens,
-            prefill_request_count=int(match.group("context_requests")),
-            scheduled_prefill_tokens=int(match.group("context_tokens")),
-            decode_request_count=int(match.group("generation_requests")),
-            scheduled_decode_tokens=int(match.group("generation_tokens")),
-            iteration_elapsed_ms=elapsed_ms,
-            iteration_start_offset_ms=start_offset_ms,
-            iteration_end_offset_ms=end_offset_ms,
-            cumulative_scheduled_tokens=cumulative_scheduled_tokens,
-            progress_window_id=max(
-                0, (cumulative_scheduled_tokens - 1) // PROGRESS_WINDOW_TOKENS
-            ),
-        )
-        key = (row.rank_id, row.iteration_seq)
-        if key in seen:
-            raise ValueError(f"duplicate_rank_iteration:{key}")
-        if not math.isfinite(row.iteration_elapsed_ms) or row.iteration_elapsed_ms <= 0:
-            raise ValueError(
-                f"invalid_iteration_elapsed:{key}:{row.iteration_elapsed_ms}"
-            )
-        seen.add(key)
-        rows.append(row)
-        elapsed_by_rank[rank] = end_offset_ms
-        tokens_by_rank[rank] = cumulative_scheduled_tokens
+    by_rank, _ = _load_rank_logs(rank_log_dir, expected_ranks=expected_ranks)
+    if after_iteration_by_rank is not None and set(after_iteration_by_rank) != expected_ranks:
+        raise ValueError("warmup_cutoff_rank_set_mismatch")
     if through_iteration_by_rank is not None:
         if after_iteration_by_rank is None:
             raise ValueError("measurement_end_requires_warmup_cutoff")
-        if set(through_iteration_by_rank) != set(after_iteration_by_rank):
+        if set(through_iteration_by_rank) != expected_ranks:
             raise ValueError("measurement_rank_set_mismatch")
-        for rank, end in through_iteration_by_rank.items():
-            start = after_iteration_by_rank[rank] + 1
-            expected = list(range(start, end + 1))
-            if observed_by_rank.get(rank, []) != expected:
-                raise ValueError(f"measurement_iteration_gap:{rank}")
+
+    rows: list[IterationRow] = []
+    elapsed_by_rank: dict[int, float] = defaultdict(float)
+    tokens_by_rank: dict[int, int] = defaultdict(int)
+    for rank, records in sorted(by_rank.items()):
+        start = after_iteration_by_rank[rank] + 1 if after_iteration_by_rank else None
+        end = through_iteration_by_rank[rank] if through_iteration_by_rank else None
+        selected = [
+            record
+            for record in records
+            if (start is None or int(record.match.group("iteration")) >= start)
+            and (end is None or int(record.match.group("iteration")) <= end)
+        ]
+        if not selected:
+            raise ValueError(f"missing_iteration_rank_rows:{rank}")
+        selected_iterations = [
+            int(record.match.group("iteration")) for record in selected
+        ]
+        expected_start = start if start is not None else selected_iterations[0]
+        expected_end = end if end is not None else selected_iterations[-1]
+        if selected_iterations != list(range(expected_start, expected_end + 1)):
+            raise ValueError(f"measurement_iteration_gap:{rank}")
+        for record in selected:
+            match = record.match
+            iteration_seq = int(match.group("iteration"))
+            elapsed_ms = float(match.group("elapsed_ms"))
+            scheduled_tokens = int(match.group("context_tokens")) + int(
+                match.group("generation_tokens")
+            )
+            start_offset_ms = elapsed_by_rank[rank]
+            end_offset_ms = start_offset_ms + elapsed_ms
+            progress_start_tokens = tokens_by_rank[rank]
+            cumulative_scheduled_tokens = progress_start_tokens + scheduled_tokens
+            rows.append(
+                IterationRow(
+                    rank_id=rank,
+                    rank_scope="dp_rank",
+                    run_id=run_id,
+                    source=source,
+                    workload_cohort_digest=workload_cohort_digest,
+                    iteration_seq=iteration_seq,
+                    progress_start_tokens=progress_start_tokens,
+                    progress_end_tokens=cumulative_scheduled_tokens,
+                    prefill_request_count=int(match.group("context_requests")),
+                    scheduled_prefill_tokens=int(match.group("context_tokens")),
+                    decode_request_count=int(match.group("generation_requests")),
+                    scheduled_decode_tokens=int(match.group("generation_tokens")),
+                    iteration_elapsed_ms=elapsed_ms,
+                    iteration_start_offset_ms=start_offset_ms,
+                    iteration_end_offset_ms=end_offset_ms,
+                    cumulative_scheduled_tokens=cumulative_scheduled_tokens,
+                    progress_window_id=max(
+                        0,
+                        (cumulative_scheduled_tokens - 1)
+                        // PROGRESS_WINDOW_TOKENS,
+                    ),
+                )
+            )
+            elapsed_by_rank[rank] = end_offset_ms
+            tokens_by_rank[rank] = cumulative_scheduled_tokens
     if not rows:
         raise ValueError("missing_iteration_rank_rows")
     return rows
@@ -964,7 +1015,7 @@ def _validate_exact_run_meta(
     ):
         raise ValueError("run_meta_mismatch:model_identity_sha256")
     cutoffs = meta.get("measurement_start_after_iteration")
-    if not isinstance(cutoffs, dict) or not cutoffs:
+    if not isinstance(cutoffs, dict):
         raise ValueError("run_meta_mismatch:measurement_start_after_iteration")
     for rank, value in cutoffs.items():
         if not str(rank).isdigit() or not isinstance(value, int) or value < -1:
@@ -977,6 +1028,19 @@ def _validate_exact_run_meta(
             raise ValueError("run_meta_mismatch:measurement_end_at_iteration")
         if value < int(cutoffs[rank]):
             raise ValueError("run_meta_mismatch:measurement_end_at_iteration")
+    rank_logs_identity = meta.get("rank_logs_identity")
+    if not isinstance(rank_logs_identity, dict) or rank_logs_identity.get(
+        "schema"
+    ) != RANK_LOG_IDENTITY_SCHEMA or not isinstance(
+        rank_logs_identity.get("files"), dict
+    ):
+        raise ValueError("run_meta_mismatch:rank_logs_identity")
+    if spec["probe_enabled"]:
+        expected_ranks = {str(rank) for rank in range(int(spec["dp"]))}
+        if set(cutoffs) != expected_ranks or not rank_logs_identity["files"]:
+            raise ValueError("run_meta_mismatch:rank_logs_identity")
+    elif cutoffs or ends or rank_logs_identity != empty_rank_log_identity():
+        raise ValueError("run_meta_mismatch:rank_logs_identity")
     manifest_digest = meta.get("execution_manifest_sha256")
     if not isinstance(manifest_digest, str) or not re.fullmatch(
         r"[0-9a-f]{64}", manifest_digest
@@ -995,6 +1059,42 @@ def _validate_source_and_cleanup(root: Path) -> None:
     if hashes != SOURCE_FILES:
         raise ValueError("vllm_source_hash_mismatch")
     _validate_residue(root)
+
+
+def _validate_off_rank_logs(root: Path) -> None:
+    rank_log_dir = root / "rank_logs"
+    if not rank_log_dir.is_dir():
+        raise ValueError(f"missing_rank_log_dir:{rank_log_dir}")
+    if any(rank_log_dir.iterdir()):
+        raise ValueError("off_rank_logs_present")
+
+
+def _validated_rank_rows(
+    root: Path, *, meta: dict[str, Any], spec: dict[str, Any]
+) -> tuple[list[IterationRow], dict[str, Any]]:
+    expected_ranks = set(range(int(spec["dp"])))
+    rank_log_dir = root / "rank_logs"
+    identity = rank_log_identity(rank_log_dir, expected_ranks=expected_ranks)
+    if identity != meta["rank_logs_identity"]:
+        raise ValueError("rank_logs_identity_mismatch")
+    cutoffs = {
+        int(rank): int(value)
+        for rank, value in meta["measurement_start_after_iteration"].items()
+    }
+    ends = {
+        int(rank): int(value)
+        for rank, value in meta["measurement_end_at_iteration"].items()
+    }
+    rows = parse_iteration_rows(
+        rank_log_dir,
+        expected_ranks=expected_ranks,
+        run_id=str(meta["id"]),
+        source=str(meta["source"]),
+        workload_cohort_digest=str(meta["workload_cohort_digest"]),
+        after_iteration_by_rank=cutoffs,
+        through_iteration_by_rank=ends,
+    )
+    return rows, identity
 
 
 def validate_overhead_pair_artifacts(
@@ -1017,6 +1117,7 @@ def validate_overhead_pair_artifacts(
     _validate_exact_run_meta(on_meta, on_spec)
     _validate_source_and_cleanup(off_dir)
     _validate_source_and_cleanup(on_dir)
+    _validate_off_rank_logs(off_dir)
 
     off_benchmark = _load_json(off_dir / "bench_result.json")
     on_benchmark = _load_json(on_dir / "bench_result.json")
@@ -1029,30 +1130,12 @@ def validate_overhead_pair_artifacts(
     if off_benchmark["prompt_cohort_sha256"] != on_benchmark["prompt_cohort_sha256"]:
         raise ValueError("overhead_prompt_cohort_sha256_drift")
 
-    serve_log = on_dir / "serve.log.gz"
-    if not serve_log.exists():
-        serve_log = on_dir / "serve.log"
-    if not serve_log.exists():
-        raise ValueError(f"missing_probe_serve_log:{on_dir}")
     metrics_before = on_dir / "metrics_before.prom"
     metrics_after = on_dir / "metrics_after.prom"
     if not metrics_before.exists() or not metrics_after.exists():
         raise ValueError(f"missing_probe_metrics:{on_dir}")
-    cutoffs = {
-        int(rank): int(value)
-        for rank, value in on_meta["measurement_start_after_iteration"].items()
-    }
-    ends = {
-        int(rank): int(value)
-        for rank, value in on_meta["measurement_end_at_iteration"].items()
-    }
-    rows = parse_iteration_rows(
-        _read_text(serve_log),
-        run_id=str(on_meta["id"]),
-        source=str(on_meta["source"]),
-        workload_cohort_digest=str(on_meta["workload_cohort_digest"]),
-        after_iteration_by_rank=cutoffs,
-        through_iteration_by_rank=ends,
+    rows, rank_logs_identity = _validated_rank_rows(
+        on_dir, meta=on_meta, spec=on_spec
     )
     rank_summary = summarize_ranks(
         rows,
@@ -1067,6 +1150,7 @@ def validate_overhead_pair_artifacts(
         "off_output_tok_s": off_throughput,
         "on_output_tok_s": on_throughput,
         "rank_summary": rank_summary,
+        "rank_logs_identity": rank_logs_identity,
         "source_hash_match": True,
         "cleanup": True,
     }
@@ -1143,31 +1227,11 @@ def validate_formal_artifacts(
     if benchmark["prompt_cohort_sha256"] != meta["prompt_cohort_sha256"]:
         raise ValueError("formal_prompt_cohort_sha256_mismatch")
 
-    serve_log = root / "serve.log.gz"
-    if not serve_log.exists():
-        serve_log = root / "serve.log"
-    if not serve_log.exists():
-        raise ValueError(f"missing_probe_serve_log:{root}")
     metrics_before = root / "metrics_before.prom"
     metrics_after = root / "metrics_after.prom"
     if not metrics_before.exists() or not metrics_after.exists():
         raise ValueError(f"missing_probe_metrics:{root}")
-    cutoffs = {
-        int(rank): int(value)
-        for rank, value in meta["measurement_start_after_iteration"].items()
-    }
-    ends = {
-        int(rank): int(value)
-        for rank, value in meta["measurement_end_at_iteration"].items()
-    }
-    rows = parse_iteration_rows(
-        _read_text(serve_log),
-        run_id=str(meta["id"]),
-        source=str(meta["source"]),
-        workload_cohort_digest=str(meta["workload_cohort_digest"]),
-        after_iteration_by_rank=cutoffs,
-        through_iteration_by_rank=ends,
-    )
+    rows, rank_logs_identity = _validated_rank_rows(root, meta=meta, spec=spec)
     rank_summary = summarize_ranks(
         rows,
         metrics_before=metrics_before.read_text(encoding="utf-8"),
@@ -1184,17 +1248,11 @@ def validate_formal_artifacts(
         "output_tok_s": throughput,
         "iteration_rows": [asdict(row) for row in rows],
         "rank_summary": rank_summary,
+        "rank_logs_identity": rank_logs_identity,
         "source_hash_match": True,
         "cleanup": True,
         "overhead_gate_sha256": gate_digest,
     }
-
-
-def _read_text(path: Path) -> str:
-    if path.suffix == ".gz":
-        with gzip.open(path, "rt", encoding="utf-8", errors="replace") as stream:
-            return stream.read()
-    return path.read_text(encoding="utf-8", errors="replace")
 
 
 def _write_json(path: Path, value: Any) -> None:
@@ -1222,7 +1280,8 @@ def _parse_args() -> argparse.Namespace:
     summarize = subparsers.add_parser(
         "summarize", help="parse stock iteration logs into rank aggregates"
     )
-    summarize.add_argument("--serve-log", type=Path, required=True)
+    summarize.add_argument("--rank-log-dir", type=Path, required=True)
+    summarize.add_argument("--expected-rank-count", type=int, required=True)
     summarize.add_argument("--metrics-before", type=Path, required=True)
     summarize.add_argument("--metrics-after", type=Path, required=True)
     summarize.add_argument("--run-id", required=True)
@@ -1253,7 +1312,8 @@ def main() -> int:
         return 0
     if args.command == "summarize":
         rows = parse_iteration_rows(
-            _read_text(args.serve_log),
+            args.rank_log_dir,
+            expected_ranks=set(range(args.expected_rank_count)),
             run_id=args.run_id,
             source=args.source,
             workload_cohort_digest=args.workload_cohort_digest,

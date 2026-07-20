@@ -23,23 +23,94 @@ def _load_module():
     return module
 
 
-def _iteration_log() -> str:
-    return "\n".join(
-        [
-            "(EngineCore_DP0 pid=10) INFO [core.py:359] Iteration(0): "
-            "1 context requests, 8000 context tokens, 0 generation requests, "
-            "0 generation tokens, iteration elapsed time: 100.0 ms",
-            "(EngineCore_DP0 pid=10) INFO [core.py:359] Iteration(1): "
-            "0 context requests, 0 context tokens, 8 generation requests, "
-            "8 generation tokens, iteration elapsed time: 20.0 ms",
-            "(EngineCore_DP1 pid=11) INFO [core.py:359] Iteration(0): "
-            "1 context requests, 7900 context tokens, 4 generation requests, "
-            "4 generation tokens, iteration elapsed time: 120.0 ms",
-            "(EngineCore_DP1 pid=11) INFO [core.py:359] Iteration(1): "
-            "0 context requests, 0 context tokens, 8 generation requests, "
-            "8 generation tokens, iteration elapsed time: 22.0 ms",
-        ]
-    ) + "\n"
+def _iteration_message(
+    iteration: int,
+    *,
+    context_requests: int,
+    context_tokens: int,
+    generation_requests: int,
+    generation_tokens: int,
+    elapsed_ms: float,
+) -> str:
+    return (
+        f"Iteration({iteration}): {context_requests} context requests, "
+        f"{context_tokens} context tokens, {generation_requests} generation requests, "
+        f"{generation_tokens} generation tokens, iteration elapsed time: "
+        f"{elapsed_ms} ms"
+    )
+
+
+def _rank_records() -> dict[int, list[dict[str, object]]]:
+    return {
+        0: [
+            {
+                "rank": 0,
+                "pid": 10,
+                "process_name": "EngineCore_DP0",
+                "message": _iteration_message(
+                    0,
+                    context_requests=1,
+                    context_tokens=8000,
+                    generation_requests=0,
+                    generation_tokens=0,
+                    elapsed_ms=100.0,
+                ),
+            },
+            {
+                "rank": 0,
+                "pid": 10,
+                "process_name": "EngineCore_DP0",
+                "message": _iteration_message(
+                    1,
+                    context_requests=0,
+                    context_tokens=0,
+                    generation_requests=8,
+                    generation_tokens=8,
+                    elapsed_ms=20.0,
+                ),
+            },
+        ],
+        1: [
+            {
+                "rank": 1,
+                "pid": 11,
+                "process_name": "EngineCore_DP1",
+                "message": _iteration_message(
+                    0,
+                    context_requests=1,
+                    context_tokens=7900,
+                    generation_requests=4,
+                    generation_tokens=4,
+                    elapsed_ms=120.0,
+                ),
+            },
+            {
+                "rank": 1,
+                "pid": 11,
+                "process_name": "EngineCore_DP1",
+                "message": _iteration_message(
+                    1,
+                    context_requests=0,
+                    context_tokens=0,
+                    generation_requests=8,
+                    generation_tokens=8,
+                    elapsed_ms=22.0,
+                ),
+            },
+        ],
+    }
+
+
+def _write_rank_logs(
+    root: Path, records: dict[int, list[dict[str, object]]] | None = None
+) -> Path:
+    rank_dir = root / "rank_logs"
+    rank_dir.mkdir(parents=True)
+    for rank, rows in (records or _rank_records()).items():
+        (rank_dir / f"rank-{rank}.jsonl").write_text(
+            "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"
+        )
+    return rank_dir
 
 
 def _preemption_metrics(*, dp0: int, dp1: int) -> str:
@@ -64,6 +135,21 @@ def _identity_meta(prompt_digest: str = "d" * 64) -> dict[str, object]:
     }
 
 
+def _source_hash_text() -> str:
+    return (
+        "233720900b1207434e4824bbddcf86dba0dc8557a0bfe78a639545462a9e85b5  "
+        "/usr/local/lib/python3.12/dist-packages/vllm/logger.py\n"
+        "896730e749cbcabb487ce50c703974594d197fc31a1d3b26fe096197d142d2d5  "
+        "/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core.py\n"
+        "9f3da2dfce94963e1e1cefc156e4239120f79c6eaf824b2829cac0ee7736b58a  "
+        "/usr/local/lib/python3.12/dist-packages/vllm/v1/core/sched/scheduler.py\n"
+    )
+
+
+def _empty_rank_log_identity() -> dict[str, object]:
+    return {"schema": "phase466_rank_log_identity_v1", "files": {}}
+
+
 def _pass_gate(phase466):
     return phase466.evaluate_paired_overhead_gate(
         [
@@ -83,7 +169,7 @@ def test_plan_is_default_off_and_gates_formal_collection() -> None:
     plan = phase466.build_run_plan()
 
     assert plan["probe_default"] == "off"
-    assert plan["implementation"] == "stock_vllm_iteration_details_no_source_patch"
+    assert plan["implementation"] == "rank_local_logging_handler_no_vllm_source_patch"
     assert plan["comparison_semantics"]["tp8_vs_tp4dp2"] == (
         "topology_control_not_pure_dp_control"
     )
@@ -111,11 +197,14 @@ def test_plan_is_default_off_and_gates_formal_collection() -> None:
     assert all(len(run["workload_cohort_digest"]) == 64 for run in plan["runs"])
 
 
-def test_parser_summarizes_iteration_rank_without_request_identity() -> None:
+def test_parser_summarizes_iteration_rank_without_request_identity(
+    tmp_path: Path,
+) -> None:
     phase466 = _load_module()
 
     rows = phase466.parse_iteration_rows(
-        _iteration_log(),
+        _write_rank_logs(tmp_path),
+        expected_ranks={0, 1},
         run_id="unit-real",
         source="real",
         workload_cohort_digest=_cohort_digest(),
@@ -174,102 +263,108 @@ def test_parser_summarizes_iteration_rank_without_request_identity() -> None:
     )
 
 
-def test_parser_rejects_duplicate_rank_iteration() -> None:
+def test_parser_rejects_duplicate_rank_iteration(tmp_path: Path) -> None:
     phase466 = _load_module()
-    duplicated = _iteration_log() + _iteration_log().splitlines()[0] + "\n"
+    records = _rank_records()
+    records[0].append(dict(records[0][0]))
 
-    with pytest.raises(ValueError, match="duplicate_rank_iteration"):
+    with pytest.raises(ValueError, match="rank_iteration_not_contiguous"):
         phase466.parse_iteration_rows(
-            duplicated,
+            _write_rank_logs(tmp_path, records),
+            expected_ranks={0, 1},
             run_id="unit-real",
             source="real",
             workload_cohort_digest=_cohort_digest(),
         )
 
 
-def test_parser_resolves_interleaved_prefixes_by_unique_rank_iteration() -> None:
+def test_parser_rejects_missing_or_extra_rank_file(tmp_path: Path) -> None:
     phase466 = _load_module()
-    text = "\n".join(
-        [
-            "(EngineCore_DP1 pid=11) (EngineCore_DP0 pid=10) INFO "
-            "Iteration(10573): 0 context requests, 0 context tokens, "
-            "15 generation requests, 15 generation tokens, "
-            "iteration elapsed time: 20.01 ms",
-            "(EngineCore_DP1 pid=11) INFO Iteration(10573): "
-            "0 context requests, 0 context tokens, 15 generation requests, "
-            "15 generation tokens, iteration elapsed time: 19.83 ms",
-            "(EngineCore_DP0 pid=10) (EngineCore_DP1 pid=11) INFO "
-            "Iteration(10574): 2 context requests, 16000 context tokens, "
-            "3 generation requests, 3 generation tokens, "
-            "iteration elapsed time: 2209.09 ms",
-            "(EngineCore_DP1 pid=11) INFO Iteration(10574): "
-            "9 context requests, 65533 context tokens, 3 generation requests, "
-            "3 generation tokens, iteration elapsed time: 9231.22 ms",
-        ]
-    )
+    rank_dir = _write_rank_logs(tmp_path)
+    (rank_dir / "rank-1.jsonl").unlink()
 
-    rows = phase466.parse_iteration_rows(
-        text,
-        run_id="unit-real",
-        source="real",
-        workload_cohort_digest=_cohort_digest(),
-    )
-
-    assert [(row.rank_id, row.iteration_seq) for row in rows] == [
-        (0, 10573),
-        (1, 10573),
-        (0, 10574),
-        (1, 10574),
-    ]
-
-
-def test_parser_rejects_interleaved_prefix_without_unique_assignment() -> None:
-    phase466 = _load_module()
-    text = (
-        "(EngineCore_DP0 pid=10) (EngineCore_DP1 pid=11) INFO "
-        "Iteration(10573): 0 context requests, 0 context tokens, "
-        "15 generation requests, 15 generation tokens, "
-        "iteration elapsed time: 20.01 ms"
-    )
-
-    with pytest.raises(ValueError, match="ambiguous_rank_iteration"):
+    with pytest.raises(ValueError, match="rank_log_file_set_mismatch"):
         phase466.parse_iteration_rows(
-            text,
+            rank_dir,
+            expected_ranks={0, 1},
             run_id="unit-real",
             source="real",
             workload_cohort_digest=_cohort_digest(),
-            after_iteration_by_rank={0: 10572, 1: 10572},
-            through_iteration_by_rank={0: 10573, 1: 10573},
+        )
+
+    (rank_dir / "rank-1.jsonl").write_text("", encoding="utf-8")
+    (rank_dir / "rank-2.jsonl").write_text("", encoding="utf-8")
+    with pytest.raises(ValueError, match="rank_log_file_set_mismatch"):
+        phase466.parse_iteration_rows(
+            rank_dir,
+            expected_ranks={0, 1},
+            run_id="unit-real",
+            source="real",
+            workload_cohort_digest=_cohort_digest(),
         )
 
 
-def test_parser_excludes_ambiguous_prefixes_outside_rank_measurement_window() -> None:
+@pytest.mark.parametrize(
+    ("mutate", "error"),
+    [
+        (
+            lambda records: records[0][0].update(process_name="EngineCore_DP1"),
+            "rank_log_process_name_mismatch",
+        ),
+        (
+            lambda records: records[0][1].update(pid=99),
+            "rank_log_pid_drift",
+        ),
+        (
+            lambda records: records[0][1].update(
+                message=str(records[0][1]["message"]).replace(
+                    "Iteration(1)", "Iteration(2)"
+                )
+            ),
+            "rank_iteration_not_contiguous",
+        ),
+    ],
+)
+def test_parser_rejects_rank_identity_or_sequence_drift(
+    tmp_path: Path, mutate, error: str
+) -> None:
     phase466 = _load_module()
-    text = "\n".join(
-        [
-            "(EngineCore_DP0 pid=10) (EngineCore_DP1 pid=11) INFO "
-            "Iteration(2): 0 context requests, 0 context tokens, "
-            "1 generation requests, 1 generation tokens, "
-            "iteration elapsed time: 2.0 ms",
-            "(EngineCore_DP0 pid=10) INFO Iteration(11): "
-            "0 context requests, 0 context tokens, 1 generation requests, "
-            "1 generation tokens, iteration elapsed time: 3.0 ms",
-            "(EngineCore_DP1 pid=11) INFO Iteration(11): "
-            "0 context requests, 0 context tokens, 1 generation requests, "
-            "1 generation tokens, iteration elapsed time: 4.0 ms",
-        ]
-    )
+    records = _rank_records()
+    mutate(records)
 
+    with pytest.raises(ValueError, match=error):
+        phase466.parse_iteration_rows(
+            _write_rank_logs(tmp_path, records),
+            expected_ranks={0, 1},
+            run_id="unit-real",
+            source="real",
+            workload_cohort_digest=_cohort_digest(),
+        )
+
+
+def test_single_dp_requires_engine_core_without_dp_suffix(tmp_path: Path) -> None:
+    phase466 = _load_module()
+    records = {0: _rank_records()[0]}
+
+    with pytest.raises(ValueError, match="rank_log_process_name_mismatch"):
+        phase466.parse_iteration_rows(
+            _write_rank_logs(tmp_path, records),
+            expected_ranks={0},
+            run_id="unit-real",
+            source="real",
+            workload_cohort_digest=_cohort_digest(),
+        )
+
+    for row in records[0]:
+        row["process_name"] = "EngineCore"
     rows = phase466.parse_iteration_rows(
-        text,
+        _write_rank_logs(tmp_path / "single", records),
+        expected_ranks={0},
         run_id="unit-real",
         source="real",
         workload_cohort_digest=_cohort_digest(),
-        after_iteration_by_rank={0: 10, 1: 10},
-        through_iteration_by_rank={0: 11, 1: 11},
     )
-
-    assert [(row.rank_id, row.iteration_seq) for row in rows] == [(0, 11), (1, 11)]
+    assert {row.rank_id for row in rows} == {0}
 
 
 def test_plan_records_source_environment_and_artifact_contract() -> None:
@@ -278,6 +373,9 @@ def test_plan_records_source_environment_and_artifact_contract() -> None:
 
     assert plan["environment"]["VLLM_ENABLE_CUDA_COMPATIBILITY"] == "1"
     assert plan["source_files"] == {
+        "/usr/local/lib/python3.12/dist-packages/vllm/logger.py": (
+            "233720900b1207434e4824bbddcf86dba0dc8557a0bfe78a639545462a9e85b5"
+        ),
         "/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core.py": (
             "896730e749cbcabb487ce50c703974594d197fc31a1d3b26fe096197d142d2d5"
         ),
@@ -287,6 +385,9 @@ def test_plan_records_source_environment_and_artifact_contract() -> None:
     }
     assert "overhead/<pair-id>/<mode>/meta.json" in plan["artifact_contract"]
     assert "overhead/<pair-id>/<mode>/serve.log.gz" in plan["artifact_contract"]
+    assert "overhead/<pair-id>/<mode>/rank_logs/rank-<id>.jsonl" in plan[
+        "artifact_contract"
+    ]
     assert "overhead/overhead_gate.json" in plan["artifact_contract"]
     assert "tooling.sha256" in plan["artifact_contract"]
     assert "status.json" in plan["artifact_contract"]
@@ -298,9 +399,11 @@ def test_plan_records_source_environment_and_artifact_contract() -> None:
     assert plan["sampling"]["gpu_health"] == "before/after compute-app residue snapshots"
 
 
-def test_summary_rejects_missing_alignment_identity() -> None:
+def test_summary_rejects_missing_alignment_identity(tmp_path: Path) -> None:
     phase466 = _load_module()
-    rows = phase466.parse_iteration_rows(_iteration_log())
+    rows = phase466.parse_iteration_rows(
+        _write_rank_logs(tmp_path), expected_ranks={0, 1}
+    )
 
     with pytest.raises(ValueError, match="missing_run_id_or_source"):
         phase466.summarize_ranks(
@@ -316,7 +419,7 @@ def test_v3_plan_uses_six_counterbalanced_pairs_and_exact_warmup() -> None:
     plan = phase466.build_run_plan()
     overhead = [run for run in plan["runs"] if run["stage"] == "overhead"]
 
-    assert plan["schema"] == "phase466_rank_timing_v3"
+    assert plan["schema"] == "phase466_rank_timing_v4"
     assert len(overhead) == 12
     assert [run["probe_mode"] for run in overhead] == [
         "off",
@@ -342,7 +445,10 @@ def test_v3_plan_uses_six_counterbalanced_pairs_and_exact_warmup() -> None:
     }
     assert all(run["warmup_num_prompts"] == 128 for run in overhead)
     assert all(run["warmup_concurrency"] == 128 for run in overhead)
-    assert all(run["measurement_requires_warmup_cutoff"] for run in overhead)
+    assert all(
+        run["measurement_requires_warmup_cutoff"] == run["probe_enabled"]
+        for run in overhead
+    )
 
 
 def test_paired_equivalence_gate_has_pass_fail_and_inconclusive_states() -> None:
@@ -428,11 +534,12 @@ def test_overhead_root_requires_and_validates_all_six_pairs(
     assert validated == [f"pair-{index:02d}" for index in range(1, 7)]
 
 
-def test_parser_applies_rank_local_warmup_cutoff() -> None:
+def test_parser_applies_rank_local_warmup_cutoff(tmp_path: Path) -> None:
     phase466 = _load_module()
 
     rows = phase466.parse_iteration_rows(
-        _iteration_log(),
+        _write_rank_logs(tmp_path),
+        expected_ranks={0, 1},
         run_id="unit-real",
         source="real",
         workload_cohort_digest=_cohort_digest(),
@@ -443,21 +550,42 @@ def test_parser_applies_rank_local_warmup_cutoff() -> None:
     assert all(row.iteration_start_offset_ms == 0.0 for row in rows)
 
 
-def test_parser_retains_zero_token_iteration_wall_time() -> None:
+def test_parser_retains_zero_token_iteration_wall_time(tmp_path: Path) -> None:
     phase466 = _load_module()
-    log = "\n".join(
-        [
-            "(EngineCore_DP0 pid=10) INFO Iteration(1): 0 context requests, "
-            "0 context tokens, 0 generation requests, 0 generation tokens, "
-            "iteration elapsed time: 7.0 ms",
-            "(EngineCore_DP0 pid=10) INFO Iteration(2): 0 context requests, "
-            "0 context tokens, 8 generation requests, 8 generation tokens, "
-            "iteration elapsed time: 3.0 ms",
+    records = {
+        0: [
+            {
+                "rank": 0,
+                "pid": 10,
+                "process_name": "EngineCore",
+                "message": _iteration_message(
+                    1,
+                    context_requests=0,
+                    context_tokens=0,
+                    generation_requests=0,
+                    generation_tokens=0,
+                    elapsed_ms=7.0,
+                ),
+            },
+            {
+                "rank": 0,
+                "pid": 10,
+                "process_name": "EngineCore",
+                "message": _iteration_message(
+                    2,
+                    context_requests=0,
+                    context_tokens=0,
+                    generation_requests=8,
+                    generation_tokens=8,
+                    elapsed_ms=3.0,
+                ),
+            },
         ]
-    )
+    }
 
     rows = phase466.parse_iteration_rows(
-        log,
+        _write_rank_logs(tmp_path, records),
+        expected_ranks={0},
         run_id="unit-real",
         source="real",
         workload_cohort_digest=_cohort_digest(),
@@ -514,13 +642,25 @@ def test_overhead_meta_requires_exact_run_identity_and_recomputed_digest(tmp_pat
     on_spec = runs["overhead-pair-01-on"]
 
     for root, spec, throughput in ((off, off_spec, 100.0), (on, on_spec, 100.0)):
+        rank_dir = root / "rank_logs"
+        if spec["probe_enabled"]:
+            _write_rank_logs(root)
+            rank_identity = phase466.rank_log_identity(rank_dir, expected_ranks={0, 1})
+            cutoffs = {"0": 0, "1": 0}
+            ends = {"0": 1, "1": 1}
+        else:
+            rank_dir.mkdir()
+            rank_identity = _empty_rank_log_identity()
+            cutoffs = {}
+            ends = {}
         meta = phase466.expected_run_meta(spec)
         meta.update(
             {
                 "vllm_version": "0.19.0",
                 "execution_manifest_sha256": "c" * 64,
-                "measurement_start_after_iteration": {"0": 0, "1": 0},
-                "measurement_end_at_iteration": {"0": 1, "1": 1},
+                "measurement_start_after_iteration": cutoffs,
+                "measurement_end_at_iteration": ends,
+                "rank_logs_identity": rank_identity,
                 **_identity_meta(),
             }
         )
@@ -538,20 +678,33 @@ def test_overhead_meta_requires_exact_run_identity_and_recomputed_digest(tmp_pat
             )
             + "\n"
         )
-        (root / "source.sha256").write_text(
-            "896730e749cbcabb487ce50c703974594d197fc31a1d3b26fe096197d142d2d5  "
-            "/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core.py\n"
-            "9f3da2dfce94963e1e1cefc156e4239120f79c6eaf824b2829cac0ee7736b58a  "
-            "/usr/local/lib/python3.12/dist-packages/vllm/v1/core/sched/scheduler.py\n"
-        )
+        (root / "source.sha256").write_text(_source_hash_text())
         (root / "gpu_compute_apps_after.txt").write_text("")
         (root / "process_residue_after.txt").write_text("")
-    (on / "serve.log").write_text(_iteration_log())
+    (on / "serve.log").write_text(
+        "stdout may contain duplicated or prefixless iteration text\n"
+    )
     (on / "metrics_before.prom").write_text(_preemption_metrics(dp0=0, dp1=0))
     (on / "metrics_after.prom").write_text(_preemption_metrics(dp0=1, dp1=2))
 
     result = phase466.validate_overhead_pair_artifacts(off, on, off_spec=off_spec, on_spec=on_spec)
     assert result["pair_id"] == "pair-01"
+
+    rank_zero = on / "rank_logs" / "rank-0.jsonl"
+    original_rank_zero = rank_zero.read_text()
+    rank_zero.write_text(original_rank_zero.replace("100.0 ms", "101.0 ms"))
+    with pytest.raises(ValueError, match="rank_logs_identity_mismatch"):
+        phase466.validate_overhead_pair_artifacts(
+            off, on, off_spec=off_spec, on_spec=on_spec
+        )
+    rank_zero.write_text(original_rank_zero)
+
+    (off / "rank_logs" / "rank-0.jsonl").write_text(original_rank_zero)
+    with pytest.raises(ValueError, match="off_rank_logs_present"):
+        phase466.validate_overhead_pair_artifacts(
+            off, on, off_spec=off_spec, on_spec=on_spec
+        )
+    (off / "rank_logs" / "rank-0.jsonl").unlink()
 
     bad_meta = json.loads((on / "meta.json").read_text())
     bad_meta["workload_cohort_digest"] = "b" * 64
@@ -603,6 +756,10 @@ def test_formal_artifact_validation_enforces_gate_meta_tokens_and_rank_set(tmp_p
             **_identity_meta(),
         }
     )
+    rank_dir = _write_rank_logs(root)
+    meta["rank_logs_identity"] = phase466.rank_log_identity(
+        rank_dir, expected_ranks={0, 1}
+    )
     (root / "meta.json").write_text(json.dumps(meta) + "\n")
     (root / "bench_result.json").write_text(
         json.dumps(
@@ -617,15 +774,12 @@ def test_formal_artifact_validation_enforces_gate_meta_tokens_and_rank_set(tmp_p
         )
         + "\n"
     )
-    (root / "source.sha256").write_text(
-        "896730e749cbcabb487ce50c703974594d197fc31a1d3b26fe096197d142d2d5  "
-        "/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core.py\n"
-        "9f3da2dfce94963e1e1cefc156e4239120f79c6eaf824b2829cac0ee7736b58a  "
-        "/usr/local/lib/python3.12/dist-packages/vllm/v1/core/sched/scheduler.py\n"
-    )
+    (root / "source.sha256").write_text(_source_hash_text())
     (root / "gpu_compute_apps_after.txt").write_text("")
     (root / "process_residue_after.txt").write_text("")
-    (root / "serve.log").write_text(_iteration_log())
+    (root / "serve.log").write_text(
+        "(EngineCore_DP0) (EngineCore_DP1) duplicated stdout is ignored\n"
+    )
     (root / "metrics_before.prom").write_text(_preemption_metrics(dp0=0, dp1=0))
     (root / "metrics_after.prom").write_text(_preemption_metrics(dp0=1, dp1=2))
 

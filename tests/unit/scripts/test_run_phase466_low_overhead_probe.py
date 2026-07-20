@@ -235,6 +235,11 @@ def test_two_stage_manifest_binds_local_and_worker_identity(
     )
     monkeypatch.setattr(
         runner,
+        "expected_rank_local_canary_prompt_sha256",
+        lambda contract, benchmark_path: "e" * 64,
+    )
+    monkeypatch.setattr(
+        runner,
         "assert_imported_vllm_source_paths",
         lambda contract, cwd, env: list(contract.SOURCE_FILES),
     )
@@ -273,6 +278,16 @@ def test_two_stage_manifest_binds_local_and_worker_identity(
     assert validated["gpu_identity"]["rows"] == ["H200, 141312, 570.133.20"]
     assert manifest["coordinator_manifest_sha256"] == coordinator_digest
     assert manifest["worker_attestation_sha256"] == attestation_digest
+    assert attestation["rank_logging_transport"] == {
+        "schema": "phase466_rank_logging_transport_v1",
+        "config_path": str(
+            (tmp_path / "scripts" / "phase466_rank_local_logging.json").resolve()
+        ),
+        "handler_module": "phase466_rank_local_logging",
+        "rank_log_dir_env": "PHASE466_RANK_LOG_DIR",
+        "pythonpath": str((tmp_path / "scripts").resolve()),
+    }
+    assert attestation["rank_local_canary_prompt_cohort_sha256"] == "e" * 64
 
     (tmp_path / runner.COORDINATOR_TOOL_RELATIVE_PATHS["supervisor"]).write_text(
         "changed", encoding="utf-8"
@@ -297,6 +312,8 @@ def test_coordinator_manifest_requires_clean_checkout_and_relative_tool_paths(
         "supervisor": "run_phase466_low_overhead_probe.py",
         "benchmark": "run_openai_fixed_shape_benchmark.py",
         "rank_analyzer": "analyze_phase466_rank_timing.py",
+        "rank_logging_handler": "phase466_rank_local_logging.py",
+        "rank_logging_config": "phase466_rank_local_logging.json",
     }
     for name, filename in tool_names.items():
         (scripts / filename).write_text(name, encoding="utf-8")
@@ -315,7 +332,7 @@ def test_coordinator_manifest_requires_clean_checkout_and_relative_tool_paths(
     monkeypatch.setattr(runner, "_capture", clean_capture)
     manifest = runner.build_coordinator_manifest(contract, workdir=tmp_path)
 
-    assert manifest["schema"] == "phase466_coordinator_manifest_v1"
+    assert manifest["schema"] == "phase466_coordinator_manifest_v2"
     assert manifest["source_commit"] == "a" * 40
     assert {
         name: item["path"] for name, item in manifest["tools"].items()
@@ -362,6 +379,8 @@ def test_worker_validates_uploaded_tool_bytes_without_git(
         "supervisor": "run_phase466_low_overhead_probe.py",
         "benchmark": "run_openai_fixed_shape_benchmark.py",
         "rank_analyzer": "analyze_phase466_rank_timing.py",
+        "rank_logging_handler": "phase466_rank_local_logging.py",
+        "rank_logging_config": "phase466_rank_local_logging.json",
     }
     tools = {}
     for name, filename in tool_names.items():
@@ -372,7 +391,7 @@ def test_worker_validates_uploaded_tool_bytes_without_git(
             "sha256": runner.hashlib.sha256(path.read_bytes()).hexdigest(),
         }
     manifest = {
-        "schema": "phase466_coordinator_manifest_v1",
+        "schema": "phase466_coordinator_manifest_v2",
         "contract_schema": "unit-schema",
         "source_commit": "a" * 40,
         "tools": tools,
@@ -816,19 +835,273 @@ def test_stop_service_does_not_require_ray_command(
     assert runner._stop_service(ExitedProcess(), cwd=tmp_path, env={}) is True
 
 
-def test_last_iteration_by_rank_requires_every_expected_rank() -> None:
-    runner = _load(MODULE_PATH, "run_phase466_low_overhead_probe_cutoff")
-    log = "\n".join(
-        [
-            "(EngineCore_DP0 pid=10) INFO Iteration(3): 1 context requests, "
-            "8 context tokens, 0 generation requests, 0 generation tokens, "
-            "iteration elapsed time: 1.0 ms",
-            "(EngineCore_DP1 pid=11) INFO Iteration(4): 0 context requests, "
-            "0 context tokens, 1 generation requests, 1 generation tokens, "
-            "iteration elapsed time: 1.0 ms",
-        ]
+def test_runtime_env_binds_rank_logging_transport(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = _load(MODULE_PATH, "run_phase466_low_overhead_probe_runtime_env")
+    monkeypatch.setenv("PYTHONPATH", "/existing/pythonpath")
+
+    env = runner._runtime_env(tmp_path)
+    run_env = runner._rank_logging_env(env, tmp_path / "rank_logs")
+
+    assert env["VLLM_LOGGING_CONFIG_PATH"] == str(
+        (tmp_path / "scripts" / "phase466_rank_local_logging.json").resolve()
+    )
+    assert env["PYTHONPATH"] == str((tmp_path / "scripts").resolve())
+    assert "PHASE466_RANK_LOG_DIR" not in env
+    assert run_env["PHASE466_RANK_LOG_DIR"] == str(
+        (tmp_path / "rank_logs").resolve()
     )
 
-    assert runner.last_iteration_by_rank(log, expected_ranks=[0, 1]) == {0: 3, 1: 4}
-    with pytest.raises(ValueError, match="warmup_iteration_rank_mismatch"):
-        runner.last_iteration_by_rank(log, expected_ranks=[0, 1, 2])
+
+def test_last_iteration_by_rank_requires_every_expected_rank(tmp_path: Path) -> None:
+    runner = _load(MODULE_PATH, "run_phase466_low_overhead_probe_cutoff")
+    contract = _load(CONTRACT_PATH, "phase466_contract_for_rank_cutoff")
+    rank_dir = tmp_path / "rank_logs"
+    rank_dir.mkdir()
+    for rank, final in ((0, 3), (1, 4)):
+        rows = []
+        for iteration in range(final + 1):
+            rows.append(
+                json.dumps(
+                    {
+                        "rank": rank,
+                        "pid": 10 + rank,
+                        "process_name": f"EngineCore_DP{rank}",
+                        "message": (
+                            f"Iteration({iteration}): 0 context requests, "
+                            "0 context tokens, 1 generation requests, "
+                            "1 generation tokens, iteration elapsed time: 1.0 ms"
+                        ),
+                    }
+                )
+            )
+        (rank_dir / f"rank-{rank}.jsonl").write_text("\n".join(rows) + "\n")
+
+    assert runner.rank_log_cutoff(
+        contract, rank_dir, expected_ranks={0, 1}
+    ) == {0: 3, 1: 4}
+    with pytest.raises(ValueError, match="rank_log_file_set_mismatch"):
+        runner.rank_log_cutoff(contract, rank_dir, expected_ranks={0, 1, 2})
+
+
+def test_rank_local_canary_spec_is_exactly_one_small_dp2_probe() -> None:
+    contract = _load(CONTRACT_PATH, "phase466_contract_for_canary")
+    runner = _load(MODULE_PATH, "run_phase466_low_overhead_probe_canary")
+
+    spec = runner.build_rank_local_canary_spec(contract)
+
+    assert spec["stage"] == "rank_local_canary"
+    assert spec["scenario"] == "K2.5-tp4ep8dp2-rank-local-canary"
+    assert spec["tp"] == 4
+    assert spec["dp"] == 2
+    assert spec["ep"] == 8
+    assert spec["num_prompts"] == 16
+    assert spec["concurrency"] == 16
+    assert spec["input_len"] == 128
+    assert spec["output_len"] == 16
+    assert spec["probe_mode"] == "on"
+    assert "--enable-logging-iteration-details" in spec["serve_argv"]
+
+
+def test_worker_attestation_rejects_missing_canary_prompt_digest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = _load(MODULE_PATH, "run_phase466_canary_prompt_identity")
+    contract = SimpleNamespace(SCHEMA="unit-schema", SOURCE_FILES={})
+    coordinator = {
+        "tools": {},
+    }
+    attestation = {
+        "schema": runner.WORKER_ATTESTATION_SCHEMA,
+        "contract_schema": "unit-schema",
+        "coordinator_manifest_sha256": "a" * 64,
+        "tool_sha256": {},
+        "vllm_version": "0.19.0",
+        "vllm_source_sha256": {},
+        "vllm_import_paths": [],
+        "gpu_identity": {"rows": ["gpu"]},
+        "model_identity": {},
+        "prompt_cohort_sha256": {},
+        "rank_logging_transport": runner.rank_logging_transport(tmp_path),
+        "diagnostic_only": True,
+        "valid_for_default": False,
+        "perf_database": False,
+    }
+    digest = runner.execution_manifest_digest(attestation)
+    monkeypatch.setattr(runner, "_validate_model_identity_shape", lambda unused: {})
+    monkeypatch.setattr(
+        runner, "_validate_prompt_identities", lambda unused, contract: {}
+    )
+    with pytest.raises(
+        RuntimeError,
+        match="worker_attestation_canary_prompt_cohort_sha256_invalid",
+    ):
+        runner._validate_worker_attestation(
+            attestation,
+            expected_digest=digest,
+            coordinator_manifest=coordinator,
+            coordinator_manifest_sha256="a" * 64,
+            contract=contract,
+        )
+
+
+def test_canary_validation_requires_exact_two_rank_local_files(
+    tmp_path: Path,
+) -> None:
+    runner = _load(MODULE_PATH, "run_phase466_canary_validation")
+    contract = _load(CONTRACT_PATH, "phase466_contract_canary_validation")
+    spec = runner.build_rank_local_canary_spec(contract)
+    run_dir = tmp_path / "canary"
+    rank_dir = run_dir / "rank_logs"
+    rank_dir.mkdir(parents=True)
+    for rank in (0, 1):
+        (rank_dir / f"rank-{rank}.jsonl").write_text(
+            json.dumps(
+                {
+                    "rank": rank,
+                    "pid": 100 + rank,
+                    "process_name": f"EngineCore_DP{rank}",
+                    "message": (
+                        "Iteration(0): 1 context requests, 128 context tokens, "
+                        "1 generation requests, 1 generation tokens, "
+                        "iteration elapsed time: 1.0 ms"
+                    ),
+                }
+            )
+            + "\n"
+        )
+    identity = contract.rank_log_identity(rank_dir, expected_ranks={0, 1})
+    meta = {
+        key: spec[key]
+        for key in (
+            "id",
+            "stage",
+            "scenario",
+            "probe_mode",
+            "source",
+            "workload_cohort_digest",
+            "num_prompts",
+            "concurrency",
+            "tp",
+            "dp",
+            "ep",
+            "input_len",
+            "output_len",
+            "max_num_batched_tokens",
+        )
+    }
+    meta.update(
+        {
+            "rank_logs_identity": identity,
+            "prompt_cohort_sha256": "a" * 64,
+            "measurement_start_after_iteration": {"0": -1, "1": -1},
+            "measurement_end_at_iteration": {"0": 0, "1": 0},
+        }
+    )
+    (run_dir / "meta.json").write_text(
+        json.dumps(meta)
+    )
+    (run_dir / "bench_result.json").write_text(
+        json.dumps(
+            {
+                "ok_requests": 16,
+                "failed_requests": 0,
+                "total_prompt_tokens": 16 * 128,
+                "total_completion_tokens": 16 * 16,
+                "prompt_cohort_sha256": "a" * 64,
+            }
+        )
+    )
+    (run_dir / "gpu_compute_apps_after.txt").write_text("")
+    (run_dir / "process_residue_after.txt").write_text("")
+
+    result = runner.validate_rank_local_canary(
+        contract, run_dir=run_dir, spec=spec
+    )
+
+    assert result["status"] == "PASS"
+    assert set(result["rank_logs_identity"]["files"]) == {
+        "rank-0.jsonl",
+        "rank-1.jsonl",
+    }
+    (rank_dir / "rank-1.jsonl").unlink()
+    with pytest.raises(ValueError, match="rank_log_file_set_mismatch"):
+        runner.validate_rank_local_canary(
+            contract, run_dir=run_dir, spec=spec
+        )
+
+
+def test_canary_validation_rejects_scenario_meta_mismatch(
+    tmp_path: Path,
+) -> None:
+    runner = _load(MODULE_PATH, "run_phase466_canary_meta_validation")
+    contract = _load(CONTRACT_PATH, "phase466_contract_canary_meta_validation")
+    spec = runner.build_rank_local_canary_spec(contract)
+    run_dir = tmp_path / "canary"
+    rank_dir = run_dir / "rank_logs"
+    rank_dir.mkdir(parents=True)
+    for rank in (0, 1):
+        (rank_dir / f"rank-{rank}.jsonl").write_text(
+            json.dumps(
+                {
+                    "rank": rank,
+                    "pid": 100 + rank,
+                    "process_name": f"EngineCore_DP{rank}",
+                    "message": (
+                        "Iteration(0): 1 context requests, 128 context tokens, "
+                        "1 generation requests, 1 generation tokens, "
+                        "iteration elapsed time: 1.0 ms"
+                    ),
+                }
+            )
+            + "\n"
+        )
+    identity = contract.rank_log_identity(rank_dir, expected_ranks={0, 1})
+    meta = {
+        key: spec[key]
+        for key in (
+            "id",
+            "stage",
+            "scenario",
+            "probe_mode",
+            "source",
+            "workload_cohort_digest",
+            "num_prompts",
+            "concurrency",
+            "tp",
+            "dp",
+            "ep",
+            "input_len",
+            "output_len",
+            "max_num_batched_tokens",
+        )
+    }
+    meta.update(
+        {
+            "scenario": "wrong-scenario",
+            "rank_logs_identity": identity,
+            "prompt_cohort_sha256": "a" * 64,
+            "measurement_start_after_iteration": {"0": -1, "1": -1},
+            "measurement_end_at_iteration": {"0": 0, "1": 0},
+        }
+    )
+    (run_dir / "meta.json").write_text(json.dumps(meta))
+    (run_dir / "bench_result.json").write_text(
+        json.dumps(
+            {
+                "ok_requests": 16,
+                "failed_requests": 0,
+                "total_prompt_tokens": 16 * 128,
+                "total_completion_tokens": 16 * 16,
+                "prompt_cohort_sha256": "a" * 64,
+            }
+        )
+    )
+    (run_dir / "gpu_compute_apps_after.txt").write_text("")
+    (run_dir / "process_residue_after.txt").write_text("")
+
+    with pytest.raises(RuntimeError, match="canary_meta_mismatch:scenario"):
+        runner.validate_rank_local_canary(
+            contract, run_dir=run_dir, spec=spec
+        )
