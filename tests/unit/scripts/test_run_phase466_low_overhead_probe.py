@@ -238,6 +238,23 @@ def test_model_revision_must_resolve_to_snapshot(tmp_path: Path) -> None:
         runner.resolve_model_identity(model)
 
 
+def test_flat_composite_model_mirror_is_not_an_immutable_snapshot(
+    tmp_path: Path,
+) -> None:
+    runner = _load(MODULE_PATH, "run_phase466_low_overhead_probe_flat_mirror")
+    model = tmp_path / "models--moonshotai--Kimi-K2.5"
+    metadata = model / ".cache" / "huggingface" / "download"
+    metadata.mkdir(parents=True)
+    for filename in runner.MODEL_IDENTITY_FILES:
+        (model / filename).write_text(filename, encoding="utf-8")
+    (metadata / "config.json.metadata").write_text(
+        f"{'a' * 40}\netag\n123.0\n", encoding="utf-8"
+    )
+
+    with pytest.raises(RuntimeError, match="model_revision_unresolved"):
+        runner.resolve_model_identity(model)
+
+
 def test_prompt_digest_missing_or_drift_fails_fast(tmp_path: Path) -> None:
     runner = _load(MODULE_PATH, "run_phase466_low_overhead_probe_prompt_identity")
     result = tmp_path / "bench_result.json"
