@@ -187,6 +187,33 @@ def test_parser_rejects_duplicate_rank_iteration() -> None:
         )
 
 
+def test_parser_uses_closest_engine_core_prefix_on_interleaved_line() -> None:
+    phase466 = _load_module()
+    text = "\n".join(
+        [
+            "(EngineCore_DP1 pid=11) (EngineCore_DP0 pid=10) INFO "
+            "Iteration(10573): 0 context requests, 0 context tokens, "
+            "15 generation requests, 15 generation tokens, "
+            "iteration elapsed time: 20.01 ms",
+            "(EngineCore_DP1 pid=11) INFO Iteration(10573): "
+            "0 context requests, 0 context tokens, 15 generation requests, "
+            "15 generation tokens, iteration elapsed time: 19.83 ms",
+        ]
+    )
+
+    rows = phase466.parse_iteration_rows(
+        text,
+        run_id="unit-real",
+        source="real",
+        workload_cohort_digest=_cohort_digest(),
+    )
+
+    assert [(row.rank_id, row.iteration_seq) for row in rows] == [
+        (0, 10573),
+        (1, 10573),
+    ]
+
+
 def test_plan_records_source_environment_and_artifact_contract() -> None:
     phase466 = _load_module()
     plan = phase466.build_run_plan()

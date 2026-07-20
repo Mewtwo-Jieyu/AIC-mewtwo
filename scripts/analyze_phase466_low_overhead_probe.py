@@ -46,8 +46,10 @@ SOURCE_FILES = {
     ),
 }
 
+ENGINE_CORE_PREFIX_RE = re.compile(
+    r"EngineCore(?:_DP(?P<rank>\d+))?(?![A-Za-z0-9_])"
+)
 ITERATION_RE = re.compile(
-    r"EngineCore(?:_DP(?P<rank>\d+))?.*?"
     r"Iteration\((?P<iteration>\d+)\):\s+"
     r"(?P<context_requests>\d+)\s+context requests,\s+"
     r"(?P<context_tokens>\d+)\s+context tokens,\s+"
@@ -510,7 +512,10 @@ def parse_iteration_rows(
         match = ITERATION_RE.search(line)
         if not match:
             continue
-        rank = int(match.group("rank") or 0)
+        prefixes = list(ENGINE_CORE_PREFIX_RE.finditer(line, 0, match.start()))
+        if not prefixes:
+            continue
+        rank = int(prefixes[-1].group("rank") or 0)
         iteration_seq = int(match.group("iteration"))
         if after_iteration_by_rank is not None:
             if rank not in after_iteration_by_rank:
