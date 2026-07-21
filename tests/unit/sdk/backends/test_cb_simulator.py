@@ -2048,6 +2048,12 @@ class _FakeCBSim:
         assert kwargs["num_gpus"] == 16
         return _FakeCBResult()
 
+    def get_last_performance_source_map(self):
+        return {"context": {}, "generation": {}}
+
+    def get_last_charge_ledger(self):
+        return []
+
 
 class TestVLLMCBSimBoundary:
     def test_run_agg_cb_sim_uses_cb_sim_throughput(self, monkeypatch) -> None:
@@ -2133,6 +2139,12 @@ class TestVLLMCBSimBoundary:
                 calls.append(("run_multi_replica", kwargs))
                 return _Result()
 
+            def get_last_performance_source_map(self):
+                return {"context": {}, "generation": {}}
+
+            def get_last_charge_ledger(self):
+                return []
+
         backend = VLLMBackend()
         model = MagicMock()
         model.model_path = "fake-model"
@@ -2216,6 +2228,12 @@ class TestVLLMCBSimBoundary:
                     ("run_multi_replica", kwargs["data_parallel_size"])
                 )
                 return self._result()
+
+            def get_last_performance_source_map(self):
+                return {"context": {}, "generation": {}}
+
+            def get_last_charge_ledger(self):
+                return []
 
         def make_model(tp, dp, moe_tp, moe_ep):
             model = MagicMock()
@@ -2330,6 +2348,12 @@ class TestVLLMCBSimBoundary:
             def run(self, **kwargs):
                 assert kwargs["num_gpus"] == 8
                 return _FakeCBResult()
+
+            def get_last_performance_source_map(self):
+                return {"context": {}, "generation": {}}
+
+            def get_last_charge_ledger(self):
+                return []
 
         backend = VLLMBackend()
         model = MagicMock()

@@ -44,7 +44,7 @@ class PerformanceResult(float):
 
     # Note: We don't use __slots__ here because float subclasses cannot define __slots__
 
-    def __new__(cls, latency, energy=0.0):
+    def __new__(cls, latency, energy=0.0, sources=()):
         """
         Create a new PerformanceResult.
 
@@ -55,7 +55,7 @@ class PerformanceResult(float):
         instance = float.__new__(cls, latency)
         return instance
 
-    def __init__(self, latency, energy=0.0):
+    def __init__(self, latency, energy=0.0, sources=()):
         """
         Initialize the PerformanceResult.
 
@@ -65,6 +65,7 @@ class PerformanceResult(float):
                    Note: 1 W·ms = 1 millijoule (mJ)
         """
         self.energy = energy  # W·ms (watt-milliseconds)
+        self.sources = tuple(sources)
 
     @property
     def power(self):
@@ -91,10 +92,26 @@ class PerformanceResult(float):
         """Add two PerformanceResults or a PerformanceResult and a number."""
         if isinstance(other, PerformanceResult):
             # Add latencies and energies (both are additive!)
-            return PerformanceResult(float(self) + float(other), energy=self.energy + other.energy)
+            return PerformanceResult(
+                float(self) + float(other),
+                energy=self.energy + other.energy,
+                sources=(*self.sources, *other.sources),
+            )
         else:
             # Add to latency only, keep same energy
-            return PerformanceResult(float(self) + other, energy=self.energy)
+            sources = self.sources
+            if other != 0:
+                from aiconfigurator.sdk.perf_source import PerfSourceRecord
+
+                sources = (
+                    *sources,
+                    PerfSourceRecord.structural(
+                        formula_id="unapproved_numeric_offset",
+                        formula_inputs={"offset": other},
+                        approved=False,
+                    ),
+                )
+            return PerformanceResult(float(self) + other, energy=self.energy, sources=sources)
 
     def __radd__(self, other):
         """Right addition for sum() support.
@@ -107,10 +124,39 @@ class PerformanceResult(float):
             return self
         return self.__add__(other)
 
+    def __sub__(self, other):
+        """Subtract while preserving source provenance."""
+        if isinstance(other, PerformanceResult):
+            return PerformanceResult(
+                float(self) - float(other),
+                energy=self.energy - other.energy,
+                sources=(
+                    *self.sources,
+                    *(source.with_transform("multiply", -1.0) for source in other.sources),
+                ),
+            )
+        return self.__add__(-other)
+
+    def __rsub__(self, other):
+        """Right subtraction while preserving source provenance."""
+        return (-self).__add__(other)
+
+    def __neg__(self):
+        """Negate latency, energy, and every source contribution."""
+        return PerformanceResult(
+            -float(self),
+            energy=-self.energy,
+            sources=tuple(source.with_transform("multiply", -1.0) for source in self.sources),
+        )
+
     def __mul__(self, other):
         """Multiply PerformanceResult by a scalar."""
         # Scale both latency and energy
-        return PerformanceResult(float(self) * other, energy=self.energy * other)
+        return PerformanceResult(
+            float(self) * other,
+            energy=self.energy * other,
+            sources=tuple(source.with_transform("multiply", other) for source in self.sources),
+        )
 
     def __rmul__(self, other):
         """Right multiplication."""
@@ -119,7 +165,11 @@ class PerformanceResult(float):
     def __truediv__(self, other):
         """Divide PerformanceResult by a scalar."""
         # Scale both latency and energy
-        return PerformanceResult(float(self) / other, energy=self.energy / other)
+        return PerformanceResult(
+            float(self) / other,
+            energy=self.energy / other,
+            sources=tuple(source.with_transform("divide", other) for source in self.sources),
+        )
 
     def __rtruediv__(self, other):
         """Right division: other / self."""
@@ -159,7 +209,7 @@ class PerformanceResult(float):
 
     def __abs__(self):
         """Absolute value of latency and energy."""
-        return PerformanceResult(abs(float(self)), energy=abs(self.energy))
+        return PerformanceResult(abs(float(self)), energy=abs(self.energy), sources=self.sources)
 
     def __hash__(self):
         """Hash based on latency and energy for use in sets/dicts."""

@@ -61,6 +61,8 @@ class BaseBackend(ABC):
         vllm_module_topology = (
             f"tp{model.config.tp_size}dp{model.config.attention_dp_size}ep{model.config.moe_ep_size}"
         )
+        context_source_map = defaultdict(list)
+        generation_source_map = defaultdict(list)
 
         def _run_context(batch_size: int, isl: int, prefix) -> tuple[dict[str, float], dict[str, float]]:
             """
@@ -101,6 +103,8 @@ class BaseBackend(ABC):
                     query_kwargs.update(op_query_overrides)
                 result = op.query(database, **query_kwargs)
 
+                context_source_map[op._name].extend(getattr(result, "sources", ()))
+
                 # ✅ IMMEDIATELY extract values - do NOT use PerformanceResult arithmetic!
                 latency_ms = float(result)  # Extract latency in milliseconds
                 energy_wms = getattr(result, "energy", 0.0)  # Extract energy in watt-milliseconds
@@ -130,6 +134,7 @@ class BaseBackend(ABC):
             for i in range(0, osl - 1, stride):
                 latency_dict = defaultdict(float)
                 energy_wms_dict = defaultdict(float)  # W·ms
+                source_map = defaultdict(list)
 
                 for op in model.generation_ops:
                     query_kwargs = {
@@ -143,6 +148,7 @@ class BaseBackend(ABC):
                     if op_query_overrides:
                         query_kwargs.update(op_query_overrides)
                     result = op.query(database, **query_kwargs)
+                    source_map[op._name].extend(getattr(result, "sources", ()))
 
                     # ✅ IMMEDIATELY extract values - do NOT accumulate PerformanceResult objects!
                     latency_ms = float(result)
@@ -158,6 +164,11 @@ class BaseBackend(ABC):
                     # Both latency and energy are additive - multiply by repeat_count
                     generation_latency_dict[op] += latency_dict[op] * repeat_count
                     generation_energy_wms_dict[op] += energy_wms_dict[op] * repeat_count  # SIMPLIFIED
+                for op, result_sources in source_map.items():
+                    generation_source_map[op].extend(
+                        source.with_transform("multiply", repeat_count)
+                        for source in result_sources
+                    )
 
             return generation_latency_dict, generation_energy_wms_dict
 
@@ -202,9 +213,17 @@ class BaseBackend(ABC):
             for op in context_latency_dict:
                 context_latency_dict[op] *= latency_correction_scale
                 context_energy_wms_dict[op] *= latency_correction_scale  # Energy scales with latency!
+                context_source_map[op] = [
+                    source.with_transform("multiply", latency_correction_scale)
+                    for source in context_source_map[op]
+                ]
             for op in generation_latency_dict:
                 generation_latency_dict[op] *= latency_correction_scale
                 generation_energy_wms_dict[op] *= latency_correction_scale  # Energy scales with latency!
+                generation_source_map[op] = [
+                    source.with_transform("multiply", latency_correction_scale)
+                    for source in generation_source_map[op]
+                ]
 
         # Calculate total latencies and energies (simple sums - decoupled!)
         context_latency_ms = sum(context_latency_dict.values())  # milliseconds
@@ -303,6 +322,8 @@ class BaseBackend(ABC):
 
         summary.set_context_latency_dict(context_latency_dict)
         summary.set_generation_latency_dict(generation_latency_dict)
+        summary.set_context_source_map({op: tuple(sources) for op, sources in context_source_map.items()})
+        summary.set_generation_source_map({op: tuple(sources) for op, sources in generation_source_map.items()})
         summary.set_context_energy_wms_dict(context_energy_wms_dict)  # UPDATED: explicit units
         summary.set_generation_energy_wms_dict(generation_energy_wms_dict)  # UPDATED: explicit units
         summary.set_context_power_avg(context_power_avg)

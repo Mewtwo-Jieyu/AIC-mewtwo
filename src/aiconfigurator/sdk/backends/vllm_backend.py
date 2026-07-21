@@ -838,6 +838,10 @@ class VLLMBackend(BaseBackend):
         summary.set_memory_and_check_oom(memory, database.system_spec["gpu"]["mem_capacity"])
         summary.set_summary_df(summary_df)
         summary.set_result_dict(result_dict)
+        performance_source_map = sim.get_last_performance_source_map()
+        summary.set_context_source_map(performance_source_map["context"])
+        summary.set_generation_source_map(performance_source_map["generation"])
+        summary.set_iteration_charge_ledger(sim.get_last_charge_ledger())
 
         per_ops_data = {
             "cb_sim_scheduling": {
@@ -866,6 +870,13 @@ class VLLMBackend(BaseBackend):
                 "cb_sim_raw_tokens_s": float(raw_output_throughput),
                 "cb_sim_tokens_s": float(output_throughput),
                 "cb_sim_tokens_s_gpu": float(tokens_s_gpu),
+            },
+            "performance_sources": {
+                phase: {
+                    op_name: [source.to_dict() for source in sources]
+                    for op_name, sources in phase_map.items()
+                }
+                for phase, phase_map in performance_source_map.items()
             },
         }
         summary.set_per_ops_data(per_ops_data)

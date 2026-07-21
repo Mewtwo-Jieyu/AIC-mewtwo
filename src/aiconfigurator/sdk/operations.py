@@ -6,6 +6,7 @@ from typing import Literal, Optional
 
 from aiconfigurator.sdk import common
 from aiconfigurator.sdk.perf_database import PerfDataNotAvailableError, PerfDatabase
+from aiconfigurator.sdk.perf_source import PerfSourceRecord
 from aiconfigurator.sdk.performance_result import PerformanceResult
 
 logger = logging.getLogger(__name__)
@@ -25,6 +26,23 @@ _VLLM_MODULE_BUCKETS_BY_BOUNDARY = {
     "fusedmoe_runner_compute": _VLLM_MODULE_FUSEDMOE_BUCKETS,
     "ep8_comm_dispatch_combine": _VLLM_MODULE_EP8_COMM_BUCKETS,
 }
+
+
+def _scale_result(result: PerformanceResult, scale_factor: float) -> PerformanceResult:
+    if isinstance(result, PerformanceResult):
+        scaled = result * scale_factor
+    else:
+        scaled = PerformanceResult(
+            float(result) * scale_factor,
+            energy=getattr(result, "energy", 0.0) * scale_factor,
+            sources=tuple(
+                source.with_transform("multiply", scale_factor)
+                for source in getattr(result, "sources", ())
+            ),
+        )
+    if hasattr(result, "provenance"):
+        scaled.provenance = result.provenance
+    return scaled
 
 
 def _validate_vllm_module_bucket(bucket_tokens: int) -> None:
@@ -85,7 +103,7 @@ def _query_vllm_module(
         module_boundary=module_boundary,
         quant_runtime=_VLLM_MODULE_QUANT_RUNTIME,
     )
-    scaled = PerformanceResult(float(result) * scale_factor, energy=result.energy * scale_factor)
+    scaled = _scale_result(result, scale_factor)
     scaled.provenance = "vllm_module_measured"
     return scaled
 
@@ -106,7 +124,7 @@ def _query_vllm_ep8_alltoall(
             topk=topk,
             moe_ep_size=8,
         )
-        scaled = PerformanceResult(float(result) * scale_factor, energy=result.energy * scale_factor)
+        scaled = _scale_result(result, scale_factor)
         scaled.provenance = "phase431_ep8_a2a_measured"
         return scaled
     if source != "structural":
@@ -121,7 +139,24 @@ def _query_vllm_ep8_alltoall(
         raise ValueError("structural vLLM EP8 source requires positive node.intra_node_bw")
     bytes_per_token = hidden_size * topk * common.CommQuantMode.half.value.memory * 2.0
     latency_ms = bucket_tokens * bytes_per_token / bidirectional_bw * 1000.0
-    result = PerformanceResult(latency_ms * scale_factor, energy=0.0)
+    result = PerformanceResult(
+        latency_ms,
+        energy=0.0,
+        sources=(
+            PerfSourceRecord.structural(
+                formula_id="vllm_ep8_bidirectional_bandwidth_v1",
+                formula_inputs={
+                    "bucket_tokens": bucket_tokens,
+                    "hidden_size": hidden_size,
+                    "topk": topk,
+                    "bytes_per_element": common.CommQuantMode.half.value.memory,
+                    "directions": 2.0,
+                    "bidirectional_bw": bidirectional_bw,
+                },
+            ),
+        ),
+    )
+    result = _scale_result(result, scale_factor)
     result.provenance = "structural_bidirectional_bandwidth"
     return result
 
@@ -185,7 +220,7 @@ class CustomAllReduce(Operation):
         size = kwargs.get("x") * self._h
 
         result = database.query_custom_allreduce(common.CommQuantMode.half, self._tp_size, size)
-        return PerformanceResult(float(result) * self._scale_factor, energy=result.energy * self._scale_factor)
+        return _scale_result(result, self._scale_factor)
 
     def get_weights(self, **kwargs):
         return self._weights * self._scale_factor
@@ -213,7 +248,7 @@ class P2P(Operation):
         p2p_bytes = size * 2
 
         result = database.query_p2p(p2p_bytes)
-        return PerformanceResult(float(result) * self._scale_factor, energy=result.energy * self._scale_factor)
+        return _scale_result(result, self._scale_factor)
 
     def get_weights(self, **kwargs):
         return self._weights * self._scale_factor
@@ -245,7 +280,7 @@ class NCCL(Operation):
         message_size = kwargs.get("x") * self._num_elements_per_token
 
         result = database.query_nccl(self._comm_quant_mode, self._num_gpus, self._nccl_op, message_size)
-        return PerformanceResult(float(result) * self._scale_factor, energy=result.energy * self._scale_factor)
+        return _scale_result(result, self._scale_factor)
 
     def get_weights(self, **kwargs):
         return self._weights * self._scale_factor
@@ -296,16 +331,36 @@ class GEMM(Operation):
         result = database.query_gemm(x, self._n, self._k, quant_mode)
         latency = float(result)
         energy = result.energy
+        sources = list(result.sources)
 
         # Adjust for fp8_static: subtract compute_scale overhead, only fix for trtllm now
         if is_fp8_static:
             compute_scale_result = database.query_compute_scale(x, self._k, quant_mode)
             latency -= float(compute_scale_result)
             energy -= compute_scale_result.energy
+            sources.extend(getattr(compute_scale_result, "sources", ()))
+            scale_matrix_latency = 0.0
+            scale_matrix_energy = 0.0
             if self._low_precision_input:
                 scale_matrix_result = database.query_scale_matrix(x, self._k, quant_mode)
                 latency -= float(scale_matrix_result)
                 energy -= scale_matrix_result.energy
+                scale_matrix_latency = float(scale_matrix_result)
+                scale_matrix_energy = scale_matrix_result.energy
+                sources.extend(getattr(scale_matrix_result, "sources", ()))
+            sources.append(
+                PerfSourceRecord.structural(
+                    formula_id="gemm_fp8_scale_overhead_subtraction_v1",
+                    formula_inputs={
+                        "base_latency_ms": float(result),
+                        "base_energy_wms": result.energy,
+                        "compute_scale_latency_ms": float(compute_scale_result),
+                        "compute_scale_energy_wms": compute_scale_result.energy,
+                        "scale_matrix_latency_ms": scale_matrix_latency,
+                        "scale_matrix_energy_wms": scale_matrix_energy,
+                    },
+                )
+            )
 
         # Ensure non-negative latency and energy
         latency_clamped = max(0.0, latency)
@@ -323,14 +378,22 @@ class GEMM(Operation):
                 latency,
                 energy,
             )
+            sources.append(
+                PerfSourceRecord.structural(
+                    formula_id="gemm_nonnegative_clamp_v1",
+                    formula_inputs={
+                        "input_latency_ms": latency,
+                        "input_energy_wms": energy,
+                        "output_latency_ms": latency_clamped,
+                        "output_energy_wms": energy_clamped,
+                    },
+                )
+            )
 
         latency = latency_clamped
         energy = energy_clamped
 
-        return PerformanceResult(
-            latency=latency * self._scale_factor,
-            energy=energy * self._scale_factor,
-        )
+        return _scale_result(PerformanceResult(latency=latency, energy=energy, sources=sources), self._scale_factor)
 
     def get_weights(self, **kwargs):
         return self._weights * self._scale_factor
@@ -446,7 +509,7 @@ class TrtLLMWideEPMoE(Operation):
             workload_distribution=self._workload_distribution,
         )
 
-        return PerformanceResult(float(result) * self._scale_factor, energy=result.energy * self._scale_factor)
+        return _scale_result(result, self._scale_factor)
 
     def get_weights(self, **kwargs):
         """Get the weight memory size for this MoE layer."""
@@ -674,7 +737,7 @@ class MoE(Operation):
             model=model_name,
         )
 
-        return PerformanceResult(float(result) * self._scale_factor, energy=result.energy * self._scale_factor)
+        return _scale_result(result, self._scale_factor)
 
     def get_weights(self, **kwargs):
         return self._weights * self._scale_factor
@@ -955,7 +1018,8 @@ class MoEDispatch(Operation):
         else:  # other backends
             raise NotImplementedError(f"MoEDispatch: Not implemented for backend {database.backend}")
 
-        # MoEDispatch calculates latency rather than querying, so energy=0
+        if isinstance(comm_latency, PerformanceResult):
+            return _scale_result(comm_latency, self._scale_factor)
         return PerformanceResult(comm_latency * self._scale_factor, energy=0.0)
 
     def get_weights(self, **kwargs):
@@ -1054,7 +1118,7 @@ class ContextAttention(Operation):
             window_size=self._window_size,
             head_size=self._head_size,
         )
-        return PerformanceResult(float(result) * self._scale_factor, energy=result.energy * self._scale_factor)
+        return _scale_result(result, self._scale_factor)
 
     def get_weights(self, **kwargs):
         return self._weights * self._scale_factor
@@ -1099,7 +1163,7 @@ class GenerationAttention(Operation):
             window_size=self._window_size,
             head_size=self._head_size,
         )
-        return PerformanceResult(float(result) * self._scale_factor, energy=result.energy * self._scale_factor)
+        return _scale_result(result, self._scale_factor)
 
     def get_weights(self, **kwargs):
         return self._weights * self._scale_factor
@@ -1140,7 +1204,7 @@ class ContextMLA(Operation):
             kvcache_quant_mode=self._kvcache_quant_mode,
             fmha_quant_mode=self._fmha_quant_mode,
         )
-        return PerformanceResult(float(result) * self._scale_factor, energy=result.energy * self._scale_factor)
+        return _scale_result(result, self._scale_factor)
 
     def get_weights(self, **kwargs):
         return self._weights * self._scale_factor
@@ -1173,7 +1237,7 @@ class GenerationMLA(Operation):
         s = kwargs.get("s")
 
         result = database.query_generation_mla(batch_size, s, self._num_heads, self._kv_cache_dtype)
-        return PerformanceResult(float(result) * self._scale_factor, energy=result.energy * self._scale_factor)
+        return _scale_result(result, self._scale_factor)
 
     def get_weights(self, **kwargs):
         return self._weights * self._scale_factor
@@ -1206,7 +1270,7 @@ class MLABmm(Operation):
         batch_size = kwargs.get("batch_size")
 
         result = database.query_mla_bmm(batch_size, self._num_heads, self._quant_mode, self._if_pre)
-        return PerformanceResult(float(result) * self._scale_factor, energy=result.energy * self._scale_factor)
+        return _scale_result(result, self._scale_factor)
 
     def get_weights(self, **kwargs):
         return self._weights * self._scale_factor
@@ -1239,7 +1303,7 @@ class Embedding(Operation):
         d2d_bytes = x * self._column_size * 2
 
         result = database.query_mem_op(d2d_bytes)
-        return PerformanceResult(float(result) * self._scale_factor, energy=result.energy * self._scale_factor)
+        return _scale_result(result, self._scale_factor)
 
     def get_weights(self, **kwargs):
         return self._weights * self._scale_factor
@@ -1276,7 +1340,7 @@ class ElementWise(Operation):
         write_bytes = x * self._dim_out * 2
 
         result = database.query_mem_op(read_bytes + write_bytes)
-        return PerformanceResult(float(result) * self._scale_factor, energy=result.energy * self._scale_factor)
+        return _scale_result(result, self._scale_factor)
 
     def get_weights(self, **kwargs):
         return self._weights * self._scale_factor

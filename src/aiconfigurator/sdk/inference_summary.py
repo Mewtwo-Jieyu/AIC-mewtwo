@@ -57,6 +57,9 @@ class InferenceSummary:
         self._generation_latency_dict = {}  # ms
         self._context_energy_wms_dict = {}  # RENAMED from _context_power_dict, W·ms
         self._generation_energy_wms_dict = {}  # RENAMED from _generation_power_dict, W·ms
+        self._context_source_map = {}
+        self._generation_source_map = {}
+        self._iteration_charge_ledger = []
         self._is_oom = None
 
         # NEW: Store computed power averages
@@ -109,6 +112,30 @@ class InferenceSummary:
         Get generation latency dict.
         """
         return self._generation_latency_dict
+
+    def set_context_source_map(self, source_map: dict) -> None:
+        """Set context operation performance sources."""
+        self._context_source_map = source_map
+
+    def set_generation_source_map(self, source_map: dict) -> None:
+        """Set generation operation performance sources."""
+        self._generation_source_map = source_map
+
+    def get_context_source_map(self) -> dict:
+        """Get context operation performance sources."""
+        return self._context_source_map
+
+    def get_generation_source_map(self) -> dict:
+        """Get generation operation performance sources."""
+        return self._generation_source_map
+
+    def set_iteration_charge_ledger(self, ledger: list) -> None:
+        """Set the additive iteration cost ledger."""
+        self._iteration_charge_ledger = list(ledger)
+
+    def get_iteration_charge_ledger(self) -> list:
+        """Get the additive iteration cost ledger."""
+        return list(self._iteration_charge_ledger)
 
     # NEW: Energy dict accessors (explicit _wms naming for clarity)
     def set_context_energy_wms_dict(self, energy_wms_dict: dict[str, float]) -> None:

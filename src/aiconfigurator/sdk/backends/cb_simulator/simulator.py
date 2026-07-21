@@ -1062,6 +1062,18 @@ class CBSimulator:
             return []
         return self._last_latency_calc.get_serving_state_query_audit()
 
+    def get_last_performance_source_map(self) -> dict:
+        """Return charged performance sources from the most recent run."""
+        if self._last_latency_calc is None:
+            return {"context": {}, "generation": {}}
+        return self._last_latency_calc.get_performance_source_map()
+
+    def get_last_charge_ledger(self) -> list:
+        """Return additive iteration charges from the most recent run."""
+        if self._last_latency_calc is None:
+            return []
+        return self._last_latency_calc.get_charge_ledger()
+
     def get_last_schedule_trace(self) -> list[dict[str, float | int | bool]]:
         """Return per-replica schedule trace from the most recent multi run."""
         return list(self._last_schedule_trace)

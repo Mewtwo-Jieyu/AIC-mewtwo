@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import csv
 import functools
+import hashlib
 import importlib.resources as pkg_resources
 import logging
 import math
@@ -18,6 +19,7 @@ import yaml
 from scipy import interpolate
 
 from aiconfigurator.sdk import common
+from aiconfigurator.sdk.perf_source import PerfSourceRecord
 from aiconfigurator.sdk.performance_result import PerformanceResult
 
 databases_cache = defaultdict(lambda: defaultdict(lambda: defaultdict()))
@@ -2092,6 +2094,8 @@ class PerfDatabase:
         self._extracted_metrics_cache = {}
 
         data_dir = os.path.join(systems_root, self.system_spec["data_dir"], backend, version)
+        self._data_dir = data_dir
+        self._source_sha256_cache: dict[str, str] = {}
         self._vllm_module_data = None
         self._vllm_ep8_a2a_decode_data = None
         self._vllm_serving_state_data = None
@@ -3377,6 +3381,146 @@ class PerfDatabase:
         """
         return self._default_database_mode
 
+    def _perf_data_sha256(self, filename: common.PerfDataFilename) -> str | None:
+        path = os.path.join(self._data_dir, filename.value)
+        if not os.path.isfile(path):
+            return None
+        if path not in self._source_sha256_cache:
+            digest = hashlib.sha256()
+            with open(path, "rb") as source_file:
+                for chunk in iter(lambda: source_file.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            self._source_sha256_cache[path] = digest.hexdigest()
+        return self._source_sha256_cache[path]
+
+    def _measured_interp_1d_source(
+        self,
+        *,
+        source_id: str,
+        filename: common.PerfDataFilename,
+        query_key: dict,
+        coordinate: str,
+        value: int,
+        table: dict,
+        fixed_support: dict,
+        inner_only: bool,
+    ) -> PerfSourceRecord | None:
+        keys = list(table)
+        left, right = self._nearest_1d_point_helper(value, keys, inner_only=inner_only)
+        data_file_sha256 = self._perf_data_sha256(filename)
+        if data_file_sha256 is None:
+            return None
+        if value in table:
+            return PerfSourceRecord.measured_exact(
+                source_id=source_id,
+                data_file_sha256=data_file_sha256,
+                query_key=query_key,
+                row_key={**fixed_support, coordinate: value},
+            )
+        if value < min(keys) or value > max(keys):
+            return PerfSourceRecord.structural(
+                source_id=source_id,
+                formula_id="measured_grid_extrapolation_1d_v1",
+                formula_inputs={
+                    "data_file_sha256": data_file_sha256,
+                    "query_key": query_key,
+                    "coordinate": coordinate,
+                    "value": value,
+                    "measured_domain": (min(keys), max(keys)),
+                    "support_points": (
+                        {
+                            "key": {**fixed_support, coordinate: left},
+                            "value": table[left],
+                        },
+                        {
+                            "key": {**fixed_support, coordinate: right},
+                            "value": table[right],
+                        },
+                    ),
+                    "method": "legacy_linear_with_monotonic_guard",
+                },
+            )
+        return PerfSourceRecord.measured_interp(
+            source_id=source_id,
+            data_file_sha256=data_file_sha256,
+            query_key=query_key,
+            domain={coordinate: (min(keys), max(keys))},
+            support_keys=(
+                {**fixed_support, coordinate: left},
+                {**fixed_support, coordinate: right},
+            ),
+        )
+
+    def _runtime_grid_interp_3d_source(
+        self,
+        *,
+        source_id: str,
+        filename: common.PerfDataFilename,
+        query_key: dict,
+        coordinates: tuple[str, str, str],
+        values: tuple[int, int, int],
+        table: dict,
+        fixed_support: dict,
+        method: str,
+    ) -> PerfSourceRecord | None:
+        x_name, y_name, z_name = coordinates
+        x, y, z = values
+        x_keys = list(table)
+        x_left, x_right = self._nearest_1d_point_helper(x, x_keys)
+        support_points: list[dict] = []
+        y_domain: list[int] = []
+        z_domain: list[int] = []
+        for x_support in (x_left, x_right):
+            y_keys = list(table[x_support])
+            y_domain.extend(y_keys)
+            y_left, y_right = self._nearest_1d_point_helper(y, y_keys)
+            for y_support in (y_left, y_right):
+                z_keys = list(table[x_support][y_support])
+                z_domain.extend(z_keys)
+                z_left, z_right = self._nearest_1d_point_helper(z, z_keys)
+                support_points.extend(
+                    (
+                        {
+                            "key": {
+                                **fixed_support,
+                                x_name: x_support,
+                                y_name: y_support,
+                                z_name: z_left,
+                            },
+                            "value": table[x_support][y_support][z_left],
+                        },
+                        {
+                            "key": {
+                                **fixed_support,
+                                x_name: x_support,
+                                y_name: y_support,
+                                z_name: z_right,
+                            },
+                            "value": table[x_support][y_support][z_right],
+                        },
+                    )
+                )
+        data_file_sha256 = self._perf_data_sha256(filename)
+        if data_file_sha256 is None:
+            return None
+        return PerfSourceRecord.structural(
+            source_id=source_id,
+            formula_id="corrected_runtime_grid_interp_3d_v1",
+            formula_inputs={
+                "data_file_sha256": data_file_sha256,
+                "query_key": query_key,
+                "coordinates": coordinates,
+                "values": values,
+                "method": method,
+                "runtime_domain": {
+                    x_name: (min(x_keys), max(x_keys)),
+                    y_name: (min(y_domain), max(y_domain)),
+                    z_name: (min(z_domain), max(z_domain)),
+                },
+                "runtime_support_points": support_points,
+            },
+        )
+
     @staticmethod
     def _normalize_gemm_quant_mode_for_table(quant_mode: common.GEMMQuantMode) -> common.GEMMQuantMode:
         """
@@ -3441,13 +3585,36 @@ class PerfDatabase:
 
         table_quant_mode = self._normalize_gemm_quant_mode_for_table(quant_mode)
 
+        def structural_source(formula_id: str, empirical_scale: float | None = None) -> PerfSourceRecord:
+            inputs = {
+                "m": m,
+                "n": n,
+                "k": k,
+                "quant_mode": quant_mode.name,
+                "float16_tc_flops": self.system_spec["gpu"]["float16_tc_flops"],
+                "mem_bw": self.system_spec["gpu"]["mem_bw"],
+                "compute_multiplier": quant_mode.value.compute,
+                "memory_bytes_per_element": quant_mode.value.memory,
+            }
+            if empirical_scale is not None:
+                inputs["empirical_scale"] = empirical_scale
+            return PerfSourceRecord.structural(formula_id=formula_id, formula_inputs=inputs)
+
         # SOL and EMPIRICAL modes don't have power/energy data
         if database_mode == common.DatabaseMode.SOL:
-            return PerformanceResult(get_sol(m, n, k, quant_mode)[0], energy=0.0)
+            return PerformanceResult(
+                get_sol(m, n, k, quant_mode)[0],
+                energy=0.0,
+                sources=(structural_source("gemm_roofline_v1"),),
+            )
         elif database_mode == common.DatabaseMode.SOL_FULL:
             return get_sol(m, n, k, quant_mode)
         elif database_mode == common.DatabaseMode.EMPIRICAL:
-            return PerformanceResult(get_empirical(m, n, k, quant_mode), energy=0.0)
+            return PerformanceResult(
+                get_empirical(m, n, k, quant_mode),
+                energy=0.0,
+                sources=(structural_source("gemm_empirical_roofline_v1", empirical_scale=0.8),),
+            )
         else:
             # SILICON or HYBRID mode - use database
             try:
@@ -3467,11 +3634,29 @@ class PerfDatabase:
                     )
                 result = self._interp_3d(m, n, k, self._gemm_data[table_quant_mode], "cubic")
                 # Result is dict: {"latency": ..., "power": ..., "energy": ...}
-                return PerformanceResult(result["latency"], energy=result.get("energy", 0.0))
+                source = self._runtime_grid_interp_3d_source(
+                    source_id="gemm_perf_runtime_grid",
+                    filename=common.PerfDataFilename.gemm,
+                    query_key={"m": m, "n": n, "k": k, "quant_mode": table_quant_mode.name},
+                    coordinates=("m", "n", "k"),
+                    values=(m, n, k),
+                    table=self._gemm_data[table_quant_mode],
+                    fixed_support={"quant_mode": table_quant_mode.name},
+                    method="cubic",
+                )
+                return PerformanceResult(
+                    result["latency"],
+                    energy=result.get("energy", 0.0),
+                    sources=() if source is None else (source,),
+                )
             except Exception:
                 if database_mode == common.DatabaseMode.HYBRID:
                     logger.debug(f"Failed to query gemm data for {m=}, {n=}, {k=}, {quant_mode=}, using empirical mode")
-                    return PerformanceResult(get_empirical(m, n, k, quant_mode), energy=0.0)
+                    return PerformanceResult(
+                        get_empirical(m, n, k, quant_mode),
+                        energy=0.0,
+                        sources=(structural_source("gemm_empirical_roofline_v1", empirical_scale=0.8),),
+                    )
                 else:
                     logger.exception(
                         f"Failed to query gemm data for {m=}, {n=}, {k=}, {quant_mode=}. Please consider Hybrid mode."
@@ -4042,14 +4227,32 @@ class PerfDatabase:
 
         if database_mode is None:
             database_mode = self._default_database_mode
+        structural_source = PerfSourceRecord.structural(
+            formula_id=(
+                "context_mla_roofline_v1"
+                if database_mode == common.DatabaseMode.SOL
+                else "context_mla_empirical_roofline_v1"
+            ),
+            formula_inputs={
+                "batch_size": b,
+                "sequence_length": s,
+                "prefix": prefix,
+                "num_heads": num_heads,
+                "kvcache_quant_mode": kvcache_quant_mode.name,
+                "fmha_quant_mode": fmha_quant_mode.name,
+                "float16_tc_flops": self.system_spec["gpu"]["float16_tc_flops"],
+                "mem_bw": self.system_spec["gpu"]["mem_bw"],
+                "empirical_scale": 0.6,
+            },
+        )
         if database_mode == common.DatabaseMode.SOL:
             sol_latency = get_sol(b, s, prefix, num_heads, kvcache_quant_mode, fmha_quant_mode)[0]
-            return PerformanceResult(sol_latency, energy=0.0)
+            return PerformanceResult(sol_latency, energy=0.0, sources=(structural_source,))
         elif database_mode == common.DatabaseMode.SOL_FULL:
             return get_sol(b, s, prefix, num_heads, kvcache_quant_mode, fmha_quant_mode)
         elif database_mode == common.DatabaseMode.EMPIRICAL:
             emp_latency = get_empirical(b, s, prefix, num_heads, kvcache_quant_mode, fmha_quant_mode)
-            return PerformanceResult(emp_latency, energy=0.0)
+            return PerformanceResult(emp_latency, energy=0.0, sources=(structural_source,))
         else:
             try:
                 if self._context_mla_data is None:
@@ -4062,9 +4265,32 @@ class PerfDatabase:
                 prefix_correction = (full_s * full_s - prefix * prefix) / (full_s * full_s)
                 mla_dict = self._context_mla_data[fmha_quant_mode][kvcache_quant_mode]
                 result = self._interp_3d(num_heads, full_s, b, mla_dict, "cubic")
-                latency = result["latency"] * prefix_correction
-                energy = result.get("energy", 0.0) * prefix_correction
-                return PerformanceResult(latency, energy=energy)
+                source = self._runtime_grid_interp_3d_source(
+                    source_id="context_mla_perf_runtime_grid",
+                    filename=common.PerfDataFilename.context_mla,
+                    query_key={
+                        "batch_size": b,
+                        "sequence_length": s,
+                        "prefix": prefix,
+                        "full_sequence_length": full_s,
+                        "num_heads": num_heads,
+                        "kvcache_quant_mode": kvcache_quant_mode.name,
+                        "fmha_quant_mode": fmha_quant_mode.name,
+                    },
+                    coordinates=("num_heads", "full_sequence_length", "batch_size"),
+                    values=(num_heads, full_s, b),
+                    table=mla_dict,
+                    fixed_support={
+                        "kvcache_quant_mode": kvcache_quant_mode.name,
+                        "fmha_quant_mode": fmha_quant_mode.name,
+                    },
+                    method="cubic",
+                )
+                return PerformanceResult(
+                    result["latency"],
+                    energy=result.get("energy", 0.0),
+                    sources=() if source is None else (source,),
+                ) * prefix_correction
             except Exception:
                 if database_mode == common.DatabaseMode.HYBRID:
                     logger.debug(
@@ -4072,7 +4298,7 @@ class PerfDatabase:
                         f"{kvcache_quant_mode=}, {fmha_quant_mode=}, using empirical mode"
                     )
                     latency = get_empirical(b, s, prefix, num_heads, kvcache_quant_mode, fmha_quant_mode)
-                    return PerformanceResult(latency, energy=0.0)
+                    return PerformanceResult(latency, energy=0.0, sources=(structural_source,))
                 else:
                     logger.exception(
                         f"Failed to query context mla data for {b=}, {s=}, {prefix=}, {num_heads=}, \
@@ -4140,14 +4366,30 @@ class PerfDatabase:
 
         if database_mode is None:
             database_mode = self._default_database_mode
+        structural_source = PerfSourceRecord.structural(
+            formula_id=(
+                "generation_mla_roofline_v1"
+                if database_mode == common.DatabaseMode.SOL
+                else "generation_mla_empirical_roofline_v1"
+            ),
+            formula_inputs={
+                "batch_size": b,
+                "kv_cache_length": s,
+                "num_heads": num_heads,
+                "kvcache_quant_mode": kvcache_quant_mode.name,
+                "float16_tc_flops": self.system_spec["gpu"]["float16_tc_flops"],
+                "mem_bw": self.system_spec["gpu"]["mem_bw"],
+                "empirical_scale": 0.8,
+            },
+        )
         if database_mode == common.DatabaseMode.SOL:
             sol_latency = get_sol(b, s, num_heads, kvcache_quant_mode)[0]
-            return PerformanceResult(sol_latency, energy=0.0)
+            return PerformanceResult(sol_latency, energy=0.0, sources=(structural_source,))
         elif database_mode == common.DatabaseMode.SOL_FULL:
             return get_sol(b, s, num_heads, kvcache_quant_mode)
         elif database_mode == common.DatabaseMode.EMPIRICAL:
             emp_latency = get_empirical(b, s, num_heads, kvcache_quant_mode)
-            return PerformanceResult(emp_latency, energy=0.0)
+            return PerformanceResult(emp_latency, energy=0.0, sources=(structural_source,))
         else:
             try:
                 if self._generation_mla_data is None:
@@ -4160,7 +4402,22 @@ class PerfDatabase:
                 result = self._interp_3d(num_heads, b, s, mla_dict, "bilinear")
                 latency = result["latency"]
                 energy = result.get("energy", 0.0)
-                return PerformanceResult(latency, energy=energy)
+                source = self._runtime_grid_interp_3d_source(
+                    source_id="generation_mla_perf_runtime_grid",
+                    filename=common.PerfDataFilename.generation_mla,
+                    query_key={
+                        "batch_size": b,
+                        "kv_cache_length": s,
+                        "num_heads": num_heads,
+                        "kvcache_quant_mode": kvcache_quant_mode.name,
+                    },
+                    coordinates=("num_heads", "batch_size", "kv_cache_length"),
+                    values=(num_heads, b, s),
+                    table=mla_dict,
+                    fixed_support={"kvcache_quant_mode": kvcache_quant_mode.name},
+                    method="bilinear",
+                )
+                return PerformanceResult(latency, energy=energy, sources=() if source is None else (source,))
             except Exception:
                 if database_mode == common.DatabaseMode.HYBRID:
                     logger.debug(
@@ -4168,7 +4425,7 @@ class PerfDatabase:
                         f"{kvcache_quant_mode=}, using empirical mode"
                     )
                     latency = get_empirical(b, s, num_heads, kvcache_quant_mode)
-                    return PerformanceResult(latency, energy=0.0)
+                    return PerformanceResult(latency, energy=0.0, sources=(structural_source,))
                 else:
                     logger.exception(
                         f"Failed to query generation mla data for {b=}, {s=}, {num_heads=}, \
@@ -4511,14 +4768,29 @@ class PerfDatabase:
 
         if database_mode is None:
             database_mode = self._default_database_mode
+        quant_mode_name = getattr(quant_mode, "name", str(quant_mode))
+        structural_source = PerfSourceRecord.structural(
+            formula_id=(
+                "custom_allreduce_ring_roofline_v1"
+                if database_mode == common.DatabaseMode.SOL
+                else "custom_allreduce_empirical_ring_v1"
+            ),
+            formula_inputs={
+                "quant_mode": quant_mode_name,
+                "tp_size": tp_size,
+                "size": size,
+                "p2p_bandwidth": self._get_p2p_bandwidth(tp_size),
+                "empirical_scale": 0.8,
+            },
+        )
         if database_mode == common.DatabaseMode.SOL:
             sol_latency = get_sol(quant_mode, tp_size, size)[0]
-            return PerformanceResult(sol_latency, energy=0.0)
+            return PerformanceResult(sol_latency, energy=0.0, sources=(structural_source,))
         elif database_mode == common.DatabaseMode.SOL_FULL:
             return get_sol(quant_mode, tp_size, size)
         elif database_mode == common.DatabaseMode.EMPIRICAL:
             emp_latency = get_empirical(quant_mode, tp_size, size)
-            return PerformanceResult(emp_latency, energy=0.0)
+            return PerformanceResult(emp_latency, energy=0.0, sources=(structural_source,))
         else:
             try:
                 if tp_size == 1:
@@ -4548,10 +4820,11 @@ class PerfDatabase:
                     lat = result
                     energy = 0.0
 
+                inter_node_scale_factor = 1.0
                 if tp_size > self.system_spec["node"]["num_gpus_per_node"]:
                     base_bw = self._get_p2p_bandwidth(self.system_spec["node"]["num_gpus_per_node"])
                     target_bw = self._get_p2p_bandwidth(tp_size)
-                    scale_factor = (
+                    inter_node_scale_factor = (
                         (tp_size - 1)
                         / tp_size
                         * self.system_spec["node"]["num_gpus_per_node"]
@@ -4559,10 +4832,31 @@ class PerfDatabase:
                         * base_bw
                         / target_bw
                     )
-                    lat = lat * scale_factor
-                    energy = energy * scale_factor
+                    lat = lat * inter_node_scale_factor
+                    energy = energy * inter_node_scale_factor
 
-                return PerformanceResult(lat, energy=energy)
+                source = self._measured_interp_1d_source(
+                    source_id="custom_allreduce_perf",
+                    filename=common.PerfDataFilename.custom_allreduce,
+                    query_key={
+                        "quant_mode": quant_mode_name,
+                        "tp_size": tp_size,
+                        "strategy": "AUTO",
+                        "size": size,
+                    },
+                    coordinate="size",
+                    value=size,
+                    table=comm_dict,
+                    fixed_support={
+                        "quant_mode": quant_mode_name,
+                        "tp_size": min(tp_size, 8),
+                        "strategy": "AUTO",
+                    },
+                    inner_only=True,
+                )
+                if source is not None and inter_node_scale_factor != 1.0:
+                    source = source.with_transform("multiply", inter_node_scale_factor)
+                return PerformanceResult(lat, energy=energy, sources=() if source is None else (source,))
             except Exception:
                 if database_mode == common.DatabaseMode.HYBRID:
                     logger.debug(
@@ -4570,7 +4864,7 @@ class PerfDatabase:
                         {database_mode=}, using empirical mode"
                     )
                     lat = get_empirical(quant_mode, tp_size, size)
-                    return PerformanceResult(lat, energy=0.0)
+                    return PerformanceResult(lat, energy=0.0, sources=(structural_source,))
                 else:
                     logger.exception(
                         f"Failed to query custom allreduce data for {quant_mode=}, {tp_size=}, {size=}, \
@@ -4742,7 +5036,31 @@ class PerfDatabase:
             row = self._vllm_module_data[key]
         except KeyError as exc:
             raise PerfDataNotAvailableError(f"Missing exact vLLM module perf key: {key}") from exc
-        return PerformanceResult(row["latency"], energy=row.get("energy", 0.0))
+        key_fields = {
+            "model": model,
+            "hardware": hardware,
+            "vllm_version": vllm_version,
+            "topology": topology,
+            "bucket_tokens": bucket_tokens,
+            "module_boundary": module_boundary,
+            "quant_runtime": quant_runtime,
+        }
+        data_file_sha256 = self._perf_data_sha256(common.PerfDataFilename.vllm_module)
+        source = (
+            None
+            if data_file_sha256 is None
+            else PerfSourceRecord.measured_exact(
+                source_id="vllm_module_perf",
+                data_file_sha256=data_file_sha256,
+                query_key=key_fields,
+                row_key=key_fields,
+            )
+        )
+        return PerformanceResult(
+            row["latency"],
+            energy=row.get("energy", 0.0),
+            sources=() if source is None else (source,),
+        )
 
     @functools.lru_cache(maxsize=32768)
     def query_vllm_ep8_a2a_decode(
@@ -4778,9 +5096,33 @@ class PerfDatabase:
 
         left, right = self._nearest_1d_point_helper(bucket_tokens, list(table.keys()), inner_only=True)
         result = self._interp_1d([left, right], [table[left], table[right]], bucket_tokens)
+        query_key = {
+            "bucket_tokens": bucket_tokens,
+            "hidden_size": hidden_size,
+            "topk": topk,
+            "moe_ep_size": moe_ep_size,
+        }
+        source = self._measured_interp_1d_source(
+            source_id="vllm_ep8_a2a_decode_perf",
+            filename=common.PerfDataFilename.vllm_ep8_a2a_decode,
+            query_key=query_key,
+            coordinate="bucket_tokens",
+            value=bucket_tokens,
+            table=table,
+            fixed_support={
+                "hidden_size": hidden_size,
+                "topk": topk,
+                "moe_ep_size": moe_ep_size,
+            },
+            inner_only=True,
+        )
         if isinstance(result, dict):
-            return PerformanceResult(result["latency"], energy=result.get("energy", 0.0))
-        return PerformanceResult(result, energy=0.0)
+            return PerformanceResult(
+                result["latency"],
+                energy=result.get("energy", 0.0),
+                sources=() if source is None else (source,),
+            )
+        return PerformanceResult(result, energy=0.0, sources=() if source is None else (source,))
 
     @functools.lru_cache(maxsize=32768)
     def get_vllm_ep8_a2a_decode_coverage(
@@ -4894,9 +5236,58 @@ class PerfDatabase:
             result = token_values[0]
         else:
             result = self._interp_1d([token_left, token_right], token_values, bucket_tokens)
+        query_fields = {
+            "model": model,
+            "topology": topology,
+            "max_num_batched_tokens": max_num_batched_tokens,
+            "phase": phase,
+            "row_kind": row_kind,
+            "category": category,
+            "bucket_tokens": bucket_tokens,
+            "decode_batch": decode_batch,
+            "hidden_size": hidden_size,
+            "topk": topk,
+            "moe_ep_size": moe_ep_size,
+            "quant_runtime": quant_runtime,
+        }
+        support_keys: list[dict] = []
+        for token in dict.fromkeys((token_left, token_right)):
+            batch_table = table[token]
+            batch_left, batch_right = _bracket(decode_batch, list(batch_table))
+            for batch in dict.fromkeys((batch_left, batch_right)):
+                support_keys.append({**query_fields, "bucket_tokens": token, "decode_batch": batch})
+        exact = len(support_keys) == 1 and support_keys[0] == query_fields
+        data_file_sha256 = self._perf_data_sha256(common.PerfDataFilename.vllm_serving_state)
+        if data_file_sha256 is None:
+            source = None
+        elif exact:
+            source = PerfSourceRecord.measured_exact(
+                source_id="vllm_serving_state_perf",
+                data_file_sha256=data_file_sha256,
+                query_key=query_fields,
+                row_key=query_fields,
+            )
+        else:
+            source = PerfSourceRecord.measured_interp(
+                source_id="vllm_serving_state_perf",
+                data_file_sha256=data_file_sha256,
+                query_key=query_fields,
+                domain={
+                    "bucket_tokens": (min(table), max(table)),
+                    "decode_batch": (
+                        min(min(batch_table) for batch_table in table.values()),
+                        max(max(batch_table) for batch_table in table.values()),
+                    ),
+                },
+                support_keys=support_keys,
+            )
         if isinstance(result, dict):
-            return PerformanceResult(result["latency"], energy=result.get("energy", 0.0))
-        return PerformanceResult(result, energy=0.0)
+            return PerformanceResult(
+                result["latency"],
+                energy=result.get("energy", 0.0),
+                sources=() if source is None else (source,),
+            )
+        return PerformanceResult(result, energy=0.0, sources=() if source is None else (source,))
 
     @functools.lru_cache(maxsize=32768)
     def query_moe(
@@ -5045,6 +5436,27 @@ class PerfDatabase:
             )[0]
             return sol_latency * _PHASE397V_INT4_WO_MOE_SOL_SCALE
 
+        def phase397v_source() -> PerfSourceRecord:
+            return PerfSourceRecord.calibrated(
+                source_id="phase397v_int4_wo_moe_calibrated_roofline",
+                original_source="moe_roofline_v1",
+                anchor_id="phase397l_tp8ep8_decode_moe_expert_gemm_8.0201ms_60layers_bs128",
+                scale=_PHASE397V_INT4_WO_MOE_SOL_SCALE,
+                scope={
+                    "system": self.system,
+                    "backend": self.backend,
+                    "version": self.version,
+                    "model": model,
+                    "hidden_size": hidden_size,
+                    "inter_size": inter_size,
+                    "topk": topk,
+                    "num_experts": num_experts,
+                    "moe_tp_size": moe_tp_size,
+                    "moe_ep_size": moe_ep_size,
+                    "quant_mode": quant_mode.name,
+                },
+            )
+
         def phase431_decode_distribution() -> str:
             return f"{_PHASE431_DECODE_DISTRIBUTION_PREFIX}{workload_distribution}"
 
@@ -5114,7 +5526,11 @@ class PerfDatabase:
             )
         if database_mode == common.DatabaseMode.EMPIRICAL:
             if use_phase397v_int4_wo_calibrated_sol():
-                return PerformanceResult(get_phase397v_int4_wo_calibrated_sol(), energy=0.0)
+                return PerformanceResult(
+                    get_phase397v_int4_wo_calibrated_sol(),
+                    energy=0.0,
+                    sources=(phase397v_source(),),
+                )
             emp_latency = get_empirical(
                 num_tokens,
                 hidden_size,
@@ -5133,7 +5549,11 @@ class PerfDatabase:
                 and not measured_int4_wo_context_table_covers_request()
                 and not measured_int4_wo_decode_table_covers_request()
             ):
-                return PerformanceResult(get_phase397v_int4_wo_calibrated_sol(), energy=0.0)
+                return PerformanceResult(
+                    get_phase397v_int4_wo_calibrated_sol(),
+                    energy=0.0,
+                    sources=(phase397v_source(),),
+                )
             try:
                 if self.backend == common.BackendName.sglang.value:
                     # deepep_moe is for sglang wideep only
@@ -5269,7 +5689,38 @@ class PerfDatabase:
                     else:
                         latency = result
                         energy = 0.0
-                    return PerformanceResult(latency, energy=energy)
+                    source = self._measured_interp_1d_source(
+                        source_id="moe_perf",
+                        filename=common.PerfDataFilename.moe,
+                        query_key={
+                            "num_tokens": num_tokens,
+                            "hidden_size": hidden_size,
+                            "inter_size": inter_size,
+                            "topk": topk,
+                            "num_experts": num_experts,
+                            "moe_tp_size": moe_tp_size,
+                            "moe_ep_size": moe_ep_size,
+                            "quant_mode": quant_mode.name,
+                            "workload_distribution": used_workload_distribution,
+                            "is_context": is_context,
+                            "model": model,
+                        },
+                        coordinate="num_tokens",
+                        value=num_tokens,
+                        table=moe_dict,
+                        fixed_support={
+                            "hidden_size": hidden_size,
+                            "inter_size": inter_size,
+                            "topk": topk,
+                            "num_experts": num_experts,
+                            "moe_tp_size": moe_tp_size,
+                            "moe_ep_size": moe_ep_size,
+                            "quant_mode": quant_mode.name,
+                            "workload_distribution": used_workload_distribution,
+                        },
+                        inner_only=False,
+                    )
+                    return PerformanceResult(latency, energy=energy, sources=() if source is None else (source,))
                 else:
                     raise NotImplementedError(f"backend {self.backend} not supported for moe")
             except Exception:
@@ -5438,15 +5889,33 @@ class PerfDatabase:
 
         if database_mode is None:
             database_mode = self._default_database_mode
+        structural_source = PerfSourceRecord.structural(
+            formula_id=(
+                "memory_roofline_v1"
+                if database_mode == common.DatabaseMode.SOL
+                else "memory_empirical_bandwidth_v1"
+            ),
+            formula_inputs={
+                "mem_bytes": mem_bytes,
+                "mem_bw": self.system_spec["gpu"]["mem_bw"],
+                "mem_bw_empirical_scaling_factor": self.system_spec["gpu"][
+                    "mem_bw_empirical_scaling_factor"
+                ],
+                "mem_empirical_constant_latency": self.system_spec["gpu"][
+                    "mem_empirical_constant_latency"
+                ],
+                "database_mode": database_mode.name,
+            },
+        )
         if database_mode == common.DatabaseMode.SOL:
-            return PerformanceResult(get_sol(mem_bytes)[0], energy=0.0)
+            return PerformanceResult(get_sol(mem_bytes)[0], energy=0.0, sources=(structural_source,))
         elif database_mode == common.DatabaseMode.SOL_FULL:
             return get_sol(mem_bytes)
         elif database_mode == common.DatabaseMode.EMPIRICAL:
-            return PerformanceResult(get_empirical(mem_bytes), energy=0.0)
+            return PerformanceResult(get_empirical(mem_bytes), energy=0.0, sources=(structural_source,))
         else:
             # hybrid and silicon modes have same logic
-            return PerformanceResult(get_empirical(mem_bytes), energy=0.0)
+            return PerformanceResult(get_empirical(mem_bytes), energy=0.0, sources=(structural_source,))
 
     def query_mamba2(
         self,

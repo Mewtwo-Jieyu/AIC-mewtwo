@@ -13,6 +13,7 @@ from vllm_backend.py _get_mix_step_latency (lines 149-230):
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -24,6 +25,8 @@ if TYPE_CHECKING:
     from aiconfigurator.sdk.perf_database import PerfDatabase
 
 from aiconfigurator.sdk.config import RuntimeConfig
+from aiconfigurator.sdk.perf_source import PerfSourceRecord
+from aiconfigurator.sdk.performance_result import PerformanceResult
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +45,20 @@ _SERVING_STATE_CATEGORIES = ("ep_a2a", "moe_gemm_or_aux", "other_cuda", "collect
 def _bucket(value: int, size: int) -> int:
     """Round up to nearest bucket size, minimum 1."""
     return max(1, ((value + size - 1) // size) * size)
+
+
+def _dedupe_sources(sources) -> tuple[object, ...]:
+    deduplicated: list[object] = []
+    for source in sources:
+        if any(source is existing for existing in deduplicated):
+            continue
+        try:
+            if source in deduplicated:
+                continue
+        except (TypeError, ValueError):
+            pass
+        deduplicated.append(source)
+    return tuple(deduplicated)
 
 
 @dataclass(frozen=True)
@@ -63,6 +80,47 @@ class IterationLatencyBreakdown:
             "generation_attention_ms": self.generation_attention_ms,
             "iteration_overhead_ms": self.iteration_overhead_ms,
         }
+
+
+@dataclass(frozen=True)
+class IterationCostCharge:
+    """One additive charge contributing to an iteration total."""
+
+    phase: str
+    charge_id: str
+    latency_ms: float
+    sources: tuple[object, ...]
+
+
+@dataclass(frozen=True)
+class MissingIterationCostSource:
+    """A non-zero operation used by a charge without a source record."""
+
+    phase: str
+    operation: str
+    latency_ms: float
+
+
+@dataclass(frozen=True)
+class IterationChargeLedgerEntry:
+    """Auditable additive charges for one distinct iteration cost query."""
+
+    workload: tuple[tuple[str, int], ...]
+    total_ms: float
+    charges: tuple[IterationCostCharge, ...]
+    missing_sources: tuple[MissingIterationCostSource, ...] = ()
+
+    @property
+    def charge_sum_ms(self) -> float:
+        return sum(charge.latency_ms for charge in self.charges)
+
+    @property
+    def reconciliation_delta_ms(self) -> float:
+        return self.total_ms - self.charge_sum_ms
+
+    @property
+    def reconciled(self) -> bool:
+        return math.isclose(self.total_ms, self.charge_sum_ms, rel_tol=0.0, abs_tol=1e-9)
 
 
 @dataclass(frozen=True)
@@ -126,6 +184,46 @@ class IterationLatencyCalculator:
         self._cache: dict[tuple, IterationLatencyBreakdown] = {}
         self._last_breakdown: IterationLatencyBreakdown | None = None
         self._serving_state_query_audit: list[ServingStateQueryAudit] = []
+        self._performance_source_map: dict[str, dict[str, list[PerfSourceRecord]]] = {
+            "context": {},
+            "generation": {},
+        }
+        self._charge_ledger: list[IterationChargeLedgerEntry] = []
+        self._active_charge_sources: list[object] | None = None
+        self._active_missing_sources: list[MissingIterationCostSource] | None = None
+
+    def _record_performance_sources(
+        self,
+        phase: str,
+        op_name: str,
+        latency_ms: float,
+        sources: tuple[PerfSourceRecord, ...] | list[PerfSourceRecord],
+    ) -> None:
+        if latency_ms == 0.0:
+            return
+        phase_map = self._performance_source_map[phase]
+        phase_map.setdefault(op_name, []).extend(sources)
+        if self._active_charge_sources is not None:
+            if sources:
+                self._active_charge_sources.extend(sources)
+            elif self._active_missing_sources is not None:
+                self._active_missing_sources.append(
+                    MissingIterationCostSource(phase, op_name, float(latency_ms))
+                )
+
+    def _record_source_map(
+        self,
+        phase: str,
+        latency_dict: dict[str, float],
+        source_map: dict[str, tuple[PerfSourceRecord, ...] | list[PerfSourceRecord]],
+    ) -> None:
+        for op_name, latency_ms in latency_dict.items():
+            self._record_performance_sources(
+                phase,
+                op_name,
+                float(latency_ms),
+                source_map.get(op_name, ()),
+            )
 
     def _combine_with_overlap(self, a_ms: float, b_ms: float) -> float:
         return max(a_ms, b_ms) + self._overlap_factor * min(a_ms, b_ms)
@@ -222,7 +320,7 @@ class IterationLatencyCalculator:
         category: str,
         bucket_tokens: int,
         decode_batch: int,
-    ) -> float | None:
+    ) -> PerformanceResult | None:
         if not self._serving_state_scope_enabled():
             self._record_serving_state_audit(
                 phase=phase,
@@ -261,7 +359,7 @@ class IterationLatencyCalculator:
                 decode_batch=decode_batch,
             ),
         )
-        return None if result is None else float(result)
+        return result
 
     def _query_serving_state_non_attn_total(
         self,
@@ -269,7 +367,7 @@ class IterationLatencyCalculator:
         phase: str,
         bucket_tokens: int,
         decode_batch: int,
-    ) -> float | None:
+    ) -> PerformanceResult | None:
         category = "non_attn_total"
         if not self._serving_state_scope_enabled():
             self._record_serving_state_audit(
@@ -310,7 +408,7 @@ class IterationLatencyCalculator:
             ),
             row_kind="non_attn_total",
         )
-        return None if result is None else float(result)
+        return result
 
     def _query_serving_state_forward_total(
         self,
@@ -318,7 +416,7 @@ class IterationLatencyCalculator:
         phase: str,
         bucket_tokens: int,
         decode_batch: int,
-    ) -> float | None:
+    ) -> PerformanceResult | None:
         category = "forward_total"
         result = self._database.query_vllm_serving_state(
             model=_SERVING_STATE_PERFDB_MODEL,
@@ -349,7 +447,7 @@ class IterationLatencyCalculator:
             ),
             row_kind="forward_total",
         )
-        return None if result is None else float(result)
+        return result
 
     def _serving_state_table_for(
         self,
@@ -478,27 +576,35 @@ class IterationLatencyCalculator:
     def _serving_state_adjusted_non_attention(
         self,
         latency_dict: dict[str, float],
+        source_map: dict[str, tuple[PerfSourceRecord, ...] | list[PerfSourceRecord]],
         *,
         phase: str,
         bucket_tokens: int,
         decode_batch: int,
-    ) -> float | None:
+    ) -> tuple[float, dict[str, tuple[PerfSourceRecord, ...] | list[PerfSourceRecord]]] | None:
         if not self._serving_state_scope_enabled():
             return None
 
         category_sums = {category: 0.0 for category in _SERVING_STATE_CATEGORIES}
+        category_ops = {category: {} for category in _SERVING_STATE_CATEGORIES}
         passthrough_ms = 0.0
+        used_source_map: dict[str, tuple[PerfSourceRecord, ...] | list[PerfSourceRecord]] = {}
         for op_name, latency in latency_dict.items():
             if "attention" in op_name.lower():
                 continue
             category = self._serving_state_category(op_name)
             if category is None:
                 passthrough_ms += float(latency)
+                if float(latency) != 0.0:
+                    used_source_map[op_name] = source_map.get(op_name, ())
                 continue
             if category in category_sums:
                 category_sums[category] += float(latency)
+                category_ops[category][op_name] = float(latency)
             else:
                 passthrough_ms += float(latency)
+                if float(latency) != 0.0:
+                    used_source_map[op_name] = source_map.get(op_name, ())
 
         total_ms = passthrough_ms
         used_any = False
@@ -511,11 +617,16 @@ class IterationLatencyCalculator:
             )
             if serving_ms is None:
                 total_ms += category_sums[category]
+                for op_name, latency_ms in category_ops[category].items():
+                    if latency_ms != 0.0:
+                        used_source_map[op_name] = source_map.get(op_name, ())
             else:
-                total_ms += serving_ms
+                total_ms += float(serving_ms)
+                if float(serving_ms) != 0.0:
+                    used_source_map[f"serving_state:{phase}:{category}"] = serving_ms.sources
                 used_any = True
         if used_any:
-            return total_ms
+            return total_ms, used_source_map
 
         non_attn_total_ms = self._query_serving_state_non_attn_total(
             phase=phase,
@@ -523,7 +634,10 @@ class IterationLatencyCalculator:
             decode_batch=decode_batch,
         )
         if non_attn_total_ms is not None:
-            return non_attn_total_ms
+            non_attn_source_map = {}
+            if float(non_attn_total_ms) != 0.0:
+                non_attn_source_map[f"serving_state:{phase}:non_attn_total"] = non_attn_total_ms.sources
+            return float(non_attn_total_ms), non_attn_source_map
         return None
 
     def compute(
@@ -574,7 +688,97 @@ class IterationLatencyCalculator:
         """Return serving-state query hit/miss records from this calculator."""
         return list(self._serving_state_query_audit)
 
+    def get_performance_source_map(self) -> dict[str, dict[str, tuple[PerfSourceRecord, ...]]]:
+        """Return deduplicated sources that actually contributed to iteration cost."""
+        return {
+            phase: {
+                op_name: _dedupe_sources(sources)
+                for op_name, sources in phase_map.items()
+            }
+            for phase, phase_map in self._performance_source_map.items()
+        }
+
+    def get_charge_ledger(self) -> list[IterationChargeLedgerEntry]:
+        """Return additive iteration charges for each distinct cost query."""
+        return list(self._charge_ledger)
+
     def _compute_3pass(
+        self, total_tokens: int, prefill_tokens: int, prefill_bs: int,
+        prefill_seq_len: int, decode_bs: int, decode_kv_len: int,
+    ) -> IterationLatencyBreakdown:
+        self._active_charge_sources = []
+        self._active_missing_sources = []
+        try:
+            breakdown = self._compute_3pass_impl(
+                total_tokens,
+                prefill_tokens,
+                prefill_bs,
+                prefill_seq_len,
+                decode_bs,
+                decode_kv_len,
+            )
+            modeled_sources = _dedupe_sources(self._active_charge_sources)
+            modeled_ms = (
+                breakdown.context_non_attention_ms
+                + breakdown.context_attention_ms
+                + breakdown.generation_non_attention_ms
+                + breakdown.generation_attention_ms
+            )
+            phase = "context" if prefill_tokens > 0 else "generation"
+            charges: list[IterationCostCharge] = []
+            if modeled_ms != 0.0:
+                charges.append(
+                    IterationCostCharge(
+                        phase=phase,
+                        charge_id="modeled_iteration",
+                        latency_ms=modeled_ms,
+                        sources=modeled_sources,
+                    )
+                )
+            if breakdown.iteration_overhead_ms != 0.0:
+                overhead_source = PerfSourceRecord.structural(
+                    formula_id="unapproved_per_iteration_overhead",
+                    formula_inputs={"overhead_ms": breakdown.iteration_overhead_ms},
+                    approved=False,
+                )
+                charges.append(
+                    IterationCostCharge(
+                        phase=phase,
+                        charge_id="per_iteration_overhead",
+                        latency_ms=breakdown.iteration_overhead_ms,
+                        sources=(overhead_source,),
+                    )
+                )
+                active_sources = self._active_charge_sources
+                self._active_charge_sources = None
+                self._record_performance_sources(
+                    phase,
+                    "per_iteration_overhead",
+                    breakdown.iteration_overhead_ms,
+                    (overhead_source,),
+                )
+                self._active_charge_sources = active_sources
+            self._charge_ledger.append(
+                IterationChargeLedgerEntry(
+                    workload=(
+                        ("total_tokens", total_tokens),
+                        ("prefill_tokens", prefill_tokens),
+                        ("prefill_batch_size", prefill_bs),
+                        ("prefill_seq_len", prefill_seq_len),
+                        ("decode_batch_size", decode_bs),
+                        ("decode_kv_len", decode_kv_len),
+                    ),
+                    total_ms=breakdown.total_ms,
+                    charges=tuple(charges),
+                    missing_sources=tuple(self._active_missing_sources),
+                )
+            )
+            return breakdown
+        finally:
+            self._active_charge_sources = None
+            self._active_missing_sources = None
+
+    def _compute_3pass_impl(
         self, total_tokens: int, prefill_tokens: int, prefill_bs: int,
         prefill_seq_len: int, decode_bs: int, decode_kv_len: int,
     ) -> IterationLatencyBreakdown:
@@ -593,12 +797,19 @@ class IterationLatencyCalculator:
                 decode_batch=decode_bs,
             )
             if forward_total_ms is not None:
-                total_ms = forward_total_ms + overhead_ms
+                source_phase = "context" if prefill_tokens > 0 else "generation"
+                self._record_performance_sources(
+                    source_phase,
+                    f"serving_state:{phase}:forward_total",
+                    float(forward_total_ms),
+                    forward_total_ms.sources,
+                )
+                total_ms = float(forward_total_ms) + overhead_ms
                 return IterationLatencyBreakdown(
                     total_ms=total_ms,
-                    context_non_attention_ms=forward_total_ms if prefill_tokens > 0 else 0.0,
+                    context_non_attention_ms=float(forward_total_ms) if prefill_tokens > 0 else 0.0,
                     context_attention_ms=0.0,
-                    generation_non_attention_ms=forward_total_ms if prefill_tokens == 0 else 0.0,
+                    generation_non_attention_ms=float(forward_total_ms) if prefill_tokens == 0 else 0.0,
                     generation_attention_ms=0.0,
                     iteration_overhead_ms=overhead_ms,
                 )
@@ -631,16 +842,29 @@ class IterationLatencyCalculator:
                 op_query_overrides={"context_prefill_tokens": prefill_tokens} if is_mixed else None,
             )
             ctx_dict = summary.get_context_latency_dict()
+            ctx_source_map = summary.get_context_source_map()
             context_compute_ms, context_dispatch_ms = self._split_context_non_attention(ctx_dict)
-            serving_state_ms = self._serving_state_adjusted_non_attention(
+            serving_state_result = self._serving_state_adjusted_non_attention(
                 ctx_dict,
+                ctx_source_map,
                 phase="mixed_prefill" if is_mixed else "prefill",
                 bucket_tokens=non_attn_tokens,
                 decode_batch=decode_bs,
             )
-            context_non_attn_ms = (
-                serving_state_ms if serving_state_ms is not None else context_compute_ms + context_dispatch_ms
-            )
+            if serving_state_result is None:
+                context_non_attn_ms = context_compute_ms + context_dispatch_ms
+                self._record_source_map(
+                    "context",
+                    {name: latency for name, latency in ctx_dict.items() if "attention" not in name.lower()},
+                    ctx_source_map,
+                )
+            else:
+                context_non_attn_ms, charged_source_map = serving_state_result
+                self._record_source_map(
+                    "context",
+                    {name: 1.0 for name in charged_source_map},
+                    charged_source_map,
+                )
         else:
             context_compute_ms = 0.0
             context_dispatch_ms = 0.0
@@ -662,6 +886,16 @@ class IterationLatencyCalculator:
             # Scale: only processing prefill_tokens out of full (ctx_bs * seq_len)
             scale = prefill_tokens / max(ctx_bs * prefill_seq_len, 1)
             context_attn_ms = ctx_dict.get("context_attention", 0.0) * scale
+            context_attn_sources = tuple(
+                source.with_transform("multiply", scale)
+                for source in summary.get_context_source_map().get("context_attention", ())
+            )
+            self._record_performance_sources(
+                "context",
+                "context_attention",
+                context_attn_ms,
+                context_attn_sources,
+            )
 
         # --- Pass 3: Generation phase (decoding requests) ---
         # Reuse static_gen, but split attention from the rest. This is the
@@ -680,7 +914,14 @@ class IterationLatencyCalculator:
                 mode="static_gen",
             )
             gen_dict = summary.get_generation_latency_dict()
+            gen_source_map = summary.get_generation_source_map()
             gen_attn_ms = gen_dict.get("generation_attention", 0.0)
+            self._record_performance_sources(
+                "generation",
+                "generation_attention",
+                gen_attn_ms,
+                gen_source_map.get("generation_attention", ()),
+            )
             if is_mixed:
                 # Decode non-attention is token-parallel and already charged
                 # once in the merged Pass 1; do not double-count it here.
@@ -688,15 +929,27 @@ class IterationLatencyCalculator:
                 generation_dispatch_ms = 0.0
             else:
                 generation_compute_ms, generation_dispatch_ms = self._split_generation_non_attention(gen_dict)
-                serving_state_ms = self._serving_state_adjusted_non_attention(
+                serving_state_result = self._serving_state_adjusted_non_attention(
                     gen_dict,
+                    gen_source_map,
                     phase="decode",
                     bucket_tokens=decode_bs,
                     decode_batch=decode_bs,
                 )
-                generation_non_attn_ms = (
-                    serving_state_ms if serving_state_ms is not None else generation_compute_ms + generation_dispatch_ms
-                )
+                if serving_state_result is None:
+                    generation_non_attn_ms = generation_compute_ms + generation_dispatch_ms
+                    self._record_source_map(
+                        "generation",
+                        {name: latency for name, latency in gen_dict.items() if "attention" not in name.lower()},
+                        gen_source_map,
+                    )
+                else:
+                    generation_non_attn_ms, charged_source_map = serving_state_result
+                    self._record_source_map(
+                        "generation",
+                        {name: 1.0 for name in charged_source_map},
+                        charged_source_map,
+                    )
         else:
             generation_compute_ms = 0.0
             generation_dispatch_ms = 0.0
