@@ -1,8 +1,7 @@
 # Phase466 low-overhead probe design
 
-结论：Phase466 v3.3 的 idle-safe 本地执行契约已闭合。probe 默认关闭，只使用 vLLM 0.19.0 自带的
-`--enable-logging-iteration-details` 和 Prometheus preemption counter，不修改 vLLM 源码，不采
-per-request 高频 composition 事件。本轮只形成 rank-timing 诊断，Default AIC 继续 `No-Go`。
+结论：Phase466 v3.3 overhead gate 最终为 `INCONCLUSIVE`，stock iteration probe 路线关闭。正式 N512
+场景未运行，三类建模候选保持 unresolved，不选择 Phase467。Default AIC 继续 `No-Go`。
 
 ## Scope
 
@@ -12,8 +11,8 @@ per-request 高频 composition 事件。本轮只形成 rank-timing 诊断，Def
 | execution branch | `feature/kimi-vllm019-cb-sim-post-baseline` |
 | hardware/runtime | H200 SXM / vLLM 0.19.0 / Kimi-K2.5 |
 | implementation | stock vLLM iteration details + rank-local logging handler; no source patch |
-| local result | v3.3 verification PASS；第二次 canary 待单独批准 |
-| remote result | v3.2 canary `FAILED`；rank-local transport 已验证，idle/measurement 契约失败 |
+| local result | v3.3 idle-safe 契约和 closeout analyzer 验证通过 |
+| remote result | v3.3 canary `PASS`；overhead gate `INCONCLUSIVE`；`STOPPED_BEFORE_FORMAL` |
 | flags | `diagnostic_only=true`; `valid_for_default=false`; `perf_database=false` |
 
 ## Measurement contract
@@ -48,7 +47,7 @@ and every rank must contain measured work.
 | identity preflight | no artifact and no vLLM service; validate uploaded bytes, vLLM/GPU/prompt identity, and snapshot or flat-mirror fingerprint |
 | execution preflight | only accepts `phase466_execution_manifest_v4`; then creates the fresh artifact root and rechecks clean GPU/process state |
 | log transport | custom logging config filters iteration records from stdout and writes strict per-rank JSONL; no stdout rank fallback |
-| canary | a separately approved second DP2 N16/C16 run must pass the v2 idle-safe contract before the full gate is allowed |
+| canary | second DP2 N16/C16 run passed the v2 idle-safe contract before the full gate |
 | cleanup | terminate the service process group, then require empty GPU/process residue |
 | failure handling | normal benchmark failure may continue to the next preregistered run; cleanup or integrity failure stops all runs |
 | gate validation | validates all 6 complete pairs; the old single-pair gate entry no longer exists |
@@ -66,8 +65,8 @@ The stock probe exposes identity, rank, iteration elapsed time, aggregate prefil
 preemption deltas and progress windows. It does not expose prefill chunk histograms, fresh/recompute/resume state,
 decode KV sums, cudagraph mode or a simulator serving-state key.
 
-Therefore a passing overhead gate and three valid formal runs only produce `DIAGNOSTIC_COMPLETE`.
-They do not produce a model attribution `PASS`, do not execute route selection and do not synthesize DP2-bt65536 simulator rows.
+The gate did not pass, so no formal collection, route selection or simulator-row synthesis occurred. Current ON rank logs
+belong to an inconclusive measurement method and are inadmissible for model changes, PerfDatabase entries or readiness.
 
 | Prior evidence | Reuse decision |
 |---|---|
@@ -84,7 +83,12 @@ They do not produce a model attribution `PASS`, do not execute route selection a
 | exact vLLM 0.19.0 simulator export | expected fail-closed at `tp4dp2-8k2k-bt65536`; no output directory written |
 | `git diff --check` | PASS |
 | SSH/GPU | v3.2 artifact remains `FAILED`: `/mnt/shared-storage-user/zhaojieyu/backup/aic/phase466_v32_rank_local_canary_2221f30e_20260720T110252Z` |
+| final overhead gate | `INCONCLUSIVE`: geometric mean `1.010241`, 90% CI `[0.946082, 1.078752]` |
+| terminal result | `STOPPED_BEFORE_FORMAL`; `formal_scenarios=[]` |
 
-The next action, only after separate approval, is the second rank-local canary on the approved worker. Only a canary `PASS` permits a fresh serialized
-six-pair gate. A non-`PASS` gate stops before N512; `PASS` runs exactly the three real scenarios. This design is not GPU evidence, not a PerfDatabase row,
-not a latency model and not evidence for enabling Default AIC.
+冻结证据和逐 pair 重算见
+[Phase466 v3.3 stock probe gate closeout](phase466_stock_probe_gate_closeout/phase466_stock_probe_gate_closeout.md)。
+5/6 pair 的第二次运行更快，均值接近 1 不能解释为 probe 开销约 1%。三类候选
+`schedule_merged_batch_composition`、`iteration_cost_serving_state_coverage` 和
+`dp_rank_synchronization_asymmetry` 均保持 unresolved。stock probe 不再重跑；只有单独评审通过的新低扰动测量设计
+才能重新启动建模取证。

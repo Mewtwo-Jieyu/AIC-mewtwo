@@ -1,0 +1,12 @@
+{
+  "default_readiness": "No-Go",
+  "diagnostic_only": true,
+  "execution_manifest_sha256": "bf562c5a649106acb12f1f981cb8d60a637ee079d02c7f3666507b77ba6c7609",
+  "formal_failures": [],
+  "formal_scenarios": [],
+  "gate_status": "INCONCLUSIVE",
+  "perf_database": false,
+  "schema": "phase466_rank_timing_v5",
+  "status": "STOPPED_BEFORE_FORMAL",
+  "valid_for_default": false
+}

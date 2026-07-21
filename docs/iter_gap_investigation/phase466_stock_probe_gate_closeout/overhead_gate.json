@@ -1,0 +1,62 @@
+{
+  "confidence_interval_ratio": [
+    0.9460820776552333,
+    1.0787515831640606
+  ],
+  "equivalence_ratio_bounds": [
+    0.98,
+    1.02
+  ],
+  "formal_collection_allowed": false,
+  "gate": "dp2_bt65536_stock_iteration_detail_paired_equivalence",
+  "geometric_mean_ratio": 1.0102413271460076,
+  "method": "paired_log_ratio_tost",
+  "pair_count": 6,
+  "pairs": [
+    {
+      "absolute_delta_pct": 2.002392253047658,
+      "off_output_tok_s": 841.7065515905937,
+      "on_output_tok_s": 858.5608183730384,
+      "pair_id": "pair-01",
+      "ratio": 1.0200239225304766
+    },
+    {
+      "absolute_delta_pct": 8.526500824532523,
+      "off_output_tok_s": 891.5172226162284,
+      "on_output_tok_s": 815.5019992790062,
+      "pair_id": "pair-02",
+      "ratio": 0.9147349917546748
+    },
+    {
+      "absolute_delta_pct": 15.19565755781116,
+      "off_output_tok_s": 770.0022889367433,
+      "on_output_tok_s": 887.0091999508785,
+      "pair_id": "pair-03",
+      "ratio": 1.1519565755781116
+    },
+    {
+      "absolute_delta_pct": 5.313712510212132,
+      "off_output_tok_s": 874.2998973207048,
+      "on_output_tok_s": 827.8421143000027,
+      "pair_id": "pair-04",
+      "ratio": 0.9468628748978787
+    },
+    {
+      "absolute_delta_pct": 3.1063938813911562,
+      "off_output_tok_s": 834.9513824476087,
+      "on_output_tok_s": 860.8882611045522,
+      "pair_id": "pair-05",
+      "ratio": 1.0310639388139116
+    },
+    {
+      "absolute_delta_pct": 1.3062733456081776,
+      "off_output_tok_s": 845.9044576391556,
+      "on_output_tok_s": 856.9542820986072,
+      "pair_id": "pair-06",
+      "ratio": 1.0130627334560818
+    }
+  ],
+  "passed": false,
+  "schema": "phase466_rank_timing_v5",
+  "status": "INCONCLUSIVE"
+}

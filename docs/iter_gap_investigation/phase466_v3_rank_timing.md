@@ -1,7 +1,7 @@
 # Phase466 v3.3 idle-safe rank-local timing contract
 
-结论：本阶段只采三个真实场景的 rank-local iteration timing。成功状态是
-`DIAGNOSTIC_COMPLETE`，不是模型归因 `PASS`。
+结论：v3.3 overhead gate 最终为 `INCONCLUSIVE`，正式 N512 场景未运行，stock iteration probe 路线关闭。
+现有 rank logs 只保留为失败测量方法的诊断记录，不能用于模型、PerfDatabase 或 readiness。
 
 | 项 | 冻结口径 |
 |---|---|
@@ -64,7 +64,22 @@ idle iteration 判成非法，并在 benchmark 返回后延迟 2 秒才记录测
 | canary tail | cutoff 可以早于文件末行；cutoff 后只允许 idle，每个 rank 的测量窗至少一条 work iteration |
 
 rank-log wire format、`phase466_rank_log_identity_v1` 和 `phase466_execution_manifest_v4` 保持不变。
-v3.3 已完成本地实现与测试，第二次 canary 待单独批准；本轮不自动重跑，也不进入完整 overhead gate。
+v3.3 第二次 canary 已通过 idle-safe 契约，随后完整 overhead gate 按冻结顺序运行并在 N128 阶段停止。
+
+## Final gate result
+
+| 项 | 结果 |
+|---|---|
+| artifact | `/mnt/shared-storage-user/zhaojieyu/backup/aic/phase466_v33_full_rank_timing_0765bad7_20260720T133525Z` |
+| paired result | geometric mean `1.010241`；90% CI `[0.946082, 1.078752]` |
+| gate | `INCONCLUSIVE`；CI 未完全落入 `[0.98, 1.02]` |
+| order signal | 5/6 pair 的第二次运行更快，服务重启或运行顺序噪声主导 |
+| terminal status | `STOPPED_BEFORE_FORMAL`；`formal_scenarios=[]` |
+| model decision | 三类候选保持 `unresolved`，不选择 Phase467 |
+
+冻结证据、逐 pair 数据和重算报告见
+[Phase466 v3.3 stock probe gate closeout](phase466_stock_probe_gate_closeout/phase466_stock_probe_gate_closeout.md)。
+均值接近 1 不能解释为 probe 开销约 1%。
 
 ## Stop rules
 
@@ -73,7 +88,6 @@ v3.3 已完成本地实现与测试，第二次 canary 待单独批准；本轮�
 | benchmark 命令失败且 cleanup 完整 | 记录失败；按预注册顺序继续 |
 | identity、artifact、cleanup、residue 错误 | 停止全部运行 |
 | model/tokenizer/vLLM/tool/prompt 身份前后漂移 | 停止全部运行 |
-| overhead 非 `PASS` | 停止于 N128 gate |
+| overhead 非 `PASS` | 停止于 N128 gate；本次已触发 |
 
-后续获批的远端运行必须使用全新 `phase466_v3_rank_timing_<postbaseline_sha>_<timestamp>` artifact root，后台 supervisor
-保留 heartbeat，结束后 GPU/process residue 必须为空。
+stock probe 不再重跑。只有单独评审通过的新低扰动测量设计才能重新启动建模取证；Default AIC 保持 `No-Go`。
