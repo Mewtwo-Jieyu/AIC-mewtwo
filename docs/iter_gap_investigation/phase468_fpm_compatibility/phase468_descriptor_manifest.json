@@ -1,0 +1,43 @@
+{
+  "csv_wire_format": "utf8_rfc4180_header_and_rows_lf",
+  "default_aic": "No-Go",
+  "diagnostic_only": true,
+  "perf_database": false,
+  "row_count": 347984,
+  "scenario_row_counts": {
+    "K2.5-tp4ep8dp2-32k3k": 174064,
+    "K2.5-tp4ep8dp2-8k2k": 23600,
+    "K2.5-tp4ep8dp2-8k2k-bt65536": 34125,
+    "K2.5-tp8ep8-32k3k": 84063,
+    "K2.5-tp8ep8-8k2k": 12118,
+    "K2.5-tp8ep8-8k2k-bt65536": 20014
+  },
+  "schema": "phase468_forward_workload_manifest_v1",
+  "streaming_csv_sha256": "7da3f3ab4d08926e1c4fe918a68a2a2e1248478073621d764b2258987792374d",
+  "topology_query_summaries": [
+    {
+      "active_row_count": 231789,
+      "mixed_row_count": 1854,
+      "scenario_count": 3,
+      "topology": "tp4pp1dp2moetp1ep8cp1",
+      "unique_decode_query_point_count": 57916,
+      "unique_prefill_query_point_count": 498,
+      "unique_query_point_count": 58414
+    },
+    {
+      "active_row_count": 116195,
+      "mixed_row_count": 1391,
+      "scenario_count": 3,
+      "topology": "tp8pp1dp1moetp1ep8cp1",
+      "unique_decode_query_point_count": 58833,
+      "unique_prefill_query_point_count": 802,
+      "unique_query_point_count": 59635
+    }
+  ],
+  "topology_row_counts": {
+    "tp4pp1dp2moetp1ep8cp1": 231789,
+    "tp8pp1dp1moetp1ep8cp1": 116195
+  },
+  "unique_query_point_count": 118049,
+  "valid_for_default": false
+}

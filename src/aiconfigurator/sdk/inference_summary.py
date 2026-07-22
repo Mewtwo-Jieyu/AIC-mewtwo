@@ -60,6 +60,7 @@ class InferenceSummary:
         self._context_source_map = {}
         self._generation_source_map = {}
         self._iteration_charge_ledger = []
+        self._forward_workload_descriptors = []
         self._is_oom = None
 
         # NEW: Store computed power averages
@@ -136,6 +137,14 @@ class InferenceSummary:
     def get_iteration_charge_ledger(self) -> list:
         """Get the additive iteration cost ledger."""
         return list(self._iteration_charge_ledger)
+
+    def set_forward_workload_descriptors(self, descriptors: list) -> None:
+        """Set diagnostic scheduler/forward workload descriptors."""
+        self._forward_workload_descriptors = list(descriptors)
+
+    def get_forward_workload_descriptors(self) -> list:
+        """Get diagnostic scheduler/forward workload descriptors."""
+        return list(self._forward_workload_descriptors)
 
     # NEW: Energy dict accessors (explicit _wms naming for clarity)
     def set_context_energy_wms_dict(self, energy_wms_dict: dict[str, float]) -> None:

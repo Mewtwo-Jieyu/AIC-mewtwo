@@ -1,0 +1,367 @@
+{
+  "coverage": [
+    {
+      "active_row_count": 12118,
+      "execution_mode": "tp_single_replica",
+      "idle_row_count": 0,
+      "rank1_status": "not_applicable",
+      "ranks": [
+        0
+      ],
+      "row_count": 12118,
+      "scenario": "K2.5-tp8ep8-8k2k",
+      "status": "PASS",
+      "step_count": 12118
+    },
+    {
+      "active_row_count": 84063,
+      "execution_mode": "tp_single_replica",
+      "idle_row_count": 0,
+      "rank1_status": "not_applicable",
+      "ranks": [
+        0
+      ],
+      "row_count": 84063,
+      "scenario": "K2.5-tp8ep8-32k3k",
+      "status": "PASS",
+      "step_count": 84063
+    },
+    {
+      "active_row_count": 23600,
+      "execution_mode": "dp_lockstep",
+      "idle_row_count": 0,
+      "rank1_status": "present",
+      "ranks": [
+        0,
+        1
+      ],
+      "row_count": 23600,
+      "scenario": "K2.5-tp4ep8dp2-8k2k",
+      "status": "PASS",
+      "step_count": 11800
+    },
+    {
+      "active_row_count": 174064,
+      "execution_mode": "dp_lockstep",
+      "idle_row_count": 0,
+      "rank1_status": "present",
+      "ranks": [
+        0,
+        1
+      ],
+      "row_count": 174064,
+      "scenario": "K2.5-tp4ep8dp2-32k3k",
+      "status": "PASS",
+      "step_count": 87032
+    },
+    {
+      "active_row_count": 20014,
+      "execution_mode": "tp_single_replica",
+      "idle_row_count": 0,
+      "rank1_status": "not_applicable",
+      "ranks": [
+        0
+      ],
+      "row_count": 20014,
+      "scenario": "K2.5-tp8ep8-8k2k-bt65536",
+      "status": "PASS",
+      "step_count": 20014
+    },
+    {
+      "active_row_count": 34125,
+      "execution_mode": "dp_legacy_representative",
+      "idle_row_count": 0,
+      "rank1_status": "not_executed_by_official_legacy_path",
+      "ranks": [
+        0
+      ],
+      "row_count": 34125,
+      "scenario": "K2.5-tp4ep8dp2-8k2k-bt65536",
+      "status": "PASS",
+      "step_count": 34125
+    }
+  ],
+  "default_aic": "No-Go",
+  "descriptor_csv_materialized": false,
+  "descriptor_row_count": 347984,
+  "descriptor_streaming_csv_sha256": "7da3f3ab4d08926e1c4fe918a68a2a2e1248478073621d764b2258987792374d",
+  "descriptor_unique_query_point_count": 118049,
+  "diagnostic_only": true,
+  "max_numeric_delta": 1.4210854715202004e-14,
+  "model_config_sha256": "58944cf9cf456619768616f38acd75b3d7ccc26d8b6a64d9e312aba4c8f0b927",
+  "model_path": "moonshotai/Kimi-K2.5",
+  "perf_database": false,
+  "phase466_csv_input": false,
+  "phase466_execution_manifest_scope": "historical_evidence_reference_only",
+  "phase466_execution_manifest_sha256": "bf562c5a649106acb12f1f981cb8d60a637ee079d02c7f3666507b77ba6c7609",
+  "phase467_baseline_commit": "21d6d705c12c19b30e417c713589f703b54c06ef",
+  "remote_runtime_method_check": "deferred_to_phase469_no_model_preflight",
+  "runtime_contracts": [
+    {
+      "architecture": "KimiK25ForConditionalGeneration",
+      "backend": "vllm",
+      "backend_version": "0.19.0",
+      "cp": 1,
+      "dp": 1,
+      "engine_loop_enabled": false,
+      "gpu_count": 8,
+      "hardware": "h200_sxm",
+      "model_config_sha256": "58944cf9cf456619768616f38acd75b3d7ccc26d8b6a64d9e312aba4c8f0b927",
+      "model_path": "moonshotai/Kimi-K2.5",
+      "model_quant_mode": "int4_wo",
+      "moe_ep": 8,
+      "moe_tp": 1,
+      "pp": 1,
+      "quant_runtime": "CompressedTensorsWNA16MarlinMoEMethod",
+      "scenario": "K2.5-tp8ep8-8k2k",
+      "status": "PASS",
+      "support_evidence": {
+        "actual_operations": [
+          "ContextMLA",
+          "GenerationMLA"
+        ],
+        "attention_source": "mla_module",
+        "collector_entry": "build_collection_plan(has_model_cases=True)",
+        "kimi_case_source": "collector/cases/models/KimiK25ForConditionalGeneration_cases.yaml",
+        "model_capability_source": "collector/fpm_forward/model_capability.py",
+        "model_cases_source": "collector/model_cases.py",
+        "model_config_sha256": "58944cf9cf456619768616f38acd75b3d7ccc26d8b6a64d9e312aba4c8f0b927",
+        "model_quant_mode": "int4_wo",
+        "selected_ops": [
+          "mla_context_module",
+          "mla_generation_module"
+        ]
+      },
+      "support_level": "exact",
+      "topology": "tp8pp1dp1moetp1ep8cp1",
+      "tp": 8
+    },
+    {
+      "architecture": "KimiK25ForConditionalGeneration",
+      "backend": "vllm",
+      "backend_version": "0.19.0",
+      "cp": 1,
+      "dp": 1,
+      "engine_loop_enabled": false,
+      "gpu_count": 8,
+      "hardware": "h200_sxm",
+      "model_config_sha256": "58944cf9cf456619768616f38acd75b3d7ccc26d8b6a64d9e312aba4c8f0b927",
+      "model_path": "moonshotai/Kimi-K2.5",
+      "model_quant_mode": "int4_wo",
+      "moe_ep": 8,
+      "moe_tp": 1,
+      "pp": 1,
+      "quant_runtime": "CompressedTensorsWNA16MarlinMoEMethod",
+      "scenario": "K2.5-tp8ep8-32k3k",
+      "status": "PASS",
+      "support_evidence": {
+        "actual_operations": [
+          "ContextMLA",
+          "GenerationMLA"
+        ],
+        "attention_source": "mla_module",
+        "collector_entry": "build_collection_plan(has_model_cases=True)",
+        "kimi_case_source": "collector/cases/models/KimiK25ForConditionalGeneration_cases.yaml",
+        "model_capability_source": "collector/fpm_forward/model_capability.py",
+        "model_cases_source": "collector/model_cases.py",
+        "model_config_sha256": "58944cf9cf456619768616f38acd75b3d7ccc26d8b6a64d9e312aba4c8f0b927",
+        "model_quant_mode": "int4_wo",
+        "selected_ops": [
+          "mla_context_module",
+          "mla_generation_module"
+        ]
+      },
+      "support_level": "exact",
+      "topology": "tp8pp1dp1moetp1ep8cp1",
+      "tp": 8
+    },
+    {
+      "architecture": "KimiK25ForConditionalGeneration",
+      "backend": "vllm",
+      "backend_version": "0.19.0",
+      "cp": 1,
+      "dp": 2,
+      "engine_loop_enabled": false,
+      "gpu_count": 8,
+      "hardware": "h200_sxm",
+      "model_config_sha256": "58944cf9cf456619768616f38acd75b3d7ccc26d8b6a64d9e312aba4c8f0b927",
+      "model_path": "moonshotai/Kimi-K2.5",
+      "model_quant_mode": "int4_wo",
+      "moe_ep": 8,
+      "moe_tp": 1,
+      "pp": 1,
+      "quant_runtime": "CompressedTensorsWNA16MarlinMoEMethod",
+      "scenario": "K2.5-tp4ep8dp2-8k2k",
+      "status": "PASS",
+      "support_evidence": {
+        "actual_operations": [
+          "ContextMLA",
+          "GenerationMLA"
+        ],
+        "attention_source": "mla_module",
+        "collector_entry": "build_collection_plan(has_model_cases=True)",
+        "kimi_case_source": "collector/cases/models/KimiK25ForConditionalGeneration_cases.yaml",
+        "model_capability_source": "collector/fpm_forward/model_capability.py",
+        "model_cases_source": "collector/model_cases.py",
+        "model_config_sha256": "58944cf9cf456619768616f38acd75b3d7ccc26d8b6a64d9e312aba4c8f0b927",
+        "model_quant_mode": "int4_wo",
+        "selected_ops": [
+          "mla_context_module",
+          "mla_generation_module"
+        ]
+      },
+      "support_level": "exact",
+      "topology": "tp4pp1dp2moetp1ep8cp1",
+      "tp": 4
+    },
+    {
+      "architecture": "KimiK25ForConditionalGeneration",
+      "backend": "vllm",
+      "backend_version": "0.19.0",
+      "cp": 1,
+      "dp": 2,
+      "engine_loop_enabled": false,
+      "gpu_count": 8,
+      "hardware": "h200_sxm",
+      "model_config_sha256": "58944cf9cf456619768616f38acd75b3d7ccc26d8b6a64d9e312aba4c8f0b927",
+      "model_path": "moonshotai/Kimi-K2.5",
+      "model_quant_mode": "int4_wo",
+      "moe_ep": 8,
+      "moe_tp": 1,
+      "pp": 1,
+      "quant_runtime": "CompressedTensorsWNA16MarlinMoEMethod",
+      "scenario": "K2.5-tp4ep8dp2-32k3k",
+      "status": "PASS",
+      "support_evidence": {
+        "actual_operations": [
+          "ContextMLA",
+          "GenerationMLA"
+        ],
+        "attention_source": "mla_module",
+        "collector_entry": "build_collection_plan(has_model_cases=True)",
+        "kimi_case_source": "collector/cases/models/KimiK25ForConditionalGeneration_cases.yaml",
+        "model_capability_source": "collector/fpm_forward/model_capability.py",
+        "model_cases_source": "collector/model_cases.py",
+        "model_config_sha256": "58944cf9cf456619768616f38acd75b3d7ccc26d8b6a64d9e312aba4c8f0b927",
+        "model_quant_mode": "int4_wo",
+        "selected_ops": [
+          "mla_context_module",
+          "mla_generation_module"
+        ]
+      },
+      "support_level": "exact",
+      "topology": "tp4pp1dp2moetp1ep8cp1",
+      "tp": 4
+    },
+    {
+      "architecture": "KimiK25ForConditionalGeneration",
+      "backend": "vllm",
+      "backend_version": "0.19.0",
+      "cp": 1,
+      "dp": 1,
+      "engine_loop_enabled": false,
+      "gpu_count": 8,
+      "hardware": "h200_sxm",
+      "model_config_sha256": "58944cf9cf456619768616f38acd75b3d7ccc26d8b6a64d9e312aba4c8f0b927",
+      "model_path": "moonshotai/Kimi-K2.5",
+      "model_quant_mode": "int4_wo",
+      "moe_ep": 8,
+      "moe_tp": 1,
+      "pp": 1,
+      "quant_runtime": "CompressedTensorsWNA16MarlinMoEMethod",
+      "scenario": "K2.5-tp8ep8-8k2k-bt65536",
+      "status": "PASS",
+      "support_evidence": {
+        "actual_operations": [
+          "ContextMLA",
+          "GenerationMLA"
+        ],
+        "attention_source": "mla_module",
+        "collector_entry": "build_collection_plan(has_model_cases=True)",
+        "kimi_case_source": "collector/cases/models/KimiK25ForConditionalGeneration_cases.yaml",
+        "model_capability_source": "collector/fpm_forward/model_capability.py",
+        "model_cases_source": "collector/model_cases.py",
+        "model_config_sha256": "58944cf9cf456619768616f38acd75b3d7ccc26d8b6a64d9e312aba4c8f0b927",
+        "model_quant_mode": "int4_wo",
+        "selected_ops": [
+          "mla_context_module",
+          "mla_generation_module"
+        ]
+      },
+      "support_level": "exact",
+      "topology": "tp8pp1dp1moetp1ep8cp1",
+      "tp": 8
+    },
+    {
+      "architecture": "KimiK25ForConditionalGeneration",
+      "backend": "vllm",
+      "backend_version": "0.19.0",
+      "cp": 1,
+      "dp": 2,
+      "engine_loop_enabled": false,
+      "gpu_count": 8,
+      "hardware": "h200_sxm",
+      "model_config_sha256": "58944cf9cf456619768616f38acd75b3d7ccc26d8b6a64d9e312aba4c8f0b927",
+      "model_path": "moonshotai/Kimi-K2.5",
+      "model_quant_mode": "int4_wo",
+      "moe_ep": 8,
+      "moe_tp": 1,
+      "pp": 1,
+      "quant_runtime": "CompressedTensorsWNA16MarlinMoEMethod",
+      "scenario": "K2.5-tp4ep8dp2-8k2k-bt65536",
+      "status": "PASS",
+      "support_evidence": {
+        "actual_operations": [
+          "ContextMLA",
+          "GenerationMLA"
+        ],
+        "attention_source": "mla_module",
+        "collector_entry": "build_collection_plan(has_model_cases=True)",
+        "kimi_case_source": "collector/cases/models/KimiK25ForConditionalGeneration_cases.yaml",
+        "model_capability_source": "collector/fpm_forward/model_capability.py",
+        "model_cases_source": "collector/model_cases.py",
+        "model_config_sha256": "58944cf9cf456619768616f38acd75b3d7ccc26d8b6a64d9e312aba4c8f0b927",
+        "model_quant_mode": "int4_wo",
+        "selected_ops": [
+          "mla_context_module",
+          "mla_generation_module"
+        ]
+      },
+      "support_level": "exact",
+      "topology": "tp4pp1dp2moetp1ep8cp1",
+      "tp": 4
+    }
+  ],
+  "scenario_count": 6,
+  "schema": "phase468_fpm_runtime_compatibility_v1",
+  "source_contract": "PASS",
+  "status": "READY_FOR_RUNTIME_PREFLIGHT",
+  "topology_query_summaries": [
+    {
+      "active_row_count": 231789,
+      "mixed_row_count": 1854,
+      "scenario_count": 3,
+      "topology": "tp4pp1dp2moetp1ep8cp1",
+      "unique_decode_query_point_count": 57916,
+      "unique_prefill_query_point_count": 498,
+      "unique_query_point_count": 58414
+    },
+    {
+      "active_row_count": 116195,
+      "mixed_row_count": 1391,
+      "scenario_count": 3,
+      "topology": "tp8pp1dp1moetp1ep8cp1",
+      "unique_decode_query_point_count": 58833,
+      "unique_prefill_query_point_count": 802,
+      "unique_query_point_count": 59635
+    }
+  ],
+  "valid_for_default": false,
+  "workload_fields": [
+    "num_prefill_requests",
+    "sum_prefill_tokens",
+    "sum_prefill_kv_tokens",
+    "num_decode_requests",
+    "sum_decode_kv_tokens"
+  ]
+}

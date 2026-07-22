@@ -242,6 +242,11 @@ class VLLMBackend(BaseBackend):
                     cb_config.block_size,
                     cb_config.overlap_factor,
                     cb_config.per_iteration_overhead_ms,
+                    cb_config.capture_forward_workloads,
+                    cb_config.forward_workload_scenario,
+                    cb_config.forward_workload_model_config_sha256,
+                    cb_config.forward_workload_cp_size,
+                    cb_config.forward_workload_quant_runtime,
                 )
             model_key = (
                 model.model_path,
@@ -842,6 +847,9 @@ class VLLMBackend(BaseBackend):
         summary.set_context_source_map(performance_source_map["context"])
         summary.set_generation_source_map(performance_source_map["generation"])
         summary.set_iteration_charge_ledger(sim.get_last_charge_ledger())
+        summary.set_forward_workload_descriptors(
+            sim.get_last_forward_workload_descriptors()
+        )
 
         per_ops_data = {
             "cb_sim_scheduling": {

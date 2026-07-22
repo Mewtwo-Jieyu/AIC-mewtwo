@@ -2054,6 +2054,9 @@ class _FakeCBSim:
     def get_last_charge_ledger(self):
         return []
 
+    def get_last_forward_workload_descriptors(self):
+        return []
+
 
 class TestVLLMCBSimBoundary:
     def test_run_agg_cb_sim_uses_cb_sim_throughput(self, monkeypatch) -> None:
@@ -2145,6 +2148,9 @@ class TestVLLMCBSimBoundary:
             def get_last_charge_ledger(self):
                 return []
 
+            def get_last_forward_workload_descriptors(self):
+                return []
+
         backend = VLLMBackend()
         model = MagicMock()
         model.model_path = "fake-model"
@@ -2233,6 +2239,9 @@ class TestVLLMCBSimBoundary:
                 return {"context": {}, "generation": {}}
 
             def get_last_charge_ledger(self):
+                return []
+
+            def get_last_forward_workload_descriptors(self):
                 return []
 
         def make_model(tp, dp, moe_tp, moe_ep):
@@ -2353,6 +2362,9 @@ class TestVLLMCBSimBoundary:
                 return {"context": {}, "generation": {}}
 
             def get_last_charge_ledger(self):
+                return []
+
+            def get_last_forward_workload_descriptors(self):
                 return []
 
         backend = VLLMBackend()

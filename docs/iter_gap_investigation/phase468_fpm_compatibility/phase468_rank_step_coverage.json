@@ -1,0 +1,89 @@
+{
+  "default_aic": "No-Go",
+  "diagnostic_only": true,
+  "perf_database": false,
+  "scenarios": [
+    {
+      "active_row_count": 12118,
+      "execution_mode": "tp_single_replica",
+      "idle_row_count": 0,
+      "rank1_status": "not_applicable",
+      "ranks": [
+        0
+      ],
+      "row_count": 12118,
+      "scenario": "K2.5-tp8ep8-8k2k",
+      "status": "PASS",
+      "step_count": 12118
+    },
+    {
+      "active_row_count": 84063,
+      "execution_mode": "tp_single_replica",
+      "idle_row_count": 0,
+      "rank1_status": "not_applicable",
+      "ranks": [
+        0
+      ],
+      "row_count": 84063,
+      "scenario": "K2.5-tp8ep8-32k3k",
+      "status": "PASS",
+      "step_count": 84063
+    },
+    {
+      "active_row_count": 23600,
+      "execution_mode": "dp_lockstep",
+      "idle_row_count": 0,
+      "rank1_status": "present",
+      "ranks": [
+        0,
+        1
+      ],
+      "row_count": 23600,
+      "scenario": "K2.5-tp4ep8dp2-8k2k",
+      "status": "PASS",
+      "step_count": 11800
+    },
+    {
+      "active_row_count": 174064,
+      "execution_mode": "dp_lockstep",
+      "idle_row_count": 0,
+      "rank1_status": "present",
+      "ranks": [
+        0,
+        1
+      ],
+      "row_count": 174064,
+      "scenario": "K2.5-tp4ep8dp2-32k3k",
+      "status": "PASS",
+      "step_count": 87032
+    },
+    {
+      "active_row_count": 20014,
+      "execution_mode": "tp_single_replica",
+      "idle_row_count": 0,
+      "rank1_status": "not_applicable",
+      "ranks": [
+        0
+      ],
+      "row_count": 20014,
+      "scenario": "K2.5-tp8ep8-8k2k-bt65536",
+      "status": "PASS",
+      "step_count": 20014
+    },
+    {
+      "active_row_count": 34125,
+      "execution_mode": "dp_legacy_representative",
+      "idle_row_count": 0,
+      "rank1_status": "not_executed_by_official_legacy_path",
+      "ranks": [
+        0
+      ],
+      "row_count": 34125,
+      "scenario": "K2.5-tp4ep8dp2-8k2k-bt65536",
+      "status": "PASS",
+      "step_count": 34125
+    }
+  ],
+  "schema": "phase468_rank_step_coverage_v1",
+  "valid_for_default": false
+}

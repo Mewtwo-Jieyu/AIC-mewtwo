@@ -19,6 +19,11 @@ from .backend_semantic_profile import resolve_backend_semantic_profile
 from .datatypes import CBSimConfig, CBSimResult, Request, RequestState
 from .dp_admission import DPAdmissionRouter, DPReplicaCounts
 from .engine_loop import AsyncCBScheduler, EngineLoopBatch, run_engine_loop
+from .forward_descriptor import (
+    ForwardWorkloadDescriptor,
+    build_forward_workload_descriptor,
+    make_forward_workload_topology_key,
+)
 from .iteration_latency import IterationLatencyCalculator, ServingStateQueryAudit
 from .scheduler import CBScheduler
 
@@ -89,6 +94,101 @@ class CBSimulator:
             "path": "not_run"
         }
         self._last_preemption_events: list[dict[str, int | bool]] = []
+        self._last_forward_workload_descriptors: list[
+            ForwardWorkloadDescriptor
+        ] = []
+        self._forward_workload_execution_mode = "not_run"
+
+    def _begin_forward_workload_capture(self, execution_mode: str) -> None:
+        self._last_forward_workload_descriptors = []
+        self._forward_workload_execution_mode = execution_mode
+        if not self._config.capture_forward_workloads:
+            return
+        if self._engine_loop_enabled:
+            raise NotImplementedError(
+                "forward workload capture does not support engine loop"
+            )
+        required = {
+            "scenario": self._config.forward_workload_scenario,
+            "model path": getattr(self._model, "model_path", ""),
+            "model config SHA256": self._config.forward_workload_model_config_sha256,
+            "quant runtime": self._config.forward_workload_quant_runtime,
+        }
+        missing = [name for name, value in required.items() if not value]
+        if missing:
+            raise ValueError(
+                "forward workload capture requires exact "
+                + ", ".join(sorted(missing))
+            )
+
+        if self._config.forward_workload_cp_size != 1:
+            raise ValueError("forward workload capture requires exact CP=1")
+
+    def _forward_workload_identity(self) -> dict[str, str | int]:
+        model_config = getattr(self._model, "config", None)
+        tp = getattr(model_config, "tp_size", None)
+        pp = getattr(model_config, "pp_size", None)
+        dp = getattr(model_config, "attention_dp_size", None)
+        moe_tp = getattr(model_config, "moe_tp_size", None)
+        moe_ep = getattr(model_config, "moe_ep_size", None)
+        cp = self._config.forward_workload_cp_size
+        topology_values = (tp, pp, dp, moe_tp, moe_ep, cp)
+        if not all(
+            isinstance(value, int) and value > 0 for value in topology_values
+        ):
+            raise ValueError("forward workload capture requires exact topology")
+        hardware = getattr(self._database, "system", None)
+        backend = getattr(self._database, "backend", None)
+        backend_version = getattr(self._database, "version", None)
+        if not all(
+            isinstance(value, str) and value
+            for value in (hardware, backend, backend_version)
+        ):
+            raise ValueError("forward workload capture requires exact runtime identity")
+        return {
+            "scenario": self._config.forward_workload_scenario,
+            "model_path": self._model.model_path,
+            "model_config_sha256": self._config.forward_workload_model_config_sha256,
+            "hardware": hardware,
+            "backend": backend,
+            "backend_version": backend_version,
+            "tp": tp,
+            "pp": pp,
+            "dp": dp,
+            "moe_tp": moe_tp,
+            "moe_ep": moe_ep,
+            "cp": cp,
+            "topology": make_forward_workload_topology_key(
+                tp=tp,
+                pp=pp,
+                dp=dp,
+                moe_tp=moe_tp,
+                moe_ep=moe_ep,
+                cp=cp,
+            ),
+            "quant_runtime": self._config.forward_workload_quant_runtime,
+        }
+
+    def _record_forward_workload(
+        self,
+        schedule,
+        *,
+        engine_step_id: int,
+        dp_rank: int,
+        active: bool,
+    ) -> None:
+        if not self._config.capture_forward_workloads:
+            return
+        self._last_forward_workload_descriptors.append(
+            build_forward_workload_descriptor(
+                schedule,
+                engine_step_id=engine_step_id,
+                dp_rank=dp_rank,
+                execution_mode=self._forward_workload_execution_mode,
+                active=active,
+                **self._forward_workload_identity(),
+            )
+        )
 
     def _resolve_engine_loop_primitive(self, isl: int) -> TokenizerPrimitive | None:
         model_path = getattr(self._model, "model_path", None)
@@ -181,6 +281,14 @@ class CBSimulator:
         Returns:
             CBSimResult with TTFT, TPOT, throughput metrics.
         """
+        model_config = getattr(self._model, "config", None)
+        model_dp = getattr(model_config, "attention_dp_size", 1)
+        execution_mode = (
+            "dp_legacy_representative"
+            if isinstance(model_dp, int) and model_dp > 1
+            else "tp_single_replica"
+        )
+        self._begin_forward_workload_capture(execution_mode)
         if self._engine_loop_enabled:
             primitive = self._resolve_engine_loop_primitive(isl)
             if primitive is None:
@@ -241,6 +349,12 @@ class CBSimulator:
             schedule = self._scheduler.schedule(waiting, running)
             if schedule.is_empty:
                 break
+            self._record_forward_workload(
+                schedule,
+                engine_step_id=total_iters + 1,
+                dp_rank=0,
+                active=True,
+            )
 
             # Compute avg KV length for decode requests
             avg_kv = int(np.mean([r.kv_cache_len for r in schedule.decode_reqs])) \
@@ -681,6 +795,8 @@ class CBSimulator:
         adds only the architecture missing from the DP path: independent
         schedulers/clocks/KV states plus a global admission router.
         """
+        execution_mode = "dp_lockstep" if lockstep else "dp_legacy"
+        self._begin_forward_workload_capture(execution_mode)
         if data_parallel_size > 1 and self._engine_loop_enabled:
             raise NotImplementedError(
                 "multi-replica engine loop is deferred to Phase462 Step 3"
@@ -770,6 +886,12 @@ class CBSimulator:
             schedule = replica.scheduler.schedule(replica.waiting, replica.running)
             if schedule.is_empty:
                 break
+            self._record_forward_workload(
+                schedule,
+                engine_step_id=total_iters + 1,
+                dp_rank=replica.replica_id,
+                active=True,
+            )
 
             avg_kv = int(np.mean([r.kv_cache_len for r in schedule.decode_reqs])) \
                 if schedule.decode_reqs else 0
@@ -934,6 +1056,7 @@ class CBSimulator:
         peak_prefill_reqs = 0
         peak_decode_reqs = 0
         peak_tokens = 0
+        global_step_id = 0
 
         while len(completed) < self._config.num_requests and total_iters < max_iters:
             has_external_supply = next_id < self._config.num_requests
@@ -956,6 +1079,19 @@ class CBSimulator:
                 cycle.append((replica, schedule, iter_lat))
             if not cycle:
                 break
+            global_step_id += 1
+            schedules_by_rank = {
+                replica.replica_id: schedule
+                for replica, schedule, _iter_lat in cycle
+            }
+            for dp_rank in range(data_parallel_size):
+                schedule = schedules_by_rank.get(dp_rank)
+                self._record_forward_workload(
+                    schedule,
+                    engine_step_id=global_step_id,
+                    dp_rank=dp_rank,
+                    active=schedule is not None,
+                )
 
             step_start_ms = global_clock_ms
             step_ms = max(iter_lat for _, _, iter_lat in cycle)
@@ -1073,6 +1209,12 @@ class CBSimulator:
         if self._last_latency_calc is None:
             return []
         return self._last_latency_calc.get_charge_ledger()
+
+    def get_last_forward_workload_descriptors(
+        self,
+    ) -> list[ForwardWorkloadDescriptor]:
+        """Return exact scheduler/forward descriptors from the latest run."""
+        return list(self._last_forward_workload_descriptors)
 
     def get_last_schedule_trace(self) -> list[dict[str, float | int | bool]]:
         """Return per-replica schedule trace from the most recent multi run."""

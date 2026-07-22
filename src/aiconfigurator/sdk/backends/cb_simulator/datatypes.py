@@ -32,6 +32,11 @@ class CBSimConfig:
     overlap_factor: float = 1.0
     per_iteration_overhead_ms: float = 0.0
     engine_loop_enabled: bool = False
+    capture_forward_workloads: bool = False
+    forward_workload_scenario: str = ""
+    forward_workload_model_config_sha256: str = ""
+    forward_workload_cp_size: int = 0
+    forward_workload_quant_runtime: str = ""
     semantic_profile: BackendSemanticProfile | None = field(
         default=None,
         repr=False,

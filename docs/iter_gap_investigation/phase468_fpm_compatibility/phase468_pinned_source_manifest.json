@@ -1,0 +1,131 @@
+{
+  "exact_support": {
+    "architecture": "KimiK25ForConditionalGeneration",
+    "attention_source": "mla_module",
+    "backend": "vllm",
+    "model_path": "moonshotai/Kimi-K2.5",
+    "quant_mode": "int4_wo",
+    "selected_ops": [
+      "mla_context_module",
+      "mla_generation_module"
+    ]
+  },
+  "policy": {
+    "borrow_contract_only": true,
+    "cherry_pick": false,
+    "follow_pr_head": false
+  },
+  "schema": "phase468_fpm_source_lock_v1",
+  "sources": [
+    {
+      "borrowed_fields": [
+        "FPMPoint",
+        "local_dp_rank_point_identity"
+      ],
+      "commit": "cf1b3cbbc00e0a822891abd29310d68a259e79ed",
+      "path": "collector/fpm_forward/types.py",
+      "repository": "ai-dynamo/aiconfigurator",
+      "sha256": "d32e8b55794f447957f5c287e3e07b33d3616f03afcd3c06e34e5c862087e91f"
+    },
+    {
+      "borrowed_fields": [
+        "support_level=exact",
+        "support_level=family_template",
+        "support_level=bootstrap_template"
+      ],
+      "commit": "cf1b3cbbc00e0a822891abd29310d68a259e79ed",
+      "path": "collector/fpm_forward/capabilities.py",
+      "repository": "ai-dynamo/aiconfigurator",
+      "sha256": "83ce8d8036408b5f06a5132e86ac3eb9f38b74e4ee4c2ef6509b82d3e905383b"
+    },
+    {
+      "borrowed_fields": [
+        "build_collection_plan",
+        "has_model_cases=True",
+        "resolve_model_capability"
+      ],
+      "commit": "cf1b3cbbc00e0a822891abd29310d68a259e79ed",
+      "path": "collector/fpm_forward/planner.py",
+      "repository": "ai-dynamo/aiconfigurator",
+      "sha256": "6fbab3c49429f92ee11c3873ea18bada7926812f36485cb69a03b89d5f4f0ddf"
+    },
+    {
+      "borrowed_fields": [
+        "ResolvedModelConfig.sha256",
+        "resolve_attention_source",
+        "mla_module"
+      ],
+      "commit": "cf1b3cbbc00e0a822891abd29310d68a259e79ed",
+      "path": "collector/fpm_forward/model_capability.py",
+      "repository": "ai-dynamo/aiconfigurator",
+      "sha256": "bb4f67bc94568ac32db158d6afe35e9e2c526a7b31f67640c6e2fd38c8209337"
+    },
+    {
+      "borrowed_fields": [
+        "model_path",
+        "model_architecture",
+        "selected_ops",
+        "framework_specific_op_cases"
+      ],
+      "commit": "cf1b3cbbc00e0a822891abd29310d68a259e79ed",
+      "path": "collector/model_cases.py",
+      "repository": "ai-dynamo/aiconfigurator",
+      "sha256": "45c2b38a9b494629ae81cdaaf015911374a9961625e203bb96063bd8d9120f64"
+    },
+    {
+      "borrowed_fields": [
+        "architecture=KimiK25ForConditionalGeneration",
+        "model_path=moonshotai/Kimi-K2.5",
+        "vllm.mla_context_module",
+        "vllm.mla_generation_module",
+        "vllm.quant_mode=int4_wo"
+      ],
+      "commit": "cf1b3cbbc00e0a822891abd29310d68a259e79ed",
+      "path": "collector/cases/models/KimiK25ForConditionalGeneration_cases.yaml",
+      "repository": "ai-dynamo/aiconfigurator",
+      "sha256": "5e6619e0845a371e52aff408b7bb9302372a1458ebe0595055529a36661f3e34"
+    },
+    {
+      "borrowed_fields": [
+        "num_prefill_requests",
+        "sum_prefill_tokens",
+        "sum_prefill_kv_tokens",
+        "num_decode_requests",
+        "sum_decode_kv_tokens"
+      ],
+      "commit": "cf1b3cbbc00e0a822891abd29310d68a259e79ed",
+      "path": "collector/fpm_forward/native_artifact.py",
+      "repository": "ai-dynamo/aiconfigurator",
+      "sha256": "13d52d344c76b2287d2a9404d353faf044e2885d9ca0cd830093f06980cb0113"
+    },
+    {
+      "borrowed_fields": [
+        "num_prefill_requests",
+        "sum_prefill_tokens",
+        "sum_prefill_kv_tokens",
+        "num_decode_requests",
+        "sum_decode_kv_tokens"
+      ],
+      "commit": "41882ae9b07232eed4850fb1daf8c958abb2556a",
+      "path": "components/src/dynamo/common/forward_pass_metrics.py",
+      "repository": "ai-dynamo/dynamo",
+      "sha256": "523dfc4e7ccbc5a37dbcf03b331a41b628227ad8a5d9c64fda8abc96dd31b188"
+    },
+    {
+      "borrowed_fields": [
+        "SchedulerOutput",
+        "data_parallel_index",
+        "num_computed_tokens_before_update",
+        "num_prefill_requests",
+        "sum_prefill_tokens",
+        "sum_prefill_kv_tokens",
+        "num_decode_requests",
+        "sum_decode_kv_tokens"
+      ],
+      "commit": "41882ae9b07232eed4850fb1daf8c958abb2556a",
+      "path": "components/src/dynamo/vllm/instrumented_scheduler.py",
+      "repository": "ai-dynamo/dynamo",
+      "sha256": "443255313134f32331c6b40cfc90fe72064f207e089c8d95867f8963c22e20a4"
+    }
+  ]
+}

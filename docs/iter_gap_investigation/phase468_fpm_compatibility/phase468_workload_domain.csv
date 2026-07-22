@@ -1,0 +1,5 @@
+topology,phase,row_count,num_requests_min,num_requests_max,sum_tokens_min,sum_tokens_max,sum_kv_tokens_min,sum_kv_tokens_max,unique_query_point_count,mixed_row_count
+tp4pp1dp2moetp1ep8cp1,prefill,1859,1,9,8,65536,0,31999,498,1854
+tp4pp1dp2moetp1ep8cp1,decode,231784,1,57,,,8000,457743,57916,1854
+tp8pp1dp1moetp1ep8cp1,prefill,1394,1,10,12,65536,0,31999,802,1391
+tp8pp1dp1moetp1ep8cp1,decode,116192,1,67,,,8000,545683,58833,1391

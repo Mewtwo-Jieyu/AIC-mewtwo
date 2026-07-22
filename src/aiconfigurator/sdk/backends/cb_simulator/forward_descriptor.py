@@ -5,9 +5,200 @@ import csv
 from dataclasses import dataclass
 from pathlib import Path
 
+from .datatypes import ScheduleResult
+
 
 def make_topology_key(tp: int, dp: int, moe_tp: int, moe_ep: int) -> str:
     return f"tp{tp}dp{dp}moetp{moe_tp}ep{moe_ep}"
+
+
+def make_forward_workload_topology_key(
+    *,
+    tp: int,
+    pp: int,
+    dp: int,
+    moe_tp: int,
+    moe_ep: int,
+    cp: int,
+) -> str:
+    return f"tp{tp}pp{pp}dp{dp}moetp{moe_tp}ep{moe_ep}cp{cp}"
+
+
+@dataclass(frozen=True)
+class ForwardWorkloadDescriptor:
+    """Exact per-rank workload at the scheduler/forward boundary."""
+
+    scenario: str
+    engine_step_id: int
+    dp_rank: int
+    execution_mode: str
+    active: bool
+    num_prefill_requests: int
+    sum_prefill_tokens: int
+    sum_prefill_kv_tokens: int
+    num_decode_requests: int
+    sum_decode_kv_tokens: int
+    model_path: str
+    model_config_sha256: str
+    hardware: str
+    backend: str
+    backend_version: str
+    tp: int
+    pp: int
+    dp: int
+    moe_tp: int
+    moe_ep: int
+    cp: int
+    topology: str
+    quant_runtime: str
+    diagnostic_only: bool = True
+    valid_for_default: bool = False
+    perf_database: bool = False
+
+    def __post_init__(self) -> None:
+        identity = {
+            "scenario": self.scenario,
+            "execution_mode": self.execution_mode,
+            "model_path": self.model_path,
+            "model_config_sha256": self.model_config_sha256,
+            "hardware": self.hardware,
+            "backend": self.backend,
+            "backend_version": self.backend_version,
+            "topology": self.topology,
+            "quant_runtime": self.quant_runtime,
+        }
+        missing = [name for name, value in identity.items() if not value]
+        if missing:
+            raise ValueError(
+                "forward workload descriptor identity is incomplete: "
+                + ", ".join(sorted(missing))
+            )
+        if len(self.model_config_sha256) != 64 or any(
+            char not in "0123456789abcdef" for char in self.model_config_sha256
+        ):
+            raise ValueError("model_config_sha256 must be a lowercase SHA256")
+        topology_values = (self.tp, self.pp, self.dp, self.moe_tp, self.moe_ep, self.cp)
+        if any(not isinstance(value, int) or value <= 0 for value in topology_values):
+            raise ValueError("forward workload topology dimensions must be positive integers")
+        if self.pp != 1:
+            raise ValueError("forward workload capture requires PP=1")
+        if self.cp != 1:
+            raise ValueError("forward workload capture requires CP=1")
+        if self.tp * self.pp * self.dp != 8:
+            raise ValueError("forward workload capture requires exactly 8 GPUs")
+        if self.moe_tp * self.moe_ep != self.tp * self.dp:
+            raise ValueError("forward workload MoE world must match attention world")
+        expected_topology = make_forward_workload_topology_key(
+            tp=self.tp,
+            pp=self.pp,
+            dp=self.dp,
+            moe_tp=self.moe_tp,
+            moe_ep=self.moe_ep,
+            cp=self.cp,
+        )
+        if self.topology != expected_topology:
+            raise ValueError(
+                f"forward workload topology mismatch:{self.topology!r}!={expected_topology!r}"
+            )
+        if self.engine_step_id <= 0:
+            raise ValueError("engine_step_id must be positive")
+        if self.dp_rank < 0 or self.dp_rank >= self.dp:
+            raise ValueError("dp_rank must be within the data-parallel topology")
+        workload = (
+            self.num_prefill_requests,
+            self.sum_prefill_tokens,
+            self.sum_prefill_kv_tokens,
+            self.num_decode_requests,
+            self.sum_decode_kv_tokens,
+        )
+        if any(value < 0 for value in workload):
+            raise ValueError("forward workload fields must be non-negative")
+        if not self.active and any(workload):
+            raise ValueError("inactive forward workload must be all zero")
+        if (
+            self.diagnostic_only is not True
+            or self.valid_for_default is not False
+            or self.perf_database is not False
+        ):
+            raise ValueError("forward workload descriptor must remain diagnostic-only")
+
+
+def build_forward_workload_descriptor(
+    schedule: ScheduleResult | None,
+    *,
+    scenario: str,
+    engine_step_id: int,
+    dp_rank: int,
+    execution_mode: str,
+    active: bool,
+    model_path: str,
+    model_config_sha256: str,
+    hardware: str,
+    backend: str,
+    backend_version: str,
+    tp: int,
+    pp: int,
+    dp: int,
+    moe_tp: int,
+    moe_ep: int,
+    cp: int,
+    topology: str,
+    quant_runtime: str,
+) -> ForwardWorkloadDescriptor:
+    """Build a descriptor without changing scheduler request state."""
+    if not active:
+        if schedule is not None and not schedule.is_empty:
+            raise ValueError("inactive rank cannot carry a non-empty schedule")
+        num_prefill_requests = 0
+        sum_prefill_tokens = 0
+        sum_prefill_kv_tokens = 0
+        num_decode_requests = 0
+        sum_decode_kv_tokens = 0
+    else:
+        if schedule is None or schedule.is_empty:
+            raise ValueError("active rank requires a non-empty schedule")
+        prefill_ids = [req.request_id for req in schedule.prefill_reqs]
+        if len(set(prefill_ids)) != len(prefill_ids):
+            raise ValueError("prefill request ids must be unique")
+        if set(schedule.prefill_tokens) != set(prefill_ids):
+            raise ValueError("prefill token map must match scheduled requests")
+        if any(tokens < 0 for tokens in schedule.prefill_tokens.values()):
+            raise ValueError("scheduled prefill tokens must be non-negative")
+        num_prefill_requests = len(schedule.prefill_reqs)
+        sum_prefill_tokens = sum(schedule.prefill_tokens.values())
+        sum_prefill_kv_tokens = sum(
+            req.kv_cache_len for req in schedule.prefill_reqs
+        )
+        num_decode_requests = len(schedule.decode_reqs)
+        sum_decode_kv_tokens = sum(
+            req.kv_cache_len for req in schedule.decode_reqs
+        )
+
+    return ForwardWorkloadDescriptor(
+        scenario=scenario,
+        engine_step_id=engine_step_id,
+        dp_rank=dp_rank,
+        execution_mode=execution_mode,
+        active=active,
+        num_prefill_requests=num_prefill_requests,
+        sum_prefill_tokens=sum_prefill_tokens,
+        sum_prefill_kv_tokens=sum_prefill_kv_tokens,
+        num_decode_requests=num_decode_requests,
+        sum_decode_kv_tokens=sum_decode_kv_tokens,
+        model_path=model_path,
+        model_config_sha256=model_config_sha256,
+        hardware=hardware,
+        backend=backend,
+        backend_version=backend_version,
+        tp=tp,
+        pp=pp,
+        dp=dp,
+        moe_tp=moe_tp,
+        moe_ep=moe_ep,
+        cp=cp,
+        topology=topology,
+        quant_runtime=quant_runtime,
+    )
 
 
 @dataclass(frozen=True)
