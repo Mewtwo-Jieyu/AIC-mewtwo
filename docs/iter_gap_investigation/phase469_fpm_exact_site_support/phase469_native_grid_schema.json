@@ -1,0 +1,137 @@
+{
+  "cell_fields": [
+    "cell_id",
+    "coordinate_grid_sha256",
+    "cp",
+    "dp",
+    "measurement_sha256",
+    "moe_ep",
+    "moe_tp",
+    "points",
+    "pp",
+    "runtime_grid_digest",
+    "runtime_run_id",
+    "topology",
+    "tp",
+    "workload_kind"
+  ],
+  "coordinate_grid_sha256": "sha256(canonical topology, workload kind, and order-independent coordinates)",
+  "diagnostic_only": true,
+  "forbidden": [
+    "cross_site_transfer",
+    "nearest",
+    "clamp",
+    "util_hold",
+    "extrapolation",
+    "cross_topology"
+  ],
+  "identity_comparison": "runtime_identity_exactly_equals_phase469b_preflight_plus_phase469c_canary_identity",
+  "interpolation_execution": "guard_only_then_pinned_upstream_interpolator;this_phase_does_not_compute_latency",
+  "lookup_order": [
+    "exact_coordinate",
+    "same_site_strict_bracket",
+    "singleton_exact_only",
+    "fail_closed"
+  ],
+  "measurement_sha256": "sha256(canonical topology, workload kind, coordinates, and latency_ms)",
+  "perf_database": false,
+  "phase_contracts": {
+    "decode": {
+      "curve_axis": "total_kv_read_tokens",
+      "site_key": [
+        "topology",
+        "batch_size"
+      ]
+    },
+    "prefill": {
+      "curve_axis": "total_prefill_tokens",
+      "site_key": [
+        "topology",
+        "batch_size",
+        "total_kv_read_tokens"
+      ]
+    }
+  },
+  "point_fields": [
+    "batch_size",
+    "latency_ms",
+    "total_kv_read_tokens",
+    "total_prefill_tokens"
+  ],
+  "quant_runtime_contract": {
+    "native_grid_actual": "CompressedTensorsWNA16MarlinMoEMethod",
+    "native_grid_expected": "CompressedTensorsWNA16MarlinMoEMethod",
+    "phase469b_actual": "DEFERRED_TO_MODEL_CANARY",
+    "phase469b_expected": "CompressedTensorsWNA16MarlinMoEMethod"
+  },
+  "required_cell_sets": {
+    "final": [
+      {
+        "topology": "tp4pp1dp2moetp1ep8cp1",
+        "workload_kind": "decode"
+      },
+      {
+        "topology": "tp4pp1dp2moetp1ep8cp1",
+        "workload_kind": "prefill"
+      },
+      {
+        "topology": "tp8pp1dp1moetp1ep8cp1",
+        "workload_kind": "decode"
+      },
+      {
+        "topology": "tp8pp1dp1moetp1ep8cp1",
+        "workload_kind": "prefill"
+      }
+    ],
+    "tp8_pilot": [
+      {
+        "topology": "tp8pp1dp1moetp1ep8cp1",
+        "workload_kind": "decode"
+      },
+      {
+        "topology": "tp8pp1dp1moetp1ep8cp1",
+        "workload_kind": "prefill"
+      }
+    ]
+  },
+  "runtime_grid_digest": "opaque Dynamo native digest extracted by the pinned native reader;Phase469A validates lowercase SHA256 only",
+  "runtime_identity_fields": [
+    "actual_quant_runtime",
+    "backend",
+    "backend_version",
+    "checkpoint_fingerprint",
+    "execution_manifest_sha256",
+    "expected_quant_runtime",
+    "hardware",
+    "model_config_sha256",
+    "model_id",
+    "model_load_path",
+    "phase469b_preflight_manifest_sha256",
+    "phase469c_canary_manifest_sha256"
+  ],
+  "schema": "phase469_fpm_native_grid_v2",
+  "source_contract": {
+    "aic_collector_commit": "cf1b3cbbc00e0a822891abd29310d68a259e79ed",
+    "coordinate_system": "iteration_totals_balanced_v1",
+    "dynamo_commit": "41882ae9b07232eed4850fb1daf8c958abb2556a",
+    "latency_aggregation": "max_dp_rank",
+    "native_schema_version": 5,
+    "partition_policy": "balanced_v1"
+  },
+  "top_level_fields": [
+    "cells",
+    "diagnostic_only",
+    "perf_database",
+    "runtime_identity",
+    "schema",
+    "source_contract",
+    "valid_for_default"
+  ],
+  "topology_contract": {
+    "cp": 1,
+    "gpu_count": 8,
+    "moe_world": "moe_tp*moe_ep == tp*dp",
+    "pp": 1
+  },
+  "valid_for_default": false
+}

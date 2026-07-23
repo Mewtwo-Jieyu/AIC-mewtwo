@@ -1,0 +1,5 @@
+topology,phase,unique_query_count,query_use_count,site_count,singleton_site_count,curve_point_count_min,curve_point_count_max
+tp4pp1dp2moetp1ep8cp1,decode,57916,231784,57,1,1,25306
+tp4pp1dp2moetp1ep8cp1,prefill,498,1859,324,298,1,68
+tp8pp1dp1moetp1ep8cp1,decode,58833,116192,67,0,2,19659
+tp8pp1dp1moetp1ep8cp1,prefill,802,1394,575,541,1,97

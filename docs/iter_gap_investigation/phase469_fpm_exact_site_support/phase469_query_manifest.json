@@ -1,0 +1,107 @@
+{
+  "default_aic": "No-Go",
+  "diagnostic_only": true,
+  "full_query_rows_materialized": false,
+  "native_grid_required_cell_sets": {
+    "final": [
+      {
+        "topology": "tp4pp1dp2moetp1ep8cp1",
+        "workload_kind": "decode"
+      },
+      {
+        "topology": "tp4pp1dp2moetp1ep8cp1",
+        "workload_kind": "prefill"
+      },
+      {
+        "topology": "tp8pp1dp1moetp1ep8cp1",
+        "workload_kind": "decode"
+      },
+      {
+        "topology": "tp8pp1dp1moetp1ep8cp1",
+        "workload_kind": "prefill"
+      }
+    ],
+    "tp8_pilot": [
+      {
+        "topology": "tp8pp1dp1moetp1ep8cp1",
+        "workload_kind": "decode"
+      },
+      {
+        "topology": "tp8pp1dp1moetp1ep8cp1",
+        "workload_kind": "prefill"
+      }
+    ]
+  },
+  "native_grid_source_contract": {
+    "aic_collector_commit": "cf1b3cbbc00e0a822891abd29310d68a259e79ed",
+    "coordinate_system": "iteration_totals_balanced_v1",
+    "dynamo_commit": "41882ae9b07232eed4850fb1daf8c958abb2556a",
+    "latency_aggregation": "max_dp_rank",
+    "native_schema_version": 5,
+    "partition_policy": "balanced_v1"
+  },
+  "perf_database": false,
+  "phase468_descriptor_row_count": 347984,
+  "phase468_descriptor_sha256": "7da3f3ab4d08926e1c4fe918a68a2a2e1248478073621d764b2258987792374d",
+  "query_groups": [
+    {
+      "curve_point_count_max": 25306,
+      "curve_point_count_min": 1,
+      "phase": "decode",
+      "query_use_count": 231784,
+      "singleton_site_count": 1,
+      "site_count": 57,
+      "topology": "tp4pp1dp2moetp1ep8cp1",
+      "unique_query_count": 57916
+    },
+    {
+      "curve_point_count_max": 68,
+      "curve_point_count_min": 1,
+      "phase": "prefill",
+      "query_use_count": 1859,
+      "singleton_site_count": 298,
+      "site_count": 324,
+      "topology": "tp4pp1dp2moetp1ep8cp1",
+      "unique_query_count": 498
+    },
+    {
+      "curve_point_count_max": 19659,
+      "curve_point_count_min": 2,
+      "phase": "decode",
+      "query_use_count": 116192,
+      "singleton_site_count": 0,
+      "site_count": 67,
+      "topology": "tp8pp1dp1moetp1ep8cp1",
+      "unique_query_count": 58833
+    },
+    {
+      "curve_point_count_max": 97,
+      "curve_point_count_min": 1,
+      "phase": "prefill",
+      "query_use_count": 1394,
+      "singleton_site_count": 541,
+      "site_count": 575,
+      "topology": "tp8pp1dp1moetp1ep8cp1",
+      "unique_query_count": 802
+    }
+  ],
+  "query_inventory_sha256": "bf87ed26f8e4a8abf7972ca25433d9536cc71b387629d8080053935d743c7376",
+  "runtime_identity_fields": [
+    "actual_quant_runtime",
+    "backend",
+    "backend_version",
+    "checkpoint_fingerprint",
+    "execution_manifest_sha256",
+    "expected_quant_runtime",
+    "hardware",
+    "model_config_sha256",
+    "model_id",
+    "model_load_path",
+    "phase469b_preflight_manifest_sha256",
+    "phase469c_canary_manifest_sha256"
+  ],
+  "runtime_identity_source": "phase469b_preflight_manifest+phase469c_canary_manifest",
+  "schema": "phase469_fpm_query_manifest_v1",
+  "unique_query_count": 118049,
+  "valid_for_default": false
+}
