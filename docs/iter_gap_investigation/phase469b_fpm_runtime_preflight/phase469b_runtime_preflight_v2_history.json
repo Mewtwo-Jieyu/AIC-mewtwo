@@ -1,0 +1,19 @@
+{
+  "default_aic": "No-Go",
+  "diagnostic_only": true,
+  "execution_manifest_file": "phase469b-execution-manifest-v2-66ef402a-20260723T061908Z.json",
+  "execution_manifest_file_sha256": "a6a8b415bbf06fd35e2854ef0a7649e90ee075c2a87f790e6bf48838bed88df9",
+  "execution_manifest_sha256": "4a7c06c18fafa8c852a22998a622a1c2412d5fa55d29ace2c8993c8e9b5d93b3",
+  "perf_database": false,
+  "result_file": "phase469b_runtime_preflight_v2_original.json",
+  "result_file_sha256": "82c9a5b956db5f352e2927c0d4d04ce896b018fa692dd771fa68182275b3f7eb",
+  "result_markdown_file": "phase469b_runtime_preflight_v2_original.md",
+  "result_markdown_file_sha256": "cbece71a400e9729675cd24708c3851b72fac905ee0bf6fe850a44a54e08394f",
+  "result_schema": "phase469b_fpm_runtime_preflight_v2",
+  "schema": "phase469b_fpm_runtime_preflight_history_v1",
+  "source_bundle_manifest_file": "phase469b-source-bundle-manifest-v2-66ef402a-20260723T061908Z.json",
+  "source_bundle_manifest_file_sha256": "c36791847412f2d32a40daf2bcd48e8ac044a6053af202676ff032b870b79db9",
+  "source_bundle_manifest_sha256": "ea723482a62955708006d6afc3cd85273efa11010aeb53a08370da4e8eb7429f",
+  "status": "VALID_HISTORICAL_EXTERNAL_RUNTIME_BLOCK",
+  "valid_for_default": false
+}

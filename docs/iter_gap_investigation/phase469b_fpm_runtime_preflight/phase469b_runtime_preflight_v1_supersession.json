@@ -1,0 +1,12 @@
+{
+  "schema": "phase469b_fpm_runtime_preflight_supersession_v1",
+  "status": "SUPERSEDED_INVALID_CONFIG_COMPARISON",
+  "superseded_result_file": "phase469b_runtime_preflight_v1_original.json",
+  "superseded_result_sha256": "a727d141621f3918edd22156b30ff8b69bb88e29d950d4defce975a65aec76eb",
+  "reason": "Phase469B v1 compared the AIC flattened simulator config hash with the official multimodal checkpoint wrapper config hash. Those files have different responsibilities and are not byte-identity peers.",
+  "replacement_schema": "phase469b_fpm_runtime_preflight_v2",
+  "diagnostic_only": true,
+  "valid_for_default": false,
+  "perf_database": false,
+  "default_aic": "No-Go"
+}

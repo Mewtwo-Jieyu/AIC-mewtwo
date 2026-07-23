@@ -1,0 +1,14 @@
+{
+  "base_commit": "66ef402af61b4e097228671b8841acf469cceb36",
+  "default_aic": "No-Go",
+  "diagnostic_only": true,
+  "perf_database": false,
+  "schema": "phase469b_fpm_execution_manifest_v1",
+  "sha256": "a71963369f577ba33c1c45eb8f7c302244c57055810768748a94300d32439593",
+  "source_bundle_manifest_sha256": "a23e990532b6cf5eb32c8a505e693447140c3b04386198fcbf36e6769dfc7f52",
+  "tools": {
+    "scripts/analyze_phase469b_fpm_runtime_preflight.py": "7173845249c62c6e73693ca92e2376e74dab02ff38ad06c6a104a58aebeedf48",
+    "scripts/run_phase469b_fpm_runtime_preflight.py": "55eac7d7bc24b8a7ed06be346dd40b01864c81ee3270a6a375504d1fbb814bb6"
+  },
+  "valid_for_default": false
+}

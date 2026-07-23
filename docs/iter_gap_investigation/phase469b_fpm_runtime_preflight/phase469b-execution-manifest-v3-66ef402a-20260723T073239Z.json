@@ -1,0 +1,60 @@
+{
+  "base_commit": "66ef402af61b4e097228671b8841acf469cceb36",
+  "default_aic": "No-Go",
+  "diagnostic_only": true,
+  "identity_files": {
+    "src/aiconfigurator/model_configs/moonshotai--Kimi-K2.5_config.json": "cfc314896cf0967c4465fb0909a630ab27047ee258ec428436b53e220681a0dd"
+  },
+  "perf_database": false,
+  "schema": "phase469b_fpm_execution_manifest_v3",
+  "sha256": "bddd068bc6d6560ef385b1c6f9be435f8585ba8dc609fd696de6e6d73a3f8f6d",
+  "source_bundle_manifest_sha256": "aa4d8fb4322528b85b9e4b12053585bbf7e0ecab275066ebf31ac914f9498a05",
+  "target": {
+    "aic_model_config_sha256": "58944cf9cf456619768616f38acd75b3d7ccc26d8b6a64d9e312aba4c8f0b927",
+    "aic_model_semantic_projection": {
+      "architectures": [
+        "KimiK25ForConditionalGeneration"
+      ],
+      "dtype": "bfloat16",
+      "first_k_dense_replace": 1,
+      "hidden_size": 7168,
+      "intermediate_size": 18432,
+      "kv_lora_rank": 512,
+      "max_position_embeddings": 262144,
+      "model_type": "kimi_k25",
+      "moe_intermediate_size": 2048,
+      "moe_layer_freq": 1,
+      "n_routed_experts": 384,
+      "n_shared_experts": 1,
+      "num_attention_heads": 64,
+      "num_experts_per_tok": 8,
+      "num_hidden_layers": 61,
+      "num_key_value_heads": 64,
+      "q_lora_rank": 1536,
+      "qk_nope_head_dim": 128,
+      "qk_rope_head_dim": 64,
+      "quantization": {
+        "activation_quantized": false,
+        "quant_method": "compressed-tensors",
+        "weight_bits": 4
+      },
+      "routed_scaling_factor": 2.827,
+      "tie_word_embeddings": false,
+      "use_cache": true,
+      "v_head_dim": 128,
+      "vocab_size": 163840
+    },
+    "checkpoint_config_sha256": "8364a2eb7f427fd2117cc3d6729818dfd9957d33e22773d8e681a9a0ca97ddd3",
+    "flat_model_fingerprint": "8847e7eafbad3f71d0006de6c305ea090bb1b9ee191c192fdb5cfc6c8742548b",
+    "flat_model_identity_scope": "same_flat_mirror_instance",
+    "hostkey_fingerprint": "SHA256:IVjkRgeMAWHa+gA/SVMZBy2yZBg+m04S1mBpzb2Ufrk",
+    "model_path": "/mnt/shared-storage-gpfs2/gpfs2-shared-public/huggingface/zskj-hub/models--moonshotai--Kimi-K2.5",
+    "ssh_host": "ws-faaf0de74ef9a14d-worker-b7mnp.zhaojieyu+root.ailab-sys.pod@h.pjlab.org.cn"
+  },
+  "tools": {
+    "scripts/analyze_phase469b_fpm_runtime_preflight.py": "b2f154d40dd5cf039c1e9700b26d5e5582da9c59d0eea18e4eeec6ac19e4f93f",
+    "scripts/run_phase466_low_overhead_probe.py": "afe081c37244bf2b852ba21cc9cebaaf52df6f2ef0de039c2ef215ecb800c8ae",
+    "scripts/run_phase469b_fpm_runtime_preflight.py": "3112b7fe41009ce41134a7e82f945a3a6cac40e2a7b9a987902fc41298dea5ab"
+  },
+  "valid_for_default": false
+}
